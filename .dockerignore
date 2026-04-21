@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+dist
+.env
+.env.local
+.env.production
+npm-debug.log
+coverage
