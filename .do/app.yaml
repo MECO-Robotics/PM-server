@@ -1,0 +1,33 @@
+name: meco-platform
+region: nyc
+services:
+  - name: api
+    github:
+      repo: MECO-Robotics/meco-platform
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    build_command: npm ci && npm run build
+    run_command: npm run start
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: ${meco-db.DATABASE_URL}
+      - key: CORS_ORIGIN
+        scope: RUN_AND_BUILD_TIME
+        value: "*"
+databases:
+  - name: meco-db
+    engine: PG
+    version: "16"
+    production: true
+    cluster_name: meco-platform-db

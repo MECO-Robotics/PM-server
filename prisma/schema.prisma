@@ -1,0 +1,353 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MemberRole {
+  STUDENT
+  MENTOR
+  ADMIN
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  WAITING_FOR_QA
+  COMPLETE
+}
+
+enum TaskPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum BlockerType {
+  TASK_DEPENDENCY
+  MANUFACTURING_DELAY
+  SHIPPING_DELAY
+  QA_FEEDBACK
+  OTHER
+}
+
+enum ManufacturingProcess {
+  PRINT_3D
+  CNC
+  FABRICATION
+}
+
+enum ManufacturingStatus {
+  REQUESTED
+  APPROVED
+  IN_PROGRESS
+  QA
+  COMPLETE
+}
+
+enum PurchaseStatus {
+  REQUESTED
+  APPROVED
+  PURCHASED
+  SHIPPED
+  DELIVERED
+}
+
+enum QaResult {
+  PASS
+  MINOR_FIX
+  ITERATION_WORTHY
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RsvpStatus {
+  YES
+  MAYBE
+  NO
+}
+
+model Member {
+  id                        String              @id @default(cuid())
+  name                      String
+  role                      MemberRole
+  ownedTasks                Task[]              @relation("TaskOwner")
+  mentoredTasks             Task[]              @relation("TaskMentor")
+  responsibleSubsystems     Subsystem[]         @relation("ResponsibleEngineer")
+  subsystemMemberships      SubsystemMember[]
+  subsystemMentorships      SubsystemMentor[]
+  workLogParticipants       WorkLogParticipant[]
+  attendanceRecords         AttendanceRecord[]
+  rsvps                     RSVP[]
+  requestedManufacturing    ManufacturingItem[] @relation("ManufacturingRequester")
+  requestedPurchases        PurchaseItem[]      @relation("PurchaseRequester")
+  approvedPurchases         PurchaseItem[]      @relation("PurchaseApprover")
+  qaParticipants            QAParticipant[]
+  mentorApprovedQaReviews   QAReview[]          @relation("QaMentorApprover")
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+}
+
+model Subsystem {
+  id                    String            @id @default(cuid())
+  name                  String            @unique
+  responsibleEngineerId String
+  responsibleEngineer   Member            @relation("ResponsibleEngineer", fields: [responsibleEngineerId], references: [id])
+  tasks                 Task[]
+  manufacturingItems    ManufacturingItem[]
+  purchaseItems         PurchaseItem[]
+  members               SubsystemMember[]
+  mentors               SubsystemMentor[]
+  risks                 Risk[]
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+}
+
+model SubsystemMember {
+  subsystemId String
+  memberId    String
+  subsystem   Subsystem @relation(fields: [subsystemId], references: [id])
+  member      Member    @relation(fields: [memberId], references: [id])
+
+  @@id([subsystemId, memberId])
+}
+
+model SubsystemMentor {
+  subsystemId String
+  memberId    String
+  subsystem   Subsystem @relation(fields: [subsystemId], references: [id])
+  member      Member    @relation(fields: [memberId], references: [id])
+
+  @@id([subsystemId, memberId])
+}
+
+model Task {
+  id                      String                @id @default(cuid())
+  title                   String
+  description             String
+  dueDate                 DateTime?
+  priority                TaskPriority
+  status                  TaskStatus            @default(NOT_STARTED)
+  estimatedHours          Float?
+  actualHours             Float?
+  requiresDocumentation   Boolean               @default(true)
+  documentationUrl        String?
+  subsystemId             String
+  ownerId                 String
+  mentorId                String
+  parentTaskId            String?
+  subsystem               Subsystem             @relation(fields: [subsystemId], references: [id])
+  owner                   Member                @relation("TaskOwner", fields: [ownerId], references: [id])
+  mentor                  Member                @relation("TaskMentor", fields: [mentorId], references: [id])
+  parentTask              Task?                 @relation("TaskIterations", fields: [parentTaskId], references: [id])
+  iterationTasks          Task[]                @relation("TaskIterations")
+  workLogs                WorkLog[]
+  qaReviews               QAReview[]
+  blockers                TaskBlocker[]
+  dependencies            TaskDependency[]      @relation("TaskDependsOn")
+  dependentTasks          TaskDependency[]      @relation("TaskRequiredBy")
+  manufacturingLinks      TaskManufacturingItem[]
+  purchaseLinks           TaskPurchaseItem[]
+  riskLinks               RiskTask[]
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+}
+
+model TaskDependency {
+  predecessorId String
+  successorId   String
+  predecessor   Task   @relation("TaskRequiredBy", fields: [predecessorId], references: [id])
+  successor     Task   @relation("TaskDependsOn", fields: [successorId], references: [id])
+
+  @@id([predecessorId, successorId])
+}
+
+model TaskBlocker {
+  id         String      @id @default(cuid())
+  taskId     String
+  type       BlockerType
+  summary    String
+  isResolved Boolean     @default(false)
+  task       Task        @relation(fields: [taskId], references: [id])
+  createdAt  DateTime    @default(now())
+}
+
+model WorkLog {
+  id           String               @id @default(cuid())
+  taskId       String
+  loggedAt     DateTime
+  hours        Float
+  notes        String?
+  task         Task                 @relation(fields: [taskId], references: [id])
+  participants WorkLogParticipant[]
+  createdAt    DateTime             @default(now())
+}
+
+model WorkLogParticipant {
+  workLogId String
+  memberId  String
+  workLog   WorkLog @relation(fields: [workLogId], references: [id])
+  member    Member  @relation(fields: [memberId], references: [id])
+
+  @@id([workLogId, memberId])
+}
+
+model Meeting {
+  id                String             @id @default(cuid())
+  title             String
+  scheduledAt       DateTime
+  attendanceRecords AttendanceRecord[]
+  rsvps             RSVP[]
+  createdAt         DateTime           @default(now())
+}
+
+model RSVP {
+  id        String     @id @default(cuid())
+  meetingId String
+  memberId  String
+  status    RsvpStatus
+  meeting   Meeting    @relation(fields: [meetingId], references: [id])
+  member    Member     @relation(fields: [memberId], references: [id])
+  createdAt DateTime   @default(now())
+
+  @@unique([meetingId, memberId])
+}
+
+model AttendanceRecord {
+  id          String   @id @default(cuid())
+  meetingId   String
+  memberId    String
+  signedInAt  DateTime
+  signedOutAt DateTime?
+  totalHours  Float
+  notes       String?
+  meeting     Meeting  @relation(fields: [meetingId], references: [id])
+  member      Member   @relation(fields: [memberId], references: [id])
+
+  @@unique([meetingId, memberId])
+}
+
+model ManufacturingBatch {
+  id        String               @id @default(cuid())
+  label     String               @unique
+  dueDate   DateTime?
+  material  String?
+  process   ManufacturingProcess?
+  items     ManufacturingItem[]
+  createdAt DateTime             @default(now())
+}
+
+model ManufacturingItem {
+  id                String                @id @default(cuid())
+  title             String
+  dueDate           DateTime?
+  priority          TaskPriority?
+  material          String?
+  quantity          Int                   @default(1)
+  mentorReviewed    Boolean               @default(false)
+  process           ManufacturingProcess
+  status            ManufacturingStatus   @default(REQUESTED)
+  subsystemId       String
+  requestedById     String
+  batchId           String?
+  subsystem         Subsystem             @relation(fields: [subsystemId], references: [id])
+  requestedBy       Member                @relation("ManufacturingRequester", fields: [requestedById], references: [id])
+  batch             ManufacturingBatch?   @relation(fields: [batchId], references: [id])
+  qaReviews         QAReview[]
+  taskLinks         TaskManufacturingItem[]
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+}
+
+model TaskManufacturingItem {
+  taskId              String
+  manufacturingItemId String
+  task                Task              @relation(fields: [taskId], references: [id])
+  manufacturingItem   ManufacturingItem @relation(fields: [manufacturingItemId], references: [id])
+
+  @@id([taskId, manufacturingItemId])
+}
+
+model PurchaseItem {
+  id               String             @id @default(cuid())
+  title            String
+  vendor           String?
+  link             String?
+  quantity         Int                @default(1)
+  estimatedCost    Float?
+  finalCost        Float?
+  status           PurchaseStatus     @default(REQUESTED)
+  subsystemId      String
+  requestedById    String
+  approvedById     String?
+  approvedAt       DateTime?
+  purchasedAt      DateTime?
+  deliveredAt      DateTime?
+  subsystem        Subsystem          @relation(fields: [subsystemId], references: [id])
+  requestedBy      Member             @relation("PurchaseRequester", fields: [requestedById], references: [id])
+  approvedBy       Member?            @relation("PurchaseApprover", fields: [approvedById], references: [id])
+  taskLinks        TaskPurchaseItem[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+model TaskPurchaseItem {
+  taskId         String
+  purchaseItemId String
+  task           Task         @relation(fields: [taskId], references: [id])
+  purchaseItem   PurchaseItem @relation(fields: [purchaseItemId], references: [id])
+
+  @@id([taskId, purchaseItemId])
+}
+
+model QAReview {
+  id                  String             @id @default(cuid())
+  taskId              String?
+  manufacturingItemId String?
+  result              QaResult
+  notes               String?
+  mentorApproved      Boolean            @default(false)
+  mentorApproverId    String?
+  reviewedAt          DateTime           @default(now())
+  task                Task?              @relation(fields: [taskId], references: [id])
+  manufacturingItem   ManufacturingItem? @relation(fields: [manufacturingItemId], references: [id])
+  mentorApprover      Member?            @relation("QaMentorApprover", fields: [mentorApproverId], references: [id])
+  participants        QAParticipant[]
+}
+
+model QAParticipant {
+  qaReviewId String
+  memberId   String
+  qaReview   QAReview @relation(fields: [qaReviewId], references: [id])
+  member     Member   @relation(fields: [memberId], references: [id])
+
+  @@id([qaReviewId, memberId])
+}
+
+model Risk {
+  id          String       @id @default(cuid())
+  subsystemId String
+  title       String
+  description String?
+  severity    RiskSeverity @default(MEDIUM)
+  subsystem   Subsystem    @relation(fields: [subsystemId], references: [id])
+  taskLinks   RiskTask[]
+  createdAt   DateTime     @default(now())
+}
+
+model RiskTask {
+  riskId String
+  taskId String
+  risk   Risk @relation(fields: [riskId], references: [id])
+  task   Task @relation(fields: [taskId], references: [id])
+
+  @@id([riskId, taskId])
+}
