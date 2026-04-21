@@ -3,9 +3,9 @@ region: nyc
 services:
   - name: api
     github:
-      repo: MECO-Robotics/meco-platform
+      repo: MECO-Robotics/PM-server
       branch: main
-      deploy_on_push: true
+      deploy_on_push: false
     source_dir: /
     environment_slug: node-js
     http_port: 8080

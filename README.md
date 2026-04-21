@@ -42,7 +42,21 @@ npm run build
 
 ## Deployment outline
 
-1. Push this repo to `MECO-Robotics/meco-platform`.
-2. In DigitalOcean App Platform, deploy from GitHub or apply `.do/app.yaml`.
-3. Provision the managed Postgres database referenced by the app spec.
-4. Point the mobile and web clients at the deployed API URL with frontend env vars.
+1. Add a GitHub Actions secret named `DIGITALOCEAN_ACCESS_TOKEN` with App Platform access.
+2. Push this repo to `MECO-Robotics/PM-server`.
+3. Let `.github/workflows/deploy-digitalocean.yml` validate and deploy the app from `.do/app.yaml`.
+4. Provision the managed Postgres database referenced by the app spec on the first deploy.
+5. Point the mobile and web clients at the deployed API URL with frontend env vars.
+
+## GitHub Actions deployment
+
+This repo now includes a production workflow at `.github/workflows/deploy-digitalocean.yml`.
+
+- `push` to `main`: runs typecheck, build, Prisma schema validation, and then deploys to DigitalOcean App Platform.
+- `workflow_dispatch`: lets you trigger the same deployment manually from GitHub.
+
+Required GitHub secret:
+
+- `DIGITALOCEAN_ACCESS_TOKEN`: a DigitalOcean personal access token with App Platform permissions.
+
+The workflow uses the official `digitalocean/app_action/deploy@v2` action and deploys directly from `.do/app.yaml`.
