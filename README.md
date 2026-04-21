@@ -7,6 +7,7 @@ DigitalOcean-ready backend starter for the MECO Robotics project management and 
 The product request asked for a React Native app with DigitalOcean hosting. The clean split is:
 
 - `meco-mobile`: Expo/React Native client for students, mentors, and admins.
+- `meco-web`: React/Vite browser dashboard for mentors, admins, and wider desktop access.
 - `meco-platform`: API and Postgres-backed workflow engine hosted on DigitalOcean.
 
 That keeps mobile delivery focused on Expo/app-store builds while the backend, database, and deployment pipeline live in a standard hosted service repo.
@@ -44,4 +45,4 @@ npm run build
 1. Push this repo to `MECO-Robotics/meco-platform`.
 2. In DigitalOcean App Platform, deploy from GitHub or apply `.do/app.yaml`.
 3. Provision the managed Postgres database referenced by the app spec.
-4. Point the mobile client at the deployed API URL with an Expo public env var.
+4. Point the mobile and web clients at the deployed API URL with frontend env vars.
