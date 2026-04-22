@@ -93,8 +93,10 @@ jobs:
 
       - name: Upload production env file
         shell: bash
+        env:
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
         run: |
-          printf '%s\n' "${{ secrets.PRODUCTION_ENV_FILE }}" > .env.production
+          printf '%s' "$PRODUCTION_ENV_FILE" > .env.production
           scp .env.production "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/.env.production"
 
       - name: Deploy containers on VPS
