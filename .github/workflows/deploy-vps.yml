@@ -88,6 +88,7 @@ jobs:
             --exclude '.git' \
             --exclude 'node_modules' \
             --exclude 'dist' \
+            --exclude '.env.production' \
             ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/"
 
       - name: Upload production env file
@@ -102,7 +103,19 @@ jobs:
           ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
           set -euo pipefail
           cd /opt/pm-server
+          docker --version
+          docker compose version
           docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
           docker image prune -f
-          curl --fail --silent http://127.0.0.1:8080/health > /dev/null
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/health > /dev/null; then
+              echo "Health check passed."
+              exit 0
+            fi
+            echo "Waiting for app health check (${attempt}/30)..."
+            sleep 5
+          done
+          echo "Application never became healthy."
+          docker compose -f docker-compose.prod.yml ps
+          exit 1
           EOF

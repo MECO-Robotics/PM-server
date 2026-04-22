@@ -8,7 +8,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg
+sudo apt-get install -y ca-certificates curl gnupg rsync
 
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
