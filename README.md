@@ -37,6 +37,9 @@ For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when No
 ## API endpoints
 
 - `GET /health`
+- `GET /api/auth/config`
+- `POST /api/auth/google`
+- `GET /api/auth/me`
 - `GET /api/dashboard`
 - `GET /api/tasks`
 - `GET /api/meetings`
@@ -92,7 +95,22 @@ POSTGRES_USER=meco
 POSTGRES_PASSWORD=change-this
 DATABASE_URL=postgresql://meco:change-this@postgres:5432/meco_platform?schema=public
 CORS_ORIGIN=https://your-web-domain.example
+GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
+GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+AUTH_JWT_SECRET=replace-with-a-long-random-secret
+AUTH_TOKEN_TTL=12h
 ```
+
+## Google SSO
+
+Google Identity Services sends a Google ID token to the web app, and the web app exchanges that token with `POST /api/auth/google`.
+
+- The server verifies the Google token against `GOOGLE_CLIENT_ID`.
+- The server enforces the hosted-domain check with `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
+- The server issues its own signed app session token with `AUTH_JWT_SECRET`.
+- The server does not need a Google client secret for this flow.
+
+For production, the web origin must be configured in the Google Cloud Console OAuth client and should be served over HTTPS before SSO is enabled on the public site.
 
 ## Deployment behavior
 
