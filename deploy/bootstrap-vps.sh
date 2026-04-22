@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "This bootstrap script is intended for Ubuntu on the Droplet."
+  echo "This bootstrap script is intended for Ubuntu on the VPS."
   exit 1
 fi
 

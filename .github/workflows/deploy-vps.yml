@@ -1,4 +1,4 @@
-name: Deploy Server to DigitalOcean Droplet
+name: Deploy Server to VPS
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/deploy-digitalocean.yml"
+      - ".github/workflows/deploy-vps.yml"
       - "src/**"
       - "prisma/**"
       - "package.json"
@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: digitalocean-droplet-production
+  group: vps-server-production
   cancel-in-progress: true
 
 env:
@@ -58,7 +58,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 
   deploy:
-    name: Deploy to DigitalOcean Droplet
+    name: Deploy to VPS
     needs: validate
     runs-on: ubuntu-latest
     environment:
@@ -72,34 +72,34 @@ jobs:
         shell: bash
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Ensure remote directory exists
         shell: bash
         run: |
-          ssh "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" "mkdir -p ${REMOTE_PATH}"
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "mkdir -p ${REMOTE_PATH}"
 
-      - name: Sync repository to droplet
+      - name: Sync repository to VPS
         shell: bash
         run: |
           rsync -az --delete \
             --exclude '.git' \
             --exclude 'node_modules' \
             --exclude 'dist' \
-            ./ "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${REMOTE_PATH}/"
+            ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/"
 
       - name: Upload production env file
         shell: bash
         run: |
           printf '%s\n' "${{ secrets.PRODUCTION_ENV_FILE }}" > .env.production
-          scp .env.production "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:${REMOTE_PATH}/.env.production"
+          scp .env.production "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/.env.production"
 
-      - name: Deploy containers on droplet
+      - name: Deploy containers on VPS
         shell: bash
         run: |
-          ssh "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" <<'EOF'
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
           set -euo pipefail
           cd /opt/pm-server
           docker compose -f docker-compose.prod.yml up -d --build --remove-orphans

@@ -4,7 +4,18 @@ Backend starter for the MECO Robotics project-management and manufacturing workf
 
 ## Hosting direction
 
-This repo now targets a self-managed DigitalOcean Droplet instead of App Platform.
+This repo now targets a self-managed Linux VPS instead of App Platform.
+
+The current recommended low-cost target is:
+
+- `Hetzner CX23` in Germany for the cheapest sensible x86 starting point
+
+The deployment path is intentionally provider-neutral, so the same repo can also run on:
+
+- Hetzner
+- DigitalOcean Droplets
+- Vultr
+- nearly any Ubuntu VPS with Docker installed
 
 That keeps costs down and gives you one inexpensive box for:
 
@@ -12,16 +23,16 @@ That keeps costs down and gives you one inexpensive box for:
 - PostgreSQL
 - Docker-based deployment
 
-For an MVP, the best starting point is usually a Basic Ubuntu Droplet with at least `1 vCPU / 2 GB RAM`, because running both Node and Postgres on `1 GB` is usually tighter than it sounds.
+For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when Node and Postgres are sharing one machine.
 
 ## Included in this starter
 
 - Fastify + TypeScript API shell with typed route responses
 - Completion-gating logic for work logs, mentor QA approval, and documentation evidence
 - Prisma schema for members, tasks, attendance, manufacturing, purchases, QA reviews, and risks
-- `docker-compose.prod.yml` for API + Postgres on one Droplet
-- GitHub Actions workflow that deploys over SSH to the Droplet
-- `deploy/bootstrap-droplet.sh` for first-time Docker setup on Ubuntu
+- `docker-compose.prod.yml` for API + Postgres on one VPS
+- GitHub Actions workflow that deploys over SSH to the VPS
+- `deploy/bootstrap-vps.sh` for first-time Docker setup on Ubuntu
 
 ## API endpoints
 
@@ -45,26 +56,27 @@ npm run build
 
 ## Production files
 
-- `docker-compose.prod.yml`: production stack for the Droplet
-- `.env.production`: runtime environment file on the Droplet
-- `.github/workflows/deploy-digitalocean.yml`: CI + deployment workflow
-- `deploy/bootstrap-droplet.sh`: first-time Docker bootstrap for Ubuntu
+- `docker-compose.prod.yml`: production stack for the VPS
+- `.env.production`: runtime environment file on the VPS
+- `.github/workflows/deploy-vps.yml`: CI + deployment workflow
+- `deploy/bootstrap-vps.sh`: first-time Docker bootstrap for Ubuntu
 
-## First-time Droplet setup
+## First-time VPS setup
 
-1. Create a DigitalOcean Ubuntu Droplet.
-2. SSH into it as your deploy user.
-3. Run `deploy/bootstrap-droplet.sh` once.
-4. Make sure `/opt/pm-server` exists and is writable by your deploy user.
-5. Add a DNS record or reverse proxy later if you want a custom domain and TLS.
+1. Create an Ubuntu VPS.
+2. If you want the cheapest suggested option, start with `Hetzner CX23`.
+3. SSH into it as your deploy user.
+4. Run `deploy/bootstrap-vps.sh` once.
+5. Make sure `/opt/pm-server` exists and is writable by your deploy user.
+6. Add a DNS record or reverse proxy later if you want a custom domain and TLS.
 
 ## Required GitHub secrets
 
 Add these secrets to `MECO-Robotics/PM-server`:
 
-- `DROPLET_HOST`: public IP or hostname of the Droplet
-- `DROPLET_USER`: deploy user, for example `root` or `deploy`
-- `DROPLET_SSH_KEY`: private SSH key used by GitHub Actions
+- `VPS_HOST`: public IP or hostname of the server
+- `VPS_USER`: deploy user, for example `root` or `deploy`
+- `VPS_SSH_KEY`: private SSH key used by GitHub Actions
 - `PRODUCTION_ENV_FILE`: full contents of the `.env.production` file
 
 ## Example production env file
@@ -89,7 +101,7 @@ On every push to `main`, GitHub Actions will:
 1. install dependencies
 2. typecheck and build the server
 3. validate the Prisma schema
-4. connect to the Droplet over SSH
+4. connect to the VPS over SSH
 5. sync the repo to `/opt/pm-server`
 6. write `.env.production`
 7. run `docker compose -f docker-compose.prod.yml up -d --build`
