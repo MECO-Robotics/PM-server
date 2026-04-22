@@ -41,6 +41,7 @@ export interface Task {
   subsystemId: string;
   ownerId: string;
   mentorId: string;
+  startDate: string;
   dueDate: string;
   priority: TaskPriority;
   status: TaskStatus;

@@ -96,8 +96,65 @@ jobs:
         env:
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
         run: |
-          printf '%s' "$PRODUCTION_ENV_FILE" > .env.production
-          scp .env.production "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/.env.production"
+          printf '%s' "$PRODUCTION_ENV_FILE" > .env.production.partial
+          scp .env.production.partial "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/.env.production.partial"
+
+      - name: Merge production env file on VPS
+        shell: bash
+        run: |
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
+          set -euo pipefail
+          cd /opt/pm-server
+          python3 - <<'PY'
+          from pathlib import Path
+
+          existing_path = Path(".env.production")
+          incoming_path = Path(".env.production.partial")
+
+          def parse_env(text: str):
+              values = {}
+              for raw_line in text.splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  key, value = line.split("=", 1)
+                  values[key] = value
+              return values
+
+          existing = parse_env(existing_path.read_text() if existing_path.exists() else "")
+          incoming = parse_env(incoming_path.read_text() if incoming_path.exists() else "")
+          merged = {**existing, **incoming}
+
+          ordered_keys = [
+              "NODE_ENV",
+              "PORT",
+              "PUBLIC_PORT",
+              "POSTGRES_DB",
+              "POSTGRES_USER",
+              "POSTGRES_PASSWORD",
+              "DATABASE_URL",
+              "CORS_ORIGIN",
+              "GOOGLE_ALLOWED_HOSTED_DOMAIN",
+              "GOOGLE_CLIENT_ID",
+              "AUTH_JWT_SECRET",
+              "AUTH_TOKEN_TTL",
+          ]
+
+          lines = []
+          seen = set()
+          for key in ordered_keys:
+              if key in merged:
+                  lines.append(f"{key}={merged[key]}")
+                  seen.add(key)
+
+          for key, value in merged.items():
+              if key not in seen:
+                  lines.append(f"{key}={value}")
+
+          existing_path.write_text("\n".join(lines) + "\n")
+          incoming_path.unlink(missing_ok=True)
+          PY
+          EOF
 
       - name: Deploy containers on VPS
         shell: bash
