@@ -21,6 +21,7 @@ import {
   getSnapshot,
   getSubsystems,
   getTasks,
+  removeMember,
   updateManufacturingItem,
   updateMember,
   updatePurchaseItem,
@@ -42,8 +43,8 @@ const taskSchema = z.object({
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
   subsystemId: z.string().min(1),
-  ownerId: z.string().min(1),
-  mentorId: z.string().min(1),
+  ownerId: z.string().trim().min(1).nullable(),
+  mentorId: z.string().trim().min(1).nullable(),
   startDate: z.string().date(),
   dueDate: z.string().date(),
   priority: z.enum(["critical", "high", "medium", "low"]),
@@ -63,7 +64,7 @@ const memberPatchSchema = memberSchema.partial();
 const purchaseItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
-  requestedById: z.string().min(1),
+  requestedById: z.string().trim().min(1).nullable(),
   quantity: z.coerce.number().min(1),
   vendor: z.string().trim().min(2),
   linkLabel: z.string().trim().min(2),
@@ -76,7 +77,7 @@ const purchaseItemPatchSchema = purchaseItemSchema.partial();
 const manufacturingItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
-  requestedById: z.string().min(1),
+  requestedById: z.string().trim().min(1).nullable(),
   process: z.enum(["3d-print", "cnc", "fabrication"]),
   dueDate: z.string().date(),
   material: z.string().trim().min(2),
@@ -369,6 +370,26 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       const member = updateMember(request.params.memberId, parsed.data);
+      if (!member) {
+        return reply.code(404).send({
+          message: "Member not found.",
+        });
+      }
+
+      return {
+        item: member,
+      };
+    },
+  );
+
+  app.delete<{ Params: { memberId: string } }>(
+    "/api/members/:memberId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const member = removeMember(request.params.memberId);
       if (!member) {
         return reply.code(404).send({
           message: "Member not found.",

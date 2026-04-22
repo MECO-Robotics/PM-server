@@ -29,7 +29,7 @@ export interface Member {
 export interface Subsystem {
   id: string;
   name: string;
-  responsibleEngineerId: string;
+  responsibleEngineerId: string | null;
   mentorIds: string[];
   risks: string[];
 }
@@ -39,8 +39,8 @@ export interface Task {
   title: string;
   summary: string;
   subsystemId: string;
-  ownerId: string;
-  mentorId: string;
+  ownerId: string | null;
+  mentorId: string | null;
   startDate: string;
   dueDate: string;
   priority: TaskPriority;
@@ -85,7 +85,7 @@ export interface ManufacturingItem {
   id: string;
   title: string;
   subsystemId: string;
-  requestedById: string;
+  requestedById: string | null;
   process: ManufacturingProcess;
   dueDate: string;
   material: string;
@@ -99,7 +99,7 @@ export interface PurchaseItem {
   id: string;
   title: string;
   subsystemId: string;
-  requestedById: string;
+  requestedById: string | null;
   quantity: number;
   vendor: string;
   linkLabel: string;

@@ -23,8 +23,8 @@ export interface TaskInput {
   title: string;
   summary: string;
   subsystemId: string;
-  ownerId: string;
-  mentorId: string;
+  ownerId: string | null;
+  mentorId: string | null;
   startDate: string;
   dueDate: string;
   priority: TaskPriority;
@@ -47,7 +47,7 @@ export interface MemberInput {
 export interface PurchaseItemInput {
   title: string;
   subsystemId: string;
-  requestedById: string;
+  requestedById: string | null;
   quantity: number;
   vendor: string;
   linkLabel: string;
@@ -60,7 +60,7 @@ export interface PurchaseItemInput {
 export interface ManufacturingItemInput {
   title: string;
   subsystemId: string;
-  requestedById: string;
+  requestedById: string | null;
   process: ManufacturingProcess;
   dueDate: string;
   material: string;
@@ -303,6 +303,56 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
   };
 
   return updatedMember;
+}
+
+export function removeMember(memberId: string) {
+  const member = currentSnapshot.members.find((candidate) => candidate.id === memberId);
+  if (!member) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    members: currentSnapshot.members.filter((candidate) => candidate.id !== memberId),
+    subsystems: currentSnapshot.subsystems.map((subsystem) => ({
+      ...subsystem,
+      responsibleEngineerId:
+        subsystem.responsibleEngineerId === memberId
+          ? null
+          : subsystem.responsibleEngineerId,
+      mentorIds: subsystem.mentorIds.filter((mentorId) => mentorId !== memberId),
+    })),
+    tasks: currentSnapshot.tasks.map((task) => ({
+      ...task,
+      ownerId: task.ownerId === memberId ? null : task.ownerId,
+      mentorId: task.mentorId === memberId ? null : task.mentorId,
+    })),
+    workLogs: currentSnapshot.workLogs.map((workLog) => ({
+      ...workLog,
+      participantIds: workLog.participantIds.filter(
+        (participantId) => participantId !== memberId,
+      ),
+    })),
+    attendanceRecords: currentSnapshot.attendanceRecords.filter(
+      (record) => record.memberId !== memberId,
+    ),
+    manufacturingItems: currentSnapshot.manufacturingItems.map((item) => ({
+      ...item,
+      requestedById: item.requestedById === memberId ? null : item.requestedById,
+    })),
+    purchaseItems: currentSnapshot.purchaseItems.map((item) => ({
+      ...item,
+      requestedById: item.requestedById === memberId ? null : item.requestedById,
+    })),
+    qaReviews: currentSnapshot.qaReviews.map((review) => ({
+      ...review,
+      participantIds: review.participantIds.filter(
+        (participantId) => participantId !== memberId,
+      ),
+    })),
+  };
+
+  return member;
 }
 
 export function findSubsystem(subsystemId: string): Subsystem | undefined {
