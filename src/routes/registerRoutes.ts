@@ -151,6 +151,8 @@ export async function registerRoutes(app: FastifyInstance) {
       members: snapshot.members,
       subsystems: snapshot.subsystems,
       tasks: snapshot.tasks,
+      purchaseItems: snapshot.purchaseItems,
+      manufacturingItems: snapshot.manufacturingItems,
     };
   });
 
