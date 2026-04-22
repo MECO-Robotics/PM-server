@@ -105,7 +105,7 @@ jobs:
           cd /opt/pm-server
           docker --version
           docker compose version
-          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+          docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
           docker image prune -f
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:8080/health > /dev/null; then
@@ -116,6 +116,6 @@ jobs:
             sleep 5
           done
           echo "Application never became healthy."
-          docker compose -f docker-compose.prod.yml ps
+          docker compose --env-file .env.production -f docker-compose.prod.yml ps
           exit 1
           EOF

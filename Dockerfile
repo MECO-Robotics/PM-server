@@ -9,6 +9,8 @@ FROM deps AS build
 WORKDIR /app
 COPY tsconfig.json ./
 COPY src ./src
+ARG DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
+ENV DATABASE_URL=${DATABASE_URL}
 RUN npx prisma generate && npm run build
 
 FROM node:22-alpine AS runner

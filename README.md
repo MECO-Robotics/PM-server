@@ -104,6 +104,6 @@ On every push to `main`, GitHub Actions will:
 4. connect to the VPS over SSH
 5. sync the repo to `/opt/pm-server`
 6. write `.env.production`
-7. run `docker compose -f docker-compose.prod.yml up -d --build`
+7. run `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build`
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
