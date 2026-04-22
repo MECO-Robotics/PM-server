@@ -7,23 +7,32 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 1
 fi
 
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg rsync
+if [[ "${EUID}" -eq 0 ]]; then
+  SUDO=""
+else
+  SUDO="sudo"
+fi
 
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
+${SUDO} apt-get update
+${SUDO} apt-get install -y ca-certificates curl gnupg rsync
+
+${SUDO} install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | ${SUDO} gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+${SUDO} chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  ${SUDO} tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+${SUDO} apt-get update
+${SUDO} apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-sudo usermod -aG docker "$USER"
-sudo mkdir -p /opt/pm-server
-sudo chown -R "$USER:$USER" /opt/pm-server
+if [[ "${EUID}" -ne 0 ]]; then
+  ${SUDO} usermod -aG docker "$USER"
+fi
+
+${SUDO} mkdir -p /opt/pm-server
+${SUDO} chown -R "$USER:$USER" /opt/pm-server
 
 echo "Docker installed. Log out and back in before running docker commands without sudo."
