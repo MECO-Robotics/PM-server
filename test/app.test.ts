@@ -95,6 +95,196 @@ test("buildApp serves health and public auth config without auth enabled", async
     });
 
     assert.equal(dashboardRateLimitedResponse.statusCode, 429);
+
+    resetRequestLimits();
+
+    const partDefinitionResponse = await app.inject({
+      method: "POST",
+      url: "/api/part-definitions",
+      payload: {
+        name: "Route Test Part",
+        partNumber: "TST-900",
+        revision: "A",
+        type: "custom",
+        source: "Onshape",
+        materialId: "mat-onyx-filament",
+        description: "Created from the app test suite.",
+      },
+    });
+
+    assert.equal(partDefinitionResponse.statusCode, 201);
+    const partDefinitionBody = partDefinitionResponse.json() as {
+      item: {
+        description: string;
+        id: string;
+        materialId: string | null;
+      };
+    };
+    assert.equal(partDefinitionBody.item.materialId, "mat-onyx-filament");
+    assert.equal(partDefinitionBody.item.description, "Created from the app test suite.");
+
+    resetRequestLimits();
+
+    const partInstanceResponse = await app.inject({
+      method: "POST",
+      url: "/api/part-instances",
+      payload: {
+        subsystemId: "drive",
+        mechanismId: "swerve-module",
+        partDefinitionId: partDefinitionBody.item.id,
+        name: "Route test part instance",
+        quantity: 2,
+        trackIndividually: true,
+        status: "available",
+      },
+    });
+
+    assert.equal(partInstanceResponse.statusCode, 201);
+    const partInstanceBody = partInstanceResponse.json() as {
+      item: {
+        mechanismId: string | null;
+        status: string;
+        subsystemId: string;
+      };
+    };
+    assert.equal(partInstanceBody.item.mechanismId, "swerve-module");
+    assert.equal(partInstanceBody.item.subsystemId, "drive");
+    assert.equal(partInstanceBody.item.status, "available");
+
+    resetRequestLimits();
+
+    const mismatchedPartInstanceResponse = await app.inject({
+      method: "POST",
+      url: "/api/part-instances",
+      payload: {
+        subsystemId: "manipulator",
+        mechanismId: "swerve-module",
+        partDefinitionId: partDefinitionBody.item.id,
+        name: "Invalid relationship",
+        quantity: 1,
+        trackIndividually: false,
+        status: "planned",
+      },
+    });
+
+    assert.equal(mismatchedPartInstanceResponse.statusCode, 400);
+    assert.match(
+      mismatchedPartInstanceResponse.json().message as string,
+      /does not belong to the selected subsystem/i,
+    );
+
+    resetRequestLimits();
+
+    const bootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(bootstrapResponse.statusCode, 200);
+    const bootstrapBody = bootstrapResponse.json() as {
+      manufacturingItems: Array<{
+        batchLabel?: string;
+        id: string;
+        partDefinitionId: string | null;
+        process: string;
+        status: string;
+        title: string;
+      }>;
+    };
+
+    const seededFabricationItem = bootstrapBody.manufacturingItems.find(
+      (item) => item.id === "frame-weldment",
+    );
+    assert.ok(seededFabricationItem);
+    assert.equal(seededFabricationItem?.process, "fabrication");
+    assert.equal(seededFabricationItem?.partDefinitionId, null);
+    assert.equal(seededFabricationItem?.batchLabel, "FAB-03");
+
+    resetRequestLimits();
+
+    const fabricationCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/manufacturing",
+      payload: {
+        title: "Custom Welded Intake Frame",
+        subsystemId: "manipulator",
+        requestedById: "lucas",
+        process: "fabrication",
+        dueDate: "2026-04-29",
+        material: "1/8 aluminum tube",
+        quantity: 1,
+        status: "requested",
+        mentorReviewed: false,
+        batchLabel: "FAB-04",
+      },
+    });
+
+    assert.equal(fabricationCreateResponse.statusCode, 201);
+    const fabricationCreatedBody = fabricationCreateResponse.json() as {
+      item: {
+        batchLabel?: string;
+        id: string;
+        partDefinitionId: string | null;
+        process: string;
+        status: string;
+        title: string;
+      };
+    };
+    assert.equal(fabricationCreatedBody.item.process, "fabrication");
+    assert.equal(fabricationCreatedBody.item.partDefinitionId, null);
+    assert.equal(fabricationCreatedBody.item.title, "Custom Welded Intake Frame");
+    assert.equal(fabricationCreatedBody.item.batchLabel, "FAB-04");
+
+    resetRequestLimits();
+
+    const fabricationUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/manufacturing/${fabricationCreatedBody.item.id}`,
+      payload: {
+        title: "Custom Welded Intake Frame Rev B",
+        status: "in-progress",
+      },
+    });
+
+    assert.equal(fabricationUpdateResponse.statusCode, 200);
+    const fabricationUpdatedBody = fabricationUpdateResponse.json() as {
+      item: {
+        partDefinitionId: string | null;
+        process: string;
+        status: string;
+        title: string;
+      };
+    };
+    assert.equal(fabricationUpdatedBody.item.process, "fabrication");
+    assert.equal(fabricationUpdatedBody.item.partDefinitionId, null);
+    assert.equal(fabricationUpdatedBody.item.title, "Custom Welded Intake Frame Rev B");
+    assert.equal(fabricationUpdatedBody.item.status, "in-progress");
+
+    resetRequestLimits();
+
+    const bootstrapAfterUpdateResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(bootstrapAfterUpdateResponse.statusCode, 200);
+    const bootstrapAfterUpdateBody = bootstrapAfterUpdateResponse.json() as {
+      manufacturingItems: Array<{
+        id: string;
+        partDefinitionId: string | null;
+        process: string;
+        status: string;
+        title: string;
+      }>;
+    };
+
+    const createdFabricationItem = bootstrapAfterUpdateBody.manufacturingItems.find(
+      (item) => item.title === "Custom Welded Intake Frame Rev B",
+    );
+    assert.ok(createdFabricationItem);
+    assert.equal(createdFabricationItem?.process, "fabrication");
+    assert.equal(createdFabricationItem?.partDefinitionId, null);
+    assert.equal(createdFabricationItem?.status, "in-progress");
   } finally {
     await app.close();
     resetRequestLimits();

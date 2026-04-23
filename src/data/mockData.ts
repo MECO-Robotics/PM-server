@@ -180,6 +180,8 @@ export const snapshot: PlatformSnapshot = {
       revision: "B",
       type: "custom",
       source: "Onshape",
+      materialId: "mat-onyx-filament",
+      description: "Printed bracket for the front-left and mirrored swerve encoder mounts.",
     },
     {
       id: "pd-intake-guard",
@@ -188,6 +190,8 @@ export const snapshot: PlatformSnapshot = {
       revision: "C",
       type: "custom",
       source: "Onshape",
+      materialId: "mat-1-8-polycarbonate",
+      description: "Cut guard plate that protects the intake path and maintains pulley clearance.",
     },
     {
       id: "pd-pdh-label-sheet",
@@ -196,6 +200,8 @@ export const snapshot: PlatformSnapshot = {
       revision: "A",
       type: "custom",
       source: "Print template",
+      materialId: null,
+      description: "Printable breaker and power distribution labeling sheet.",
     },
     {
       id: "pd-polycarbonate-sheet",
@@ -204,6 +210,8 @@ export const snapshot: PlatformSnapshot = {
       revision: "A",
       type: "stock",
       source: "McMaster-Carr",
+      materialId: "mat-1-8-polycarbonate",
+      description: "Stock sheet used for guards, panels, and fabrication prototypes.",
     },
     {
       id: "pd-ferrule-refill-kit",
@@ -212,6 +220,8 @@ export const snapshot: PlatformSnapshot = {
       revision: "A",
       type: "kit",
       source: "AutomationDirect",
+      materialId: "mat-ferrules",
+      description: "Electrical ferrule refill stock for wire termination work.",
     },
     {
       id: "pd-sprocket-service-pack",
@@ -220,6 +230,8 @@ export const snapshot: PlatformSnapshot = {
       revision: "A",
       type: "service kit",
       source: "REV Robotics",
+      materialId: "mat-m3-hardware",
+      description: "Hardware and replacement pieces used for drive service work.",
     },
   ],
   partInstances: [
@@ -231,6 +243,7 @@ export const snapshot: PlatformSnapshot = {
       name: "Front-left encoder bracket",
       quantity: 1,
       trackIndividually: true,
+      status: "installed",
     },
     {
       id: "pi-intake-guard-set",
@@ -240,6 +253,7 @@ export const snapshot: PlatformSnapshot = {
       name: "Intake guard side plate set",
       quantity: 4,
       trackIndividually: false,
+      status: "available",
     },
     {
       id: "pi-pdh-label-set",
@@ -249,6 +263,7 @@ export const snapshot: PlatformSnapshot = {
       name: "Robot power label set",
       quantity: 1,
       trackIndividually: false,
+      status: "installed",
     },
   ],
   events: [
@@ -465,7 +480,7 @@ export const snapshot: PlatformSnapshot = {
   manufacturingItems: [
     {
       id: "sensor-bracket",
-      title: "Swerve sensor bracket",
+      title: "Swerve Encoder Bracket",
       subsystemId: "drive",
       requestedById: "ava",
       process: "3d-print",
@@ -478,7 +493,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       id: "guard-cnc",
-      title: "Intake guard side plates",
+      title: "Intake Guard Plate",
       subsystemId: "manipulator",
       requestedById: "lucas",
       process: "cnc",
@@ -490,11 +505,25 @@ export const snapshot: PlatformSnapshot = {
       mentorReviewed: true,
       batchLabel: "B-17",
     },
+    {
+      id: "frame-weldment",
+      title: "Intake Frame Weldment",
+      subsystemId: "manipulator",
+      requestedById: "lucas",
+      process: "fabrication",
+      dueDate: "2026-04-28",
+      material: "1/8 aluminum tube",
+      partDefinitionId: null,
+      quantity: 1,
+      status: "requested",
+      mentorReviewed: false,
+      batchLabel: "FAB-03",
+    },
   ],
   purchaseItems: [
     {
       id: "polycarb-sheet",
-      title: "Polycarbonate sheet for guard rework",
+      title: "Polycarbonate Sheet",
       subsystemId: "manipulator",
       requestedById: "lucas",
       partDefinitionId: "pd-polycarbonate-sheet",
@@ -507,7 +536,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       id: "ferrule-kit",
-      title: "Ferrule refill kit",
+      title: "Ferrule Refill Kit",
       subsystemId: "electrical",
       requestedById: "priya",
       partDefinitionId: "pd-ferrule-refill-kit",
@@ -520,7 +549,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       id: "sprocket-pack",
-      title: "Sprocket service pack",
+      title: "Sprocket Service Pack",
       subsystemId: "drive",
       requestedById: "ava",
       partDefinitionId: "pd-sprocket-service-pack",
@@ -549,7 +578,7 @@ export const snapshot: PlatformSnapshot = {
       id: "qa-2",
       subjectId: "sensor-bracket",
       subjectType: "manufacturing",
-      subjectTitle: "Swerve sensor bracket",
+      subjectTitle: "Swerve Encoder Bracket",
       participantIds: ["ava", "jordan"],
       result: "pass",
       mentorApproved: true,

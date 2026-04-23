@@ -18,6 +18,8 @@ import {
   createMaterial,
   createMember,
   createMechanism,
+  createPartDefinition,
+  createPartInstance,
   createSubsystem,
   createPurchaseItem,
   createTask,
@@ -44,10 +46,14 @@ import {
   removeMaterial,
   removeMember,
   removeMechanism,
+  removePartDefinition,
+  removePartInstance,
   updateManufacturingItem,
   updateMaterial,
   updateMember,
   updateMechanism,
+  updatePartDefinition,
+  updatePartInstance,
   updateSubsystem,
   updatePurchaseItem,
   updateTask,
@@ -106,6 +112,26 @@ const mechanismSchema = z.object({
   description: z.string().trim().min(3),
 });
 const mechanismPatchSchema = mechanismSchema.partial();
+const partDefinitionSchema = z.object({
+  name: z.string().trim().min(2),
+  partNumber: z.string().trim().min(1),
+  revision: z.string().trim().min(1),
+  type: z.string().trim().min(1),
+  source: z.string().trim().min(1),
+  materialId: z.string().trim().min(1).nullable().optional(),
+  description: z.string().trim().default(""),
+});
+const partDefinitionPatchSchema = partDefinitionSchema.partial();
+const partInstanceSchema = z.object({
+  subsystemId: z.string().trim().min(1),
+  mechanismId: z.string().trim().min(1).nullable().optional(),
+  partDefinitionId: z.string().trim().min(1),
+  name: z.string().trim().min(2),
+  quantity: z.coerce.number().min(1),
+  trackIndividually: z.boolean().default(false),
+  status: z.enum(["planned", "needed", "available", "installed", "retired"]),
+});
+const partInstancePatchSchema = partInstanceSchema.partial();
 const purchaseItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
@@ -146,7 +172,7 @@ const manufacturingItemSchema = z.object({
   process: z.enum(["3d-print", "cnc", "fabrication"]),
   dueDate: z.string().date(),
   material: z.string().trim().min(2),
-  partDefinitionId: z.string().trim().min(1).nullable(),
+  partDefinitionId: z.string().trim().min(1).nullable().optional(),
   quantity: z.coerce.number().min(1),
   status: z.enum(["requested", "approved", "in-progress", "qa", "complete"]),
   mentorReviewed: z.boolean().default(false),
@@ -248,6 +274,14 @@ function validateTaskLinks(input: {
     if (partInstance.subsystemId !== input.subsystemId) {
       return "The selected part instance does not belong to the selected subsystem.";
     }
+
+    if (!input.mechanismId) {
+      return "The selected part instance must be linked to a mechanism.";
+    }
+
+    if (partInstance.mechanismId && partInstance.mechanismId !== input.mechanismId) {
+      return "The selected part instance does not belong to the selected mechanism.";
+    }
   }
 
   if (input.targetEventId) {
@@ -262,19 +296,54 @@ function validateTaskLinks(input: {
 
 function validatePartDefinitionLink(partDefinitionId: string | null | undefined) {
   if (!partDefinitionId) {
-    return "The selected part does not exist.";
+    return "Please select a real part from the Parts tab.";
   }
 
   if (!findPartDefinition(partDefinitionId)) {
-    return "The selected part does not exist.";
+    return "Please select a real part from the Parts tab.";
   }
 
   return null;
 }
 
+function validatePartDefinitionMaterialId(materialId: string | null | undefined) {
+  if (materialId === undefined || materialId === null) {
+    return null;
+  }
+
+  if (!findMaterial(materialId)) {
+    return "The selected material does not exist.";
+  }
+
+  return null;
+}
+
+function validatePartInstanceLinks(input: {
+  subsystemId: string;
+  mechanismId?: string | null | undefined;
+  partDefinitionId: string;
+}) {
+  if (!findSubsystem(input.subsystemId)) {
+    return "The selected subsystem does not exist.";
+  }
+
+  if (input.mechanismId) {
+    const mechanism = findMechanism(input.mechanismId);
+    if (!mechanism) {
+      return "The selected mechanism does not exist.";
+    }
+
+    if (mechanism.subsystemId !== input.subsystemId) {
+      return "The selected mechanism does not belong to the selected subsystem.";
+    }
+  }
+
+  return validatePartDefinitionLink(input.partDefinitionId);
+}
+
 function validatePurchaseItemLinks(input: {
   subsystemId: string;
-  partDefinitionId: string | null | undefined;
+  partDefinitionId?: string | null | undefined;
 }) {
   if (!findSubsystem(input.subsystemId)) {
     return "The selected subsystem does not exist.";
@@ -286,7 +355,7 @@ function validatePurchaseItemLinks(input: {
 function validateManufacturingItemLinks(input: {
   subsystemId: string;
   process: string;
-  partDefinitionId: string | null | undefined;
+  partDefinitionId?: string | null | undefined;
 }) {
   if (!findSubsystem(input.subsystemId)) {
     return "The selected subsystem does not exist.";
@@ -973,6 +1042,226 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get("/api/part-definitions", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getPartDefinitions(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/part-definitions", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = partDefinitionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Part definition payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const materialError = validatePartDefinitionMaterialId(parsed.data.materialId ?? null);
+    if (materialError) {
+      return reply.code(400).send({
+        message: materialError,
+      });
+    }
+
+    const partDefinition = createPartDefinition({
+      ...parsed.data,
+      materialId: parsed.data.materialId ?? null,
+      description: parsed.data.description ?? "",
+    });
+
+    return reply.code(201).send({
+      item: partDefinition,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { partDefinitionId: string } }>(
+    "/api/part-definitions/:partDefinitionId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = partDefinitionPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Part definition update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentPartDefinition = findPartDefinition(request.params.partDefinitionId);
+      if (!currentPartDefinition) {
+        return reply.code(404).send({
+          message: "Part definition not found.",
+        });
+      }
+
+      const nextMaterialId =
+        parsed.data.materialId === undefined
+          ? currentPartDefinition.materialId
+          : parsed.data.materialId;
+      const materialError = validatePartDefinitionMaterialId(nextMaterialId);
+      if (materialError) {
+        return reply.code(400).send({
+          message: materialError,
+        });
+      }
+
+      const partDefinition = updatePartDefinition(request.params.partDefinitionId, {
+        ...parsed.data,
+        materialId: nextMaterialId ?? null,
+        description: parsed.data.description ?? currentPartDefinition.description,
+      });
+
+      return {
+        item: partDefinition,
+      };
+    },
+  );
+
+  app.delete<{ Params: { partDefinitionId: string } }>(
+    "/api/part-definitions/:partDefinitionId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const partDefinition = removePartDefinition(request.params.partDefinitionId);
+      if (!partDefinition) {
+        return reply.code(404).send({
+          message: "Part definition not found.",
+        });
+      }
+
+      return {
+        item: partDefinition,
+      };
+    },
+  );
+
+  app.get("/api/part-instances", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getPartInstances(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/part-instances", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = partInstanceSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Part instance payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validatePartInstanceLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const partInstance = createPartInstance({
+      ...parsed.data,
+      mechanismId: parsed.data.mechanismId ?? null,
+    });
+
+    return reply.code(201).send({
+      item: partInstance,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { partInstanceId: string } }>(
+    "/api/part-instances/:partInstanceId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = partInstancePatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Part instance update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentPartInstance = findPartInstance(request.params.partInstanceId);
+      if (!currentPartInstance) {
+        return reply.code(404).send({
+          message: "Part instance not found.",
+        });
+      }
+
+      const nextPartInstanceShape = {
+        subsystemId: parsed.data.subsystemId ?? currentPartInstance.subsystemId,
+        mechanismId:
+          parsed.data.mechanismId === undefined
+            ? currentPartInstance.mechanismId
+            : parsed.data.mechanismId,
+        partDefinitionId:
+          parsed.data.partDefinitionId === undefined
+            ? currentPartInstance.partDefinitionId
+            : parsed.data.partDefinitionId,
+      };
+
+      const validationError = validatePartInstanceLinks(nextPartInstanceShape);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const partInstance = updatePartInstance(request.params.partInstanceId, {
+        ...parsed.data,
+        subsystemId: nextPartInstanceShape.subsystemId,
+        mechanismId: nextPartInstanceShape.mechanismId ?? null,
+        partDefinitionId: nextPartInstanceShape.partDefinitionId,
+      });
+
+      return {
+        item: partInstance,
+      };
+    },
+  );
+
+  app.delete<{ Params: { partInstanceId: string } }>(
+    "/api/part-instances/:partInstanceId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const partInstance = removePartInstance(request.params.partInstanceId);
+      if (!partInstance) {
+        return reply.code(404).send({
+          message: "Part instance not found.",
+        });
+      }
+
+      return {
+        item: partInstance,
+      };
+    },
+  );
+
   app.get("/api/meetings", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -1023,10 +1312,19 @@ export async function registerRoutes(app: FastifyInstance) {
     const partDefinition = parsed.data.partDefinitionId
       ? findPartDefinition(parsed.data.partDefinitionId)
       : null;
+    if (!partDefinition && parsed.data.process !== "fabrication") {
+      return reply.code(400).send({
+        message: "Please select a real part from the Parts tab.",
+      });
+    }
 
     const item = createManufacturingItem({
       ...parsed.data,
-      title: partDefinition?.name ?? parsed.data.title,
+      partDefinitionId: parsed.data.partDefinitionId ?? null,
+      title:
+        parsed.data.process === "fabrication"
+          ? parsed.data.title
+          : partDefinition?.name ?? parsed.data.title,
     });
     return reply.code(201).send({
       item,
@@ -1074,10 +1372,18 @@ export async function registerRoutes(app: FastifyInstance) {
       const partDefinition = nextItemShape.partDefinitionId
         ? findPartDefinition(nextItemShape.partDefinitionId)
         : null;
+      if (!partDefinition && nextItemShape.process !== "fabrication") {
+        return reply.code(400).send({
+          message: "Please select a real part from the Parts tab.",
+        });
+      }
 
       const item = updateManufacturingItem(request.params.itemId, {
         ...parsed.data,
-        title: partDefinition?.name ?? parsed.data.title ?? currentItem.title,
+        title:
+          nextItemShape.process === "fabrication"
+            ? parsed.data.title ?? currentItem.title
+            : partDefinition?.name ?? parsed.data.title ?? currentItem.title,
       });
 
       return {
@@ -1119,6 +1425,11 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const partDefinition = findPartDefinition(parsed.data.partDefinitionId);
+    if (!partDefinition) {
+      return reply.code(400).send({
+        message: "Please select a real part from the Parts tab.",
+      });
+    }
 
     const item = createPurchaseItem({
       ...parsed.data,
@@ -1166,7 +1477,18 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
+      if (!nextItemShape.partDefinitionId) {
+        return reply.code(400).send({
+          message: "Please select a real part from the Parts tab.",
+        });
+      }
+
       const partDefinition = findPartDefinition(nextItemShape.partDefinitionId);
+      if (!partDefinition) {
+        return reply.code(400).send({
+          message: "Please select a real part from the Parts tab.",
+        });
+      }
 
       const item = updatePurchaseItem(request.params.itemId, {
         ...parsed.data,

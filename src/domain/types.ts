@@ -40,6 +40,12 @@ export type PurchaseStatus =
   | "purchased"
   | "shipped"
   | "delivered";
+export type PartInstanceStatus =
+  | "planned"
+  | "needed"
+  | "available"
+  | "installed"
+  | "retired";
 export type QaResult = "pass" | "minor-fix" | "iteration-worthy";
 
 export interface Member {
@@ -87,6 +93,8 @@ export interface PartDefinition {
   revision: string;
   type: string;
   source: string;
+  materialId: string | null;
+  description: string;
 }
 
 export interface PartInstance {
@@ -97,6 +105,7 @@ export interface PartInstance {
   name: string;
   quantity: number;
   trackIndividually: boolean;
+  status: PartInstanceStatus;
 }
 
 export interface Material {

@@ -110,6 +110,26 @@ export interface MechanismInput {
   description: string;
 }
 
+export interface PartDefinitionInput {
+  name: string;
+  partNumber: string;
+  revision: string;
+  type: string;
+  source: string;
+  materialId: string | null;
+  description: string;
+}
+
+export interface PartInstanceInput {
+  subsystemId: string;
+  mechanismId: string | null;
+  partDefinitionId: string;
+  name: string;
+  quantity: number;
+  trackIndividually: boolean;
+  status: PartInstance["status"];
+}
+
 function toSlug(value: string) {
   return value
     .toLowerCase()
@@ -292,6 +312,105 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
   return updatedSubsystem;
 }
 
+export function createPartDefinition(input: PartDefinitionInput) {
+  const partDefinitionIds = new Set(
+    currentSnapshot.partDefinitions.map((partDefinition) => partDefinition.id),
+  );
+  const partDefinition: PartDefinition = {
+    id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
+    name: input.name,
+    partNumber: input.partNumber,
+    revision: input.revision,
+    type: input.type,
+    source: input.source,
+    materialId: input.materialId,
+    description: input.description,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partDefinitions: [...currentSnapshot.partDefinitions, partDefinition],
+  };
+
+  return partDefinition;
+}
+
+export function updatePartDefinition(
+  partDefinitionId: string,
+  input: Partial<PartDefinitionInput>,
+) {
+  let updatedPartDefinition: PartDefinition | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partDefinitions: currentSnapshot.partDefinitions.map((partDefinition) => {
+      if (partDefinition.id !== partDefinitionId) {
+        return partDefinition;
+      }
+
+      updatedPartDefinition = {
+        ...partDefinition,
+        ...input,
+      };
+
+      return updatedPartDefinition;
+    }),
+  };
+
+  return updatedPartDefinition;
+}
+
+export function removePartDefinition(partDefinitionId: string) {
+  const partDefinition = currentSnapshot.partDefinitions.find(
+    (candidate) => candidate.id === partDefinitionId,
+  );
+  if (!partDefinition) {
+    return null;
+  }
+
+  const removedPartInstanceIds = new Set(
+    currentSnapshot.partInstances
+      .filter((partInstance) => partInstance.partDefinitionId === partDefinitionId)
+      .map((partInstance) => partInstance.id),
+  );
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partDefinitions: currentSnapshot.partDefinitions.filter(
+      (candidate) => candidate.id !== partDefinitionId,
+    ),
+    partInstances: currentSnapshot.partInstances.filter(
+      (partInstance) => partInstance.partDefinitionId !== partDefinitionId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) =>
+      removedPartInstanceIds.has(task.partInstanceId ?? "")
+        ? {
+            ...task,
+            partInstanceId: null,
+          }
+        : task,
+    ),
+    manufacturingItems: currentSnapshot.manufacturingItems.map((item) =>
+      item.partDefinitionId === partDefinitionId
+        ? {
+            ...item,
+            partDefinitionId: null,
+          }
+        : item,
+    ),
+    purchaseItems: currentSnapshot.purchaseItems.map((item) =>
+      item.partDefinitionId === partDefinitionId
+        ? {
+            ...item,
+            partDefinitionId: null,
+          }
+        : item,
+    ),
+  };
+
+  return partDefinition;
+}
+
 export function createMechanism(input: MechanismInput) {
   const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
   const mechanism: Mechanism = {
@@ -307,6 +426,97 @@ export function createMechanism(input: MechanismInput) {
   };
 
   return mechanism;
+}
+
+export function createPartInstance(input: PartInstanceInput) {
+  const partInstanceIds = new Set(
+    currentSnapshot.partInstances.map((partInstance) => partInstance.id),
+  );
+  const partInstance: PartInstance = {
+    id: uniqueId(toSlug(input.name) || "part-instance", partInstanceIds),
+    subsystemId: input.subsystemId,
+    mechanismId: input.mechanismId,
+    partDefinitionId: input.partDefinitionId,
+    name: input.name,
+    quantity: input.quantity,
+    trackIndividually: input.trackIndividually,
+    status: input.status,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partInstances: [...currentSnapshot.partInstances, partInstance],
+  };
+
+  return partInstance;
+}
+
+export function updatePartInstance(
+  partInstanceId: string,
+  input: Partial<PartInstanceInput>,
+) {
+  let updatedPartInstance: PartInstance | null = null;
+
+  const currentPartInstance = currentSnapshot.partInstances.find(
+    (partInstance) => partInstance.id === partInstanceId,
+  );
+  if (!currentPartInstance) {
+    return null;
+  }
+
+  const nextMechanismId =
+    input.mechanismId === undefined ? currentPartInstance.mechanismId : input.mechanismId;
+  const nextSubsystemId =
+    input.subsystemId ??
+    (nextMechanismId
+      ? findMechanism(nextMechanismId)?.subsystemId ?? currentPartInstance.subsystemId
+      : currentPartInstance.subsystemId);
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partInstances: currentSnapshot.partInstances.map((partInstance) => {
+      if (partInstance.id !== partInstanceId) {
+        return partInstance;
+      }
+
+      updatedPartInstance = {
+        ...partInstance,
+        ...input,
+        subsystemId: nextSubsystemId,
+        mechanismId: nextMechanismId,
+      };
+
+      return updatedPartInstance;
+    }),
+  };
+
+  return updatedPartInstance;
+}
+
+export function removePartInstance(partInstanceId: string) {
+  const partInstance = currentSnapshot.partInstances.find(
+    (candidate) => candidate.id === partInstanceId,
+  );
+  if (!partInstance) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partInstances: currentSnapshot.partInstances.filter(
+      (candidate) => candidate.id !== partInstanceId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) =>
+      task.partInstanceId === partInstanceId
+        ? {
+            ...task,
+            partInstanceId: null,
+          }
+        : task,
+    ),
+  };
+
+  return partInstance;
 }
 
 export function updateMechanism(mechanismId: string, input: Partial<MechanismInput>) {
