@@ -1,4 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { createHash, randomInt } from "node:crypto";
+import nodemailer from "nodemailer";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
@@ -7,23 +9,51 @@ import { authConfig, env } from "../config/env";
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
 
-const googleClient = authConfig.googleClientId
-  ? new OAuth2Client(authConfig.googleClientId)
-  : null;
-
-export interface SessionUser {
-  googleUserId: string;
-  email: string;
-  name: string;
-  picture: string | null;
-  hostedDomain: string;
-}
+const googleClient =
+  authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
+const emailTransport =
+  authConfig.emailEnabled && env.AUTH_EMAIL_SMTP_HOST && env.AUTH_EMAIL_FROM
+    ? nodemailer.createTransport({
+        host: env.AUTH_EMAIL_SMTP_HOST,
+        port: env.AUTH_EMAIL_SMTP_PORT,
+        secure: env.AUTH_EMAIL_SMTP_PORT === 465,
+        auth:
+          env.AUTH_EMAIL_SMTP_USER && env.AUTH_EMAIL_SMTP_PASS
+            ? {
+                user: env.AUTH_EMAIL_SMTP_USER,
+                pass: env.AUTH_EMAIL_SMTP_PASS,
+              }
+            : undefined,
+      })
+    : null;
 
 interface SessionClaims extends JwtPayload {
   email: string;
   name: string;
   picture?: string | null;
   hd: string;
+  provider?: "google" | "email";
+}
+
+interface PendingEmailCodeRecord {
+  codeHash: string;
+  expiresAt: number;
+  resendAfterAt: number;
+  failedAttempts: number;
+}
+
+export interface SessionUser {
+  accountId: string;
+  authProvider: "google" | "email";
+  email: string;
+  name: string;
+  picture: string | null;
+  hostedDomain: string;
+}
+
+export interface EmailCodeDelivery {
+  sentTo: string;
+  expiresInMinutes: number;
 }
 
 export class AuthError extends Error {
@@ -36,11 +66,14 @@ export class AuthError extends Error {
   }
 }
 
+const pendingEmailCodes = new Map<string, PendingEmailCodeRecord>();
+
 export function getPublicAuthConfig() {
   return {
     enabled: authConfig.enabled,
-    googleClientId: authConfig.googleClientId,
+    googleClientId: authConfig.enabled ? authConfig.googleClientId : null,
     hostedDomain: authConfig.hostedDomain,
+    emailEnabled: authConfig.enabled && authConfig.emailEnabled,
   };
 }
 
@@ -50,20 +83,129 @@ export function isAuthEnabled() {
 
 function getJwtSecret() {
   if (!env.AUTH_JWT_SECRET) {
-    throw new AuthError("Google SSO is not configured on the server yet.", 503);
+    throw new AuthError("MECO sign-in is not configured on the server yet.", 503);
   }
 
   return env.AUTH_JWT_SECRET;
 }
 
-function assertAuthReady() {
-  if (!authConfig.enabled || !googleClient || !authConfig.googleClientId) {
-    throw new AuthError("Google SSO is not configured on the server yet.", 503);
+function assertGoogleAuthReady() {
+  if (!authConfig.enabled || !googleClient || authConfig.googleClientIds.length === 0) {
+    throw new AuthError("Google sign-in is not configured on the server yet.", 503);
   }
 
   return {
     client: googleClient,
     googleClientId: authConfig.googleClientId,
+    googleClientIds: authConfig.googleClientIds,
+  };
+}
+
+function assertEmailAuthReady() {
+  if (!authConfig.enabled || !authConfig.emailEnabled || !emailTransport) {
+    throw new AuthError("Email sign-in is not configured on the server yet.", 503);
+  }
+
+  if (!env.AUTH_EMAIL_FROM) {
+    throw new AuthError("Email sign-in is not configured on the server yet.", 503);
+  }
+
+  return {
+    from: env.AUTH_EMAIL_FROM,
+    transport: emailTransport,
+  };
+}
+
+function normalizeEmailAddress(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isAllowedHostedDomain(email: string) {
+  const [, domain = ""] = email.split("@", 2);
+  return domain === authConfig.hostedDomain;
+}
+
+function formatEmailLocalPart(localPart: string) {
+  if (localPart.length <= 1) {
+    return "*";
+  }
+
+  if (localPart.length === 2) {
+    return `${localPart[0]}*`;
+  }
+
+  return `${localPart[0]}***${localPart.slice(-1)}`;
+}
+
+function maskEmailAddress(email: string) {
+  const [localPart, domain = ""] = email.split("@", 2);
+  return `${formatEmailLocalPart(localPart)}@${domain}`;
+}
+
+function hashVerificationCode(code: string) {
+  return createHash("sha256").update(code).digest("hex");
+}
+
+function generateVerificationCode() {
+  const upperBound = 10 ** authConfig.emailCodeLength;
+  return randomInt(0, upperBound)
+    .toString()
+    .padStart(authConfig.emailCodeLength, "0");
+}
+
+function buildEmailVerificationMessage(code: string) {
+  return [
+    `Your MECO Robotics sign-in code is ${code}.`,
+    "",
+    `This code expires in ${authConfig.emailCodeTtlMinutes} minutes.`,
+    "If you did not request this code, you can ignore this email.",
+  ].join("\n");
+}
+
+function buildEmailVerificationHtml(code: string) {
+  return `
+    <div style="font-family: Arial, sans-serif; color: #11213d; line-height: 1.5">
+      <h2 style="margin: 0 0 12px">Your MECO Robotics sign-in code</h2>
+      <p style="margin: 0 0 16px">Use this code to finish signing in with your MECO email address.</p>
+      <p style="margin: 0 0 16px; font-size: 28px; letter-spacing: 0.24em; font-weight: 700">${code}</p>
+      <p style="margin: 0 0 8px">It expires in ${authConfig.emailCodeTtlMinutes} minutes.</p>
+      <p style="margin: 0">If you did not request this code, you can safely ignore this message.</p>
+    </div>
+  `;
+}
+
+function getPendingEmailCode(email: string) {
+  const record = pendingEmailCodes.get(email);
+  if (!record) {
+    return null;
+  }
+
+  if (Date.now() >= record.expiresAt) {
+    pendingEmailCodes.delete(email);
+    return null;
+  }
+
+  return record;
+}
+
+function pruneFailedAttempts(email: string, record: PendingEmailCodeRecord) {
+  if (record.failedAttempts >= authConfig.emailMaxVerifyAttempts) {
+    pendingEmailCodes.delete(email);
+    throw new AuthError(
+      "Too many incorrect attempts. Request a new code and try again.",
+      429,
+    );
+  }
+}
+
+function buildEmailSessionUser(email: string): SessionUser {
+  return {
+    accountId: email,
+    authProvider: "email",
+    email,
+    name: email,
+    picture: null,
+    hostedDomain: authConfig.hostedDomain,
   };
 }
 
@@ -85,7 +227,8 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
   }
 
   return {
-    googleUserId: payload.sub,
+    accountId: payload.sub,
+    authProvider: "google",
     email: payload.email.toLowerCase(),
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
@@ -94,13 +237,153 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
 }
 
 export async function verifyGoogleCredential(credential: string) {
-  const { client, googleClientId } = assertAuthReady();
-  const ticket = await client.verifyIdToken({
-    idToken: credential,
-    audience: googleClientId,
-  });
+  const { client, googleClientIds } = assertGoogleAuthReady();
+
+  let ticket;
+  try {
+    ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: googleClientIds,
+    });
+  } catch (error) {
+    throw toAuthError(error);
+  }
 
   return mapGooglePayload(ticket.getPayload());
+}
+
+export async function requestEmailSignInCode(emailInput: string): Promise<EmailCodeDelivery> {
+  const { from, transport } = assertEmailAuthReady();
+  const email = normalizeEmailAddress(emailInput);
+
+  if (!isAllowedHostedDomain(email)) {
+    throw new AuthError(
+      `Use your ${authConfig.hostedDomain} email address to continue.`,
+      403,
+    );
+  }
+
+  const now = Date.now();
+  const existing = getPendingEmailCode(email);
+  if (existing && now < existing.resendAfterAt) {
+    const secondsRemaining = Math.max(
+      1,
+      Math.ceil((existing.resendAfterAt - now) / 1000),
+    );
+    throw new AuthError(
+      `A code was already sent to that address. Try again in ${secondsRemaining} seconds.`,
+      429,
+    );
+  }
+
+  const code = generateVerificationCode();
+  const record: PendingEmailCodeRecord = {
+    codeHash: hashVerificationCode(code),
+    expiresAt: now + authConfig.emailCodeTtlMinutes * 60 * 1000,
+    resendAfterAt: now + authConfig.emailCodeResendCooldownSeconds * 1000,
+    failedAttempts: 0,
+  };
+
+  pendingEmailCodes.set(email, record);
+
+  try {
+    await transport.sendMail({
+      from,
+      to: email,
+      subject: "Your MECO Robotics sign-in code",
+      text: buildEmailVerificationMessage(code),
+      html: buildEmailVerificationHtml(code),
+    });
+  } catch {
+    pendingEmailCodes.delete(email);
+    requestEmailDeliveryFailure();
+  }
+
+  return {
+    sentTo: maskEmailAddress(email),
+    expiresInMinutes: authConfig.emailCodeTtlMinutes,
+  };
+}
+
+export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
+  assertEmailAuthReady();
+
+  const email = normalizeEmailAddress(emailInput);
+  if (!isAllowedHostedDomain(email)) {
+    throw new AuthError(
+      `Use your ${authConfig.hostedDomain} email address to continue.`,
+      403,
+    );
+  }
+
+  const code = codeInput.trim();
+  if (code.length !== authConfig.emailCodeLength) {
+    throw new AuthError("The sign-in code is the wrong length.", 400);
+  }
+
+  const record = getPendingEmailCode(email);
+  if (!record) {
+    throw new AuthError(
+      "The sign-in code expired or is no longer valid. Request a new code and try again.",
+      401,
+    );
+  }
+
+  if (hashVerificationCode(code) !== record.codeHash) {
+    record.failedAttempts += 1;
+    pruneFailedAttempts(email, record);
+    pendingEmailCodes.set(email, record);
+    throw new AuthError(
+      "The sign-in code was incorrect. Please check your email and try again.",
+      401,
+    );
+  }
+
+  pendingEmailCodes.delete(email);
+  return buildEmailSessionUser(email);
+}
+
+function toAuthError(error: unknown) {
+  if (error instanceof AuthError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("wrong recipient") ||
+    normalized.includes("audience") ||
+    normalized.includes("jwt audience invalid")
+  ) {
+    return new AuthError(
+      "Google returned a credential for a different client ID. Make sure the frontend Google client ID matches the server GOOGLE_CLIENT_ID.",
+      401,
+    );
+  }
+
+  if (
+    normalized.includes("token used too late") ||
+    normalized.includes("expired") ||
+    normalized.includes("invalid token")
+  ) {
+    return new AuthError(
+      "The Google credential is invalid or expired. Please try signing in again.",
+      401,
+    );
+  }
+
+  return new AuthError(
+    "The Google credential could not be verified. Confirm that your localhost origin is allowed in Google Cloud Console and that GOOGLE_CLIENT_ID matches the frontend client ID.",
+    401,
+  );
+}
+
+function requestEmailDeliveryFailure(): never {
+  throw new AuthError(
+    "The verification email could not be sent. Please try again later.",
+    503,
+  );
 }
 
 export function signSessionToken(user: SessionUser) {
@@ -112,10 +395,11 @@ export function signSessionToken(user: SessionUser) {
       name: user.name,
       picture: user.picture,
       hd: user.hostedDomain,
+      provider: user.authProvider,
     },
     secret,
     {
-      subject: user.googleUserId,
+      subject: user.accountId,
       expiresIn: authConfig.tokenTtl as SignOptions["expiresIn"],
       issuer: SESSION_ISSUER,
       audience: SESSION_AUDIENCE,
@@ -139,15 +423,20 @@ export function verifySessionToken(token: string): SessionUser {
     throw new AuthError("The session token is missing required identity fields.", 401);
   }
 
+  if (payload.provider && payload.provider !== "google" && payload.provider !== "email") {
+    throw new AuthError("The session token uses an unknown sign-in provider.", 401);
+  }
+
   if (payload.hd.toLowerCase() !== authConfig.hostedDomain) {
     throw new AuthError(
-      `Sign in with a ${authConfig.hostedDomain} Google account to continue.`,
+      `Sign in with a ${authConfig.hostedDomain} account to continue.`,
       403,
     );
   }
 
   return {
-    googleUserId: payload.sub,
+    accountId: payload.sub,
+    authProvider: payload.provider ?? "google",
     email: payload.email.toLowerCase(),
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
@@ -185,7 +474,7 @@ export function requireSession(request: FastifyRequest, reply: FastifyReply) {
   const session = getSessionFromRequest(request);
   if (!session) {
     reply.code(401).send({
-      message: `Sign in with a ${authConfig.hostedDomain} Google account to continue.`,
+      message: `Sign in with your ${authConfig.hostedDomain} account to continue.`,
     });
     return null;
   }

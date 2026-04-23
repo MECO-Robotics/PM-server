@@ -100,6 +100,9 @@ export function buildMetrics(snapshot: PlatformSnapshot) {
   const deliveredPurchases = snapshot.purchaseItems.filter(
     (purchase) => purchase.status === "delivered",
   ).length;
+  const lowStockMaterials = snapshot.materials.filter(
+    (material) => material.onHandQuantity <= material.reorderPoint,
+  ).length;
 
   return {
     completionRate: Number(
@@ -110,6 +113,8 @@ export function buildMetrics(snapshot: PlatformSnapshot) {
     ),
     qaPasses,
     deliveredPurchases,
+    lowStockMaterials,
+    trackedMaterials: snapshot.materials.length,
     waitingForQa: snapshot.tasks.filter((task) => task.status === "waiting-for-qa")
       .length,
     blockerCount: snapshot.tasks.reduce((sum, task) => sum + task.blockers.length, 0),
