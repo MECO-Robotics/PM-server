@@ -1,7 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-import { authConfig as runtimeAuthConfig } from "../config/env";
+import { authConfig as runtimeAuthConfig, requestLimitConfig } from "../config/env";
+import { createRequestLimitGuard } from "../security/requestLimits";
 import {
   AuthError,
   getPublicAuthConfig,
@@ -24,6 +25,7 @@ import {
   findMaterial,
   getEvents,
   findMechanism,
+  findPartDefinition,
   findPartInstance,
   findRequirement,
   findSubsystem,
@@ -108,6 +110,7 @@ const purchaseItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
   requestedById: z.string().trim().min(1).nullable(),
+  partDefinitionId: z.string().trim().min(1),
   quantity: z.coerce.number().min(1),
   vendor: z.string().trim().min(2),
   linkLabel: z.string().trim().min(2),
@@ -143,6 +146,7 @@ const manufacturingItemSchema = z.object({
   process: z.enum(["3d-print", "cnc", "fabrication"]),
   dueDate: z.string().date(),
   material: z.string().trim().min(2),
+  partDefinitionId: z.string().trim().min(1).nullable(),
   quantity: z.coerce.number().min(1),
   status: z.enum(["requested", "approved", "in-progress", "qa", "complete"]),
   mentorReviewed: z.boolean().default(false),
@@ -256,6 +260,49 @@ function validateTaskLinks(input: {
   return null;
 }
 
+function validatePartDefinitionLink(partDefinitionId: string | null | undefined) {
+  if (!partDefinitionId) {
+    return "The selected part does not exist.";
+  }
+
+  if (!findPartDefinition(partDefinitionId)) {
+    return "The selected part does not exist.";
+  }
+
+  return null;
+}
+
+function validatePurchaseItemLinks(input: {
+  subsystemId: string;
+  partDefinitionId: string | null | undefined;
+}) {
+  if (!findSubsystem(input.subsystemId)) {
+    return "The selected subsystem does not exist.";
+  }
+
+  return validatePartDefinitionLink(input.partDefinitionId);
+}
+
+function validateManufacturingItemLinks(input: {
+  subsystemId: string;
+  process: string;
+  partDefinitionId: string | null | undefined;
+}) {
+  if (!findSubsystem(input.subsystemId)) {
+    return "The selected subsystem does not exist.";
+  }
+
+  if (input.process === "fabrication") {
+    if (input.partDefinitionId) {
+      return validatePartDefinitionLink(input.partDefinitionId);
+    }
+
+    return null;
+  }
+
+  return validatePartDefinitionLink(input.partDefinitionId);
+}
+
 function validateSubsystemPeople(input: {
   responsibleEngineerId?: string | null;
   mentorIds?: string[];
@@ -282,11 +329,28 @@ function validateSubsystemPeople(input: {
   return null;
 }
 
+const allowApiRouteRequest = createRequestLimitGuard({
+  scope: "api",
+  ...requestLimitConfig.api,
+});
+const allowAuthRouteRequest = createRequestLimitGuard({
+  scope: "auth",
+  ...requestLimitConfig.auth,
+});
+const allowAuthEmailRouteRequest = createRequestLimitGuard({
+  scope: "auth-email",
+  ...requestLimitConfig.authEmail,
+});
+
 export async function registerRoutes(app: FastifyInstance) {
   const requireApiSessionIfEnabled = (
     request: Parameters<typeof requireSession>[0],
     reply: Parameters<typeof requireSession>[1],
   ) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return false;
+    }
+
     if (!isAuthEnabled()) {
       return true;
     }
@@ -302,7 +366,11 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get("/api/auth/config", async () => {
+  app.get("/api/auth/config", async (request, reply) => {
+    if (!allowAuthRouteRequest(request, reply)) {
+      return;
+    }
+
     return getPublicAuthConfig();
   });
 
@@ -311,6 +379,10 @@ export async function registerRoutes(app: FastifyInstance) {
       credential?: string;
     };
   }>("/api/auth/google", async (request, reply) => {
+    if (!allowAuthRouteRequest(request, reply)) {
+      return;
+    }
+
     const credential = request.body?.credential;
     if (!credential) {
       return reply.code(400).send({
@@ -341,6 +413,10 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Body: unknown }>("/api/auth/email/start", async (request, reply) => {
+    if (!allowAuthEmailRouteRequest(request, reply)) {
+      return;
+    }
+
     const parsed = emailSignInRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -366,6 +442,10 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Body: unknown }>("/api/auth/email/verify", async (request, reply) => {
+    if (!allowAuthEmailRouteRequest(request, reply)) {
+      return;
+    }
+
     const parsed = emailSignInVerifySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -397,6 +477,10 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/auth/me", async (request, reply) => {
+    if (!allowAuthRouteRequest(request, reply)) {
+      return;
+    }
+
     if (!isAuthEnabled()) {
       return {
         enabled: false,
@@ -929,13 +1013,21 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findSubsystem(parsed.data.subsystemId)) {
+    const validationError = validateManufacturingItemLinks(parsed.data);
+    if (validationError) {
       return reply.code(400).send({
-        message: "The selected subsystem does not exist.",
+        message: validationError,
       });
     }
 
-    const item = createManufacturingItem(parsed.data);
+    const partDefinition = parsed.data.partDefinitionId
+      ? findPartDefinition(parsed.data.partDefinitionId)
+      : null;
+
+    const item = createManufacturingItem({
+      ...parsed.data,
+      title: partDefinition?.name ?? parsed.data.title,
+    });
     return reply.code(201).send({
       item,
     });
@@ -956,18 +1048,37 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      if (parsed.data.subsystemId && !findSubsystem(parsed.data.subsystemId)) {
-        return reply.code(400).send({
-          message: "The selected subsystem does not exist.",
-        });
-      }
-
-      const item = updateManufacturingItem(request.params.itemId, parsed.data);
-      if (!item) {
+      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
         return reply.code(404).send({
           message: "Manufacturing item not found.",
         });
       }
+
+      const nextItemShape = {
+        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
+        process: parsed.data.process ?? currentItem.process,
+        partDefinitionId:
+          parsed.data.partDefinitionId === undefined
+            ? currentItem.partDefinitionId
+            : parsed.data.partDefinitionId,
+      };
+
+      const validationError = validateManufacturingItemLinks(nextItemShape);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const partDefinition = nextItemShape.partDefinitionId
+        ? findPartDefinition(nextItemShape.partDefinitionId)
+        : null;
+
+      const item = updateManufacturingItem(request.params.itemId, {
+        ...parsed.data,
+        title: partDefinition?.name ?? parsed.data.title ?? currentItem.title,
+      });
 
       return {
         item,
@@ -1000,13 +1111,19 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findSubsystem(parsed.data.subsystemId)) {
+    const validationError = validatePurchaseItemLinks(parsed.data);
+    if (validationError) {
       return reply.code(400).send({
-        message: "The selected subsystem does not exist.",
+        message: validationError,
       });
     }
 
-    const item = createPurchaseItem(parsed.data);
+    const partDefinition = findPartDefinition(parsed.data.partDefinitionId);
+
+    const item = createPurchaseItem({
+      ...parsed.data,
+      title: partDefinition.name,
+    });
     return reply.code(201).send({
       item,
     });
@@ -1027,18 +1144,34 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      if (parsed.data.subsystemId && !findSubsystem(parsed.data.subsystemId)) {
-        return reply.code(400).send({
-          message: "The selected subsystem does not exist.",
-        });
-      }
-
-      const item = updatePurchaseItem(request.params.itemId, parsed.data);
-      if (!item) {
+      const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
         return reply.code(404).send({
           message: "Purchase item not found.",
         });
       }
+
+      const nextItemShape = {
+        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
+        partDefinitionId:
+          parsed.data.partDefinitionId === undefined
+            ? currentItem.partDefinitionId
+            : parsed.data.partDefinitionId,
+      };
+
+      const validationError = validatePurchaseItemLinks(nextItemShape);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const partDefinition = findPartDefinition(nextItemShape.partDefinitionId);
+
+      const item = updatePurchaseItem(request.params.itemId, {
+        ...parsed.data,
+        title: partDefinition.name,
+      });
 
       return {
         item,

@@ -91,7 +91,7 @@ jobs:
             --exclude '.git' \
             --exclude 'node_modules' \
             --exclude 'dist' \
-            --exclude '.env.production' \
+            --exclude '.env*' \
             ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/"
 
       - name: Upload production env file
@@ -99,6 +99,7 @@ jobs:
         env:
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
         run: |
+          umask 077
           printf '%s' "$PRODUCTION_ENV_FILE" > .env.production.partial
           scp .env.production.partial "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/.env.production.partial"
 
@@ -141,6 +142,15 @@ jobs:
               "GOOGLE_CLIENT_ID",
               "AUTH_JWT_SECRET",
               "AUTH_TOKEN_TTL",
+              "AUTH_EMAIL_SMTP_HOST",
+              "AUTH_EMAIL_SMTP_PORT",
+              "AUTH_EMAIL_SMTP_USER",
+              "AUTH_EMAIL_SMTP_PASS",
+              "AUTH_EMAIL_FROM",
+              "AUTH_EMAIL_CODE_TTL_MINUTES",
+              "AUTH_EMAIL_CODE_LENGTH",
+              "AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS",
+              "AUTH_EMAIL_MAX_VERIFY_ATTEMPTS",
           ]
 
           lines = []
@@ -155,6 +165,8 @@ jobs:
                   lines.append(f"{key}={value}")
 
           existing_path.write_text("\n".join(lines) + "\n")
+          existing_path.chmod(0o600)
+          incoming_path.chmod(0o600)
           incoming_path.unlink(missing_ok=True)
           PY
           EOF

@@ -182,6 +182,7 @@ export interface ManufacturingItem {
   process: ManufacturingProcess;
   dueDate: string;
   material: string;
+  partDefinitionId: string | null;
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
@@ -193,6 +194,7 @@ export interface PurchaseItem {
   title: string;
   subsystemId: string;
   requestedById: string | null;
+  partDefinitionId: string | null;
   quantity: number;
   vendor: string;
   linkLabel: string;

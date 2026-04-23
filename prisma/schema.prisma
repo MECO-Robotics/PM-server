@@ -180,15 +180,17 @@ model Requirement {
 }
 
 model PartDefinition {
-  id            String         @id @default(cuid())
-  name          String
-  partNumber    String         @unique
-  revision      String
-  type          String
-  source        String
-  partInstances PartInstance[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                 String             @id @default(cuid())
+  name               String
+  partNumber         String             @unique
+  revision           String
+  type               String
+  source             String
+  partInstances      PartInstance[]
+  manufacturingItems ManufacturingItem[] @relation("ManufacturingPartDefinition")
+  purchaseItems      PurchaseItem[]      @relation("PurchasePartDefinition")
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 }
 
 model PartInstance {
@@ -371,6 +373,7 @@ model ManufacturingItem {
   dueDate           DateTime?
   priority          TaskPriority?
   material          String?
+  partDefinitionId  String?
   quantity          Int                   @default(1)
   mentorReviewed    Boolean               @default(false)
   process           ManufacturingProcess
@@ -381,6 +384,7 @@ model ManufacturingItem {
   subsystem         Subsystem             @relation(fields: [subsystemId], references: [id])
   requestedBy       Member                @relation("ManufacturingRequester", fields: [requestedById], references: [id])
   batch             ManufacturingBatch?   @relation(fields: [batchId], references: [id])
+  partDefinition    PartDefinition?       @relation("ManufacturingPartDefinition", fields: [partDefinitionId], references: [id])
   qaReviews         QAReview[]
   taskLinks         TaskManufacturingItem[]
   createdAt         DateTime              @default(now())
@@ -407,6 +411,7 @@ model PurchaseItem {
   status           PurchaseStatus     @default(REQUESTED)
   subsystemId      String
   requestedById    String
+  partDefinitionId String?
   approvedById     String?
   approvedAt       DateTime?
   purchasedAt      DateTime?
@@ -414,6 +419,7 @@ model PurchaseItem {
   subsystem        Subsystem          @relation(fields: [subsystemId], references: [id])
   requestedBy      Member             @relation("PurchaseRequester", fields: [requestedById], references: [id])
   approvedBy       Member?            @relation("PurchaseApprover", fields: [approvedById], references: [id])
+  partDefinition   PartDefinition?    @relation("PurchasePartDefinition", fields: [partDefinitionId], references: [id])
   taskLinks        TaskPurchaseItem[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt

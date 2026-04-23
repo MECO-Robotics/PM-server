@@ -60,6 +60,7 @@ export interface PurchaseItemInput {
   title: string;
   subsystemId: string;
   requestedById: string | null;
+  partDefinitionId: string | null;
   quantity: number;
   vendor: string;
   linkLabel: string;
@@ -76,6 +77,7 @@ export interface ManufacturingItemInput {
   process: ManufacturingProcess;
   dueDate: string;
   material: string;
+  partDefinitionId: string | null;
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
@@ -453,6 +455,7 @@ export function createPurchaseItem(input: PurchaseItemInput) {
     title: input.title,
     subsystemId: input.subsystemId,
     requestedById: input.requestedById,
+    partDefinitionId: input.partDefinitionId,
     quantity: input.quantity,
     vendor: input.vendor,
     linkLabel: input.linkLabel,
@@ -505,6 +508,7 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     process: input.process,
     dueDate: input.dueDate,
     material: input.material,
+    partDefinitionId: input.partDefinitionId,
     quantity: input.quantity,
     status: input.status,
     mentorReviewed: input.mentorReviewed,

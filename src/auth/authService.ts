@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import nodemailer from "nodemailer";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
@@ -17,6 +17,7 @@ const emailTransport =
         host: env.AUTH_EMAIL_SMTP_HOST,
         port: env.AUTH_EMAIL_SMTP_PORT,
         secure: env.AUTH_EMAIL_SMTP_PORT === 465,
+        requireTLS: env.NODE_ENV === "production" && env.AUTH_EMAIL_SMTP_PORT !== 465,
         auth:
           env.AUTH_EMAIL_SMTP_USER && env.AUTH_EMAIL_SMTP_PASS
             ? {
@@ -24,6 +25,11 @@ const emailTransport =
                 pass: env.AUTH_EMAIL_SMTP_PASS,
               }
             : undefined,
+        tls: {
+          minVersion: "TLSv1.2",
+        },
+        disableFileAccess: true,
+        disableUrlAccess: true,
       })
     : null;
 
@@ -36,7 +42,7 @@ interface SessionClaims extends JwtPayload {
 }
 
 interface PendingEmailCodeRecord {
-  codeHash: string;
+  codeHash: Buffer;
   expiresAt: number;
   resendAfterAt: number;
   failedAttempts: number;
@@ -67,6 +73,8 @@ export class AuthError extends Error {
 }
 
 const pendingEmailCodes = new Map<string, PendingEmailCodeRecord>();
+const pendingEmailCodeCleanupIntervalMs = 60_000;
+let lastPendingEmailCodeCleanupAt = 0;
 
 export function getPublicAuthConfig() {
   return {
@@ -143,7 +151,26 @@ function maskEmailAddress(email: string) {
 }
 
 function hashVerificationCode(code: string) {
-  return createHash("sha256").update(code).digest("hex");
+  return createHash("sha256").update(code).digest();
+}
+
+function codesMatch(candidateCode: string, storedHash: Buffer) {
+  const candidateHash = hashVerificationCode(candidateCode);
+  return candidateHash.length === storedHash.length && timingSafeEqual(candidateHash, storedHash);
+}
+
+function cleanupExpiredPendingEmailCodes(now = Date.now()) {
+  if (now - lastPendingEmailCodeCleanupAt < pendingEmailCodeCleanupIntervalMs) {
+    return;
+  }
+
+  for (const [email, record] of pendingEmailCodes) {
+    if (record.expiresAt <= now) {
+      pendingEmailCodes.delete(email);
+    }
+  }
+
+  lastPendingEmailCodeCleanupAt = now;
 }
 
 function generateVerificationCode() {
@@ -175,6 +202,8 @@ function buildEmailVerificationHtml(code: string) {
 }
 
 function getPendingEmailCode(email: string) {
+  cleanupExpiredPendingEmailCodes();
+
   const record = pendingEmailCodes.get(email);
   if (!record) {
     return null;
@@ -255,6 +284,7 @@ export async function verifyGoogleCredential(credential: string) {
 export async function requestEmailSignInCode(emailInput: string): Promise<EmailCodeDelivery> {
   const { from, transport } = assertEmailAuthReady();
   const email = normalizeEmailAddress(emailInput);
+  cleanupExpiredPendingEmailCodes();
 
   if (!isAllowedHostedDomain(email)) {
     throw new AuthError(
@@ -307,6 +337,7 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
 
 export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
   assertEmailAuthReady();
+  cleanupExpiredPendingEmailCodes();
 
   const email = normalizeEmailAddress(emailInput);
   if (!isAllowedHostedDomain(email)) {
@@ -329,7 +360,7 @@ export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
     );
   }
 
-  if (hashVerificationCode(code) !== record.codeHash) {
+  if (!codesMatch(code, record.codeHash)) {
     record.failedAttempts += 1;
     pruneFailedAttempts(email, record);
     pendingEmailCodes.set(email, record);
@@ -399,6 +430,7 @@ export function signSessionToken(user: SessionUser) {
     },
     secret,
     {
+      algorithm: "HS256",
       subject: user.accountId,
       expiresIn: authConfig.tokenTtl as SignOptions["expiresIn"],
       issuer: SESSION_ISSUER,
@@ -412,6 +444,7 @@ export function verifySessionToken(token: string): SessionUser {
   const payload = jwt.verify(token, secret, {
     issuer: SESSION_ISSUER,
     audience: SESSION_AUDIENCE,
+    algorithms: ["HS256"],
   }) as SessionClaims;
 
   if (
