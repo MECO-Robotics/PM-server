@@ -339,9 +339,9 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
       text: buildEmailVerificationMessage(code),
       html: buildEmailVerificationHtml(code),
     });
-  } catch {
+  } catch (error) {
     pendingEmailCodes.delete(email);
-    requestEmailDeliveryFailure();
+    requestEmailDeliveryFailure(error);
   }
 
   return {
@@ -425,9 +425,23 @@ function toAuthError(error: unknown) {
   );
 }
 
-function requestEmailDeliveryFailure(): never {
+function requestEmailDeliveryFailure(error?: unknown): never {
+  const detail = error instanceof Error ? error.message.toLowerCase() : "";
+  const detailSuffix =
+    detail.includes("auth") || detail.includes("invalid login")
+      ? "SMTP authentication failed."
+      : detail.includes("eaddrnotavail")
+        ? "SMTP host resolved to an unsupported address family."
+        : detail.includes("etimedout") || detail.includes("timed out")
+          ? "SMTP host timed out."
+          : detail.includes("econnrefused")
+            ? "SMTP host refused the connection."
+            : detail.includes("greeting")
+              ? "SMTP greeting was rejected."
+              : "SMTP delivery failed.";
+
   throw new AuthError(
-    "The verification email could not be sent. Please try again later.",
+    `The verification email could not be sent. ${detailSuffix} Please try again later.`,
     503,
   );
 }
