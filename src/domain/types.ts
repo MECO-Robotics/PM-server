@@ -17,8 +17,6 @@ export type TaskStatus =
   | "waiting-for-qa"
   | "complete";
 export type TaskPriority = "critical" | "high" | "medium" | "low";
-export type MoscowPriority = "must" | "should" | "could" | "wont";
-export type RequirementStatus = "planned" | "in-progress" | "complete";
 export type ManufacturingProcess = "3d-print" | "cnc" | "fabrication";
 export type ManufacturingStatus =
   | "requested"
@@ -34,6 +32,8 @@ export type MaterialCategory =
   | "hardware"
   | "consumable"
   | "other";
+export type ArtifactKind = "document" | "nontechnical";
+export type ArtifactStatus = "draft" | "in-review" | "published";
 export type PurchaseStatus =
   | "requested"
   | "approved"
@@ -47,15 +47,23 @@ export type PartInstanceStatus =
   | "installed"
   | "retired";
 export type QaResult = "pass" | "minor-fix" | "iteration-worthy";
+export type SeasonType = "season" | "offseason" | "initiative";
+export type ProjectType = "robot" | "operations" | "outreach" | "other";
+export type ProjectStatus = "planned" | "active" | "paused" | "complete";
+export type TestResultStatus = "pass" | "fail" | "blocked";
+export type RiskSeverity = "high" | "medium" | "low";
+export type RiskAttachmentType = "project" | "workstream" | "mechanism" | "part-instance";
 
 export interface Member {
   id: string;
   name: string;
   role: MemberRole;
+  seasonId: string;
 }
 
 export interface Subsystem {
   id: string;
+  projectId: string;
   name: string;
   description: string;
   isCore: boolean;
@@ -76,15 +84,6 @@ export interface Mechanism {
   subsystemId: string;
   name: string;
   description: string;
-}
-
-export interface Requirement {
-  id: string;
-  subsystemId: string;
-  title: string;
-  description: string;
-  moscowPriority: MoscowPriority;
-  status: RequirementStatus;
 }
 
 export interface PartDefinition {
@@ -121,13 +120,26 @@ export interface Material {
   notes: string;
 }
 
+export interface Artifact {
+  id: string;
+  projectId: string;
+  workstreamId: string | null;
+  kind: ArtifactKind;
+  title: string;
+  summary: string;
+  status: ArtifactStatus;
+  link: string;
+  updatedAt: string;
+}
+
 export interface Task {
   id: string;
+  projectId: string;
+  workstreamId: string | null;
   title: string;
   summary: string;
   subsystemId: string;
   disciplineId: string;
-  requirementId: string | null;
   mechanismId: string | null;
   partInstanceId: string | null;
   targetEventId: string | null;
@@ -214,6 +226,60 @@ export interface PurchaseItem {
   status: PurchaseStatus;
 }
 
+export interface Season {
+  id: string;
+  name: string;
+  type: SeasonType;
+  startDate: string;
+  endDate: string;
+}
+
+export interface Project {
+  id: string;
+  seasonId: string;
+  name: string;
+  projectType: ProjectType;
+  description: string;
+  status: ProjectStatus;
+}
+
+export interface Workstream {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+}
+
+export interface QaReport {
+  id: string;
+  taskId: string;
+  participantIds: string[];
+  result: QaResult;
+  mentorApproved: boolean;
+  notes: string;
+  reviewedAt: string;
+}
+
+export interface TestResult {
+  id: string;
+  eventId: string;
+  title: string;
+  status: TestResultStatus;
+  findings: string[];
+}
+
+export interface Risk {
+  id: string;
+  title: string;
+  detail: string;
+  severity: RiskSeverity;
+  sourceType: "qa-report" | "test-result";
+  sourceId: string;
+  attachmentType: RiskAttachmentType;
+  attachmentId: string;
+  mitigationTaskId: string | null;
+}
+
 export interface QaReview {
   id: string;
   subjectId: string;
@@ -233,16 +299,22 @@ export interface Escalation {
 }
 
 export interface PlatformSnapshot {
+  seasons: Season[];
+  projects: Project[];
+  workstreams: Workstream[];
   members: Member[];
   subsystems: Subsystem[];
   disciplines: Discipline[];
   mechanisms: Mechanism[];
-  requirements: Requirement[];
   materials: Material[];
+  artifacts: Artifact[];
   partDefinitions: PartDefinition[];
   partInstances: PartInstance[];
   tasks: Task[];
   events: Event[];
+  qaReports: QaReport[];
+  testResults: TestResult[];
+  risks: Risk[];
   workLogs: WorkLog[];
   meetings: Meeting[];
   attendanceRecords: AttendanceRecord[];

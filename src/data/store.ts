@@ -1,6 +1,10 @@
 import { snapshot as initialSnapshot } from "./mockData";
 import type {
+  Artifact,
+  ArtifactKind,
+  ArtifactStatus,
   Discipline,
+  Event,
   ManufacturingItem,
   ManufacturingProcess,
   ManufacturingStatus,
@@ -11,13 +15,15 @@ import type {
   PartDefinition,
   PartInstance,
   PlatformSnapshot,
+  Project,
   PurchaseItem,
   PurchaseStatus,
-  Requirement,
+  Season,
   Subsystem,
   Task,
   TaskPriority,
   TaskStatus,
+  Workstream,
   WorkLog,
 } from "../domain/types";
 
@@ -28,11 +34,12 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 let currentSnapshot = cloneSnapshot(initialSnapshot);
 
 export interface TaskInput {
+  projectId: string;
+  workstreamId: string | null;
   title: string;
   summary: string;
   subsystemId: string;
   disciplineId: string;
-  requirementId: string | null;
   mechanismId: string | null;
   partInstanceId: string | null;
   targetEventId: string | null;
@@ -63,6 +70,14 @@ export interface WorkLogInput {
 export interface MemberInput {
   name: string;
   role: Member["role"];
+  seasonId: string;
+}
+
+export interface SeasonInput {
+  name: string;
+  type: Season["type"];
+  startDate: string;
+  endDate: string;
 }
 
 export interface PurchaseItemInput {
@@ -104,7 +119,19 @@ export interface MaterialInput {
   notes: string;
 }
 
+export interface ArtifactInput {
+  projectId: string;
+  workstreamId: string | null;
+  kind: ArtifactKind;
+  title: string;
+  summary: string;
+  status: ArtifactStatus;
+  link: string;
+  updatedAt: string;
+}
+
 export interface SubsystemInput {
+  projectId: string;
   name: string;
   description: string;
   parentSubsystemId: string | null;
@@ -139,6 +166,16 @@ export interface PartInstanceInput {
   status: PartInstance["status"];
 }
 
+export interface EventInput {
+  title: string;
+  type: Event["type"];
+  startDateTime: string;
+  endDateTime: string | null;
+  isExternal: boolean;
+  description: string;
+  relatedSubsystemIds: string[];
+}
+
 function toSlug(value: string) {
   return value
     .toLowerCase()
@@ -161,6 +198,50 @@ function uniqueId(base: string, existingIds: Set<string>) {
   return `${base}-${counter}`;
 }
 
+const DEFAULT_SEASON_PROJECTS: Array<{
+  key: string;
+  name: string;
+  projectType: Project["projectType"];
+}> = [
+  { key: "robot", name: "Robot", projectType: "robot" },
+  { key: "business", name: "Business", projectType: "other" },
+  { key: "outreach", name: "Outreach", projectType: "outreach" },
+  { key: "media", name: "Media", projectType: "other" },
+  { key: "training", name: "Training", projectType: "other" },
+  { key: "operations", name: "Operations", projectType: "operations" },
+];
+
+function resolveTaskOwnershipForSubsystem(subsystemId: string) {
+  const subsystem = currentSnapshot.subsystems.find(
+    (candidate) => candidate.id === subsystemId,
+  );
+  if (!subsystem) {
+    return null;
+  }
+
+  const projectId = currentSnapshot.projects.some(
+    (project) => project.id === subsystem.projectId,
+  )
+    ? subsystem.projectId
+    : currentSnapshot.projects[0]?.id;
+  if (!projectId) {
+    return null;
+  }
+
+  const matchingWorkstream = subsystem
+    ? currentSnapshot.workstreams.find(
+        (workstream) =>
+          workstream.projectId === projectId &&
+          workstream.name.toLowerCase() === subsystem.name.toLowerCase(),
+      ) ?? null
+    : null;
+
+  return {
+    projectId,
+    workstreamId: matchingWorkstream?.id ?? null,
+  };
+}
+
 function createMechanismWiringTask(mechanism: Mechanism): Task | null {
   const subsystem = currentSnapshot.subsystems.find(
     (candidate) => candidate.id === mechanism.subsystemId,
@@ -169,14 +250,20 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     return null;
   }
 
+  const ownership = resolveTaskOwnershipForSubsystem(subsystem.id);
+  if (!ownership) {
+    return null;
+  }
+
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
     id: uniqueId(toSlug(`Wire ${mechanism.name}`) || "wire-task", taskIds),
+    projectId: ownership.projectId,
+    workstreamId: ownership.workstreamId,
     title: `Wire ${mechanism.name}`,
     summary: `Complete wiring and harness verification for ${mechanism.name}.`,
     subsystemId: subsystem.id,
     disciplineId: "electrical",
-    requirementId: null,
     mechanismId: mechanism.id,
     partInstanceId: null,
     targetEventId: null,
@@ -211,14 +298,20 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     return null;
   }
 
+  const ownership = resolveTaskOwnershipForSubsystem(parentSubsystem.id);
+  if (!ownership) {
+    return null;
+  }
+
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
     id: uniqueId(toSlug(`Integrate ${subsystem.name}`) || "integration-task", taskIds),
+    projectId: ownership.projectId,
+    workstreamId: null,
     title: `Integrate ${subsystem.name}`,
     summary: `Complete integration and interface verification for ${subsystem.name}.`,
     subsystemId: parentSubsystem.id,
     disciplineId: "integration",
-    requirementId: null,
     mechanismId: null,
     partInstanceId: null,
     targetEventId: null,
@@ -262,6 +355,53 @@ export function resetStore() {
   currentSnapshot = cloneSnapshot(initialSnapshot);
 }
 
+export function getSeasons() {
+  return currentSnapshot.seasons;
+}
+
+export function createSeason(input: SeasonInput) {
+  const seasonIds = new Set(currentSnapshot.seasons.map((season) => season.id));
+  const seasonId = uniqueId(toSlug(input.name) || "season", seasonIds);
+  const season: Season = {
+    id: seasonId,
+    name: input.name,
+    type: input.type,
+    startDate: input.startDate,
+    endDate: input.endDate,
+  };
+
+  const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
+  const projects: Project[] = DEFAULT_SEASON_PROJECTS.map((template) => {
+    const projectId = uniqueId(`${seasonId}-${template.key}`, projectIds);
+    projectIds.add(projectId);
+
+    return {
+      id: projectId,
+      seasonId: season.id,
+      name: template.name,
+      projectType: template.projectType,
+      description: `${template.name} scope for ${season.name}.`,
+      status: "active",
+    };
+  });
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    seasons: [...currentSnapshot.seasons, season],
+    projects: [...currentSnapshot.projects, ...projects],
+  };
+
+  return season;
+}
+
+export function getProjects() {
+  return currentSnapshot.projects;
+}
+
+export function getWorkstreams() {
+  return currentSnapshot.workstreams;
+}
+
 export function getMembers() {
   return currentSnapshot.members;
 }
@@ -278,12 +418,12 @@ export function getMechanisms() {
   return currentSnapshot.mechanisms;
 }
 
-export function getRequirements() {
-  return currentSnapshot.requirements;
-}
-
 export function getMaterials() {
   return currentSnapshot.materials;
+}
+
+export function getArtifacts() {
+  return currentSnapshot.artifacts;
 }
 
 export function getPartDefinitions() {
@@ -300,6 +440,18 @@ export function getTasks() {
 
 export function getEvents() {
   return currentSnapshot.events;
+}
+
+export function getQaReports() {
+  return currentSnapshot.qaReports;
+}
+
+export function getTestResults() {
+  return currentSnapshot.testResults;
+}
+
+export function getRisks() {
+  return currentSnapshot.risks;
 }
 
 export function getPurchaseItems() {
@@ -372,10 +524,73 @@ export function removeMaterial(materialId: string) {
   return material;
 }
 
+export function createArtifact(input: ArtifactInput) {
+  const artifactIds = new Set(currentSnapshot.artifacts.map((artifact) => artifact.id));
+  const artifact: Artifact = {
+    id: uniqueId(toSlug(input.title) || "artifact", artifactIds),
+    projectId: input.projectId,
+    workstreamId: input.workstreamId,
+    kind: input.kind,
+    title: input.title,
+    summary: input.summary,
+    status: input.status,
+    link: input.link,
+    updatedAt: input.updatedAt,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    artifacts: [...currentSnapshot.artifacts, artifact],
+  };
+
+  return artifact;
+}
+
+export function updateArtifact(artifactId: string, input: Partial<ArtifactInput>) {
+  let updatedArtifact: Artifact | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    artifacts: currentSnapshot.artifacts.map((artifact) => {
+      if (artifact.id !== artifactId) {
+        return artifact;
+      }
+
+      updatedArtifact = {
+        ...artifact,
+        ...input,
+      };
+
+      return updatedArtifact;
+    }),
+  };
+
+  return updatedArtifact;
+}
+
+export function removeArtifact(artifactId: string) {
+  const artifact = currentSnapshot.artifacts.find(
+    (candidate) => candidate.id === artifactId,
+  );
+  if (!artifact) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    artifacts: currentSnapshot.artifacts.filter(
+      (candidate) => candidate.id !== artifactId,
+    ),
+  };
+
+  return artifact;
+}
+
 export function createSubsystem(input: SubsystemInput) {
   const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
   const subsystem: Subsystem = {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
+    projectId: input.projectId,
     name: input.name,
     description: input.description,
     isCore: false,
@@ -726,11 +941,12 @@ export function createTask(input: TaskInput) {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
     id: uniqueId(toSlug(input.title) || "task", taskIds),
+    projectId: input.projectId,
+    workstreamId: input.workstreamId,
     title: input.title,
     summary: input.summary,
     subsystemId: input.subsystemId,
     disciplineId: input.disciplineId,
-    requirementId: input.requirementId,
     mechanismId: input.mechanismId,
     partInstanceId: input.partInstanceId,
     targetEventId: input.targetEventId,
@@ -756,6 +972,49 @@ export function createTask(input: TaskInput) {
   };
 
   return task;
+}
+
+export function createEvent(input: EventInput) {
+  const eventIds = new Set(currentSnapshot.events.map((event) => event.id));
+  const event: Event = {
+    id: uniqueId(toSlug(`${input.title} ${input.startDateTime.slice(0, 10)}`) || "event", eventIds),
+    title: input.title,
+    type: input.type,
+    startDateTime: input.startDateTime,
+    endDateTime: input.endDateTime,
+    isExternal: input.isExternal,
+    description: input.description,
+    relatedSubsystemIds: input.relatedSubsystemIds,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    events: [...currentSnapshot.events, event],
+  };
+
+  return event;
+}
+
+export function updateEvent(eventId: string, input: Partial<EventInput>) {
+  let updatedEvent: Event | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    events: currentSnapshot.events.map((event) => {
+      if (event.id !== eventId) {
+        return event;
+      }
+
+      updatedEvent = {
+        ...event,
+        ...input,
+      };
+
+      return updatedEvent;
+    }),
+  };
+
+  return updatedEvent;
 }
 
 export function createWorkLog(input: WorkLogInput) {
@@ -904,6 +1163,7 @@ export function createMember(input: MemberInput) {
     id: uniqueId(toSlug(input.name) || "member", memberIds),
     name: input.name,
     role: input.role,
+    seasonId: input.seasonId,
   };
 
   currentSnapshot = {
@@ -990,6 +1250,10 @@ export function findSubsystem(subsystemId: string): Subsystem | undefined {
   return currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId);
 }
 
+export function findEvent(eventId: string): Event | undefined {
+  return currentSnapshot.events.find((event) => event.id === eventId);
+}
+
 export function findDiscipline(disciplineId: string): Discipline | undefined {
   return currentSnapshot.disciplines.find((discipline) => discipline.id === disciplineId);
 }
@@ -998,8 +1262,12 @@ export function findMechanism(mechanismId: string): Mechanism | undefined {
   return currentSnapshot.mechanisms.find((mechanism) => mechanism.id === mechanismId);
 }
 
-export function findRequirement(requirementId: string): Requirement | undefined {
-  return currentSnapshot.requirements.find((requirement) => requirement.id === requirementId);
+export function findProject(projectId: string): Project | undefined {
+  return currentSnapshot.projects.find((project) => project.id === projectId);
+}
+
+export function findWorkstream(workstreamId: string): Workstream | undefined {
+  return currentSnapshot.workstreams.find((workstream) => workstream.id === workstreamId);
 }
 
 export function findPartDefinition(partDefinitionId: string): PartDefinition | undefined {
@@ -1012,4 +1280,8 @@ export function findPartInstance(partInstanceId: string): PartInstance | undefin
 
 export function findMaterial(materialId: string): Material | undefined {
   return currentSnapshot.materials.find((material) => material.id === materialId);
+}
+
+export function findArtifact(artifactId: string): Artifact | undefined {
+  return currentSnapshot.artifacts.find((artifact) => artifact.id === artifactId);
 }

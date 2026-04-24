@@ -176,6 +176,45 @@ test("buildApp serves health and public auth config without auth enabled", async
 
     resetRequestLimits();
 
+    const childSubsystemResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        projectId: "project-robot-2026",
+        name: "Route Test Intake",
+        description: "Temporary child subsystem for route edge-case coverage.",
+        parentSubsystemId: "manipulator",
+        responsibleEngineerId: "lucas",
+        mentorIds: ["riley"],
+        risks: [],
+      },
+    });
+
+    assert.equal(childSubsystemResponse.statusCode, 201);
+    const childSubsystemBody = childSubsystemResponse.json() as {
+      item: {
+        id: string;
+      };
+    };
+
+    resetRequestLimits();
+
+    const cyclicSubsystemResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/subsystems/manipulator",
+      payload: {
+        parentSubsystemId: childSubsystemBody.item.id,
+      },
+    });
+
+    assert.equal(cyclicSubsystemResponse.statusCode, 400);
+    assert.match(
+      cyclicSubsystemResponse.json().message as string,
+      /cycle|descendant/i,
+    );
+
+    resetRequestLimits();
+
     const bootstrapResponse = await app.inject({
       method: "GET",
       url: "/api/bootstrap",
@@ -183,6 +222,12 @@ test("buildApp serves health and public auth config without auth enabled", async
 
     assert.equal(bootstrapResponse.statusCode, 200);
     const bootstrapBody = bootstrapResponse.json() as {
+      artifacts: Array<{
+        id: string;
+        kind: string;
+        projectId: string;
+        workstreamId: string | null;
+      }>;
       manufacturingItems: Array<{
         batchLabel?: string;
         id: string;
@@ -205,6 +250,12 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.equal(seededFabricationItem?.process, "fabrication");
     assert.equal(seededFabricationItem?.partDefinitionId, null);
     assert.equal(seededFabricationItem?.batchLabel, "FAB-03");
+    const seededOperationsArtifact = bootstrapBody.artifacts.find(
+      (artifact) => artifact.id === "artifact-sponsor-recap-apr",
+    );
+    assert.ok(seededOperationsArtifact);
+    assert.equal(seededOperationsArtifact?.projectId, "project-operations-2026");
+    assert.equal(seededOperationsArtifact?.kind, "nontechnical");
     assert.ok(bootstrapBody.workLogs.some((workLog) => workLog.id === "log-1"));
 
     resetRequestLimits();
@@ -224,6 +275,119 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.deepEqual(
       filteredBootstrapBody.workLogs.map((workLog) => workLog.id),
       ["log-3", "log-4"],
+    );
+
+    resetRequestLimits();
+
+    const artifactsResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts",
+    });
+
+    assert.equal(artifactsResponse.statusCode, 200);
+    const artifactsBody = artifactsResponse.json() as {
+      items: Array<{
+        id: string;
+        kind: string;
+        projectId: string;
+        title: string;
+      }>;
+    };
+    assert.ok(
+      artifactsBody.items.some(
+        (artifact) =>
+          artifact.id === "artifact-event-volunteer-guide" &&
+          artifact.projectId === "project-operations-2026" &&
+          artifact.kind === "document",
+      ),
+    );
+
+    resetRequestLimits();
+
+    const createArtifactResponse = await app.inject({
+      method: "POST",
+      url: "/api/artifacts",
+      payload: {
+        projectId: "project-operations-2026",
+        workstreamId: "workstream-operations-comms",
+        kind: "nontechnical",
+        title: "Parent Night Summary",
+        summary: "Highlights from mentor and parent orientation night.",
+        status: "draft",
+        link: "https://example.org/meco/parent-night-summary",
+      },
+    });
+
+    assert.equal(createArtifactResponse.statusCode, 201);
+    const createdArtifactBody = createArtifactResponse.json() as {
+      item: {
+        id: string;
+        kind: string;
+        projectId: string;
+        status: string;
+        title: string;
+        updatedAt: string;
+        workstreamId: string | null;
+      };
+    };
+    assert.equal(createdArtifactBody.item.projectId, "project-operations-2026");
+    assert.equal(createdArtifactBody.item.workstreamId, "workstream-operations-comms");
+    assert.equal(createdArtifactBody.item.kind, "nontechnical");
+    assert.equal(createdArtifactBody.item.status, "draft");
+    assert.equal(
+      Number.isNaN(Date.parse(createdArtifactBody.item.updatedAt)),
+      false,
+    );
+
+    resetRequestLimits();
+
+    const updateArtifactResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/artifacts/${createdArtifactBody.item.id}`,
+      payload: {
+        kind: "document",
+        status: "published",
+        title: "Parent Night Summary Final",
+      },
+    });
+
+    assert.equal(updateArtifactResponse.statusCode, 200);
+    const updatedArtifactBody = updateArtifactResponse.json() as {
+      item: {
+        kind: string;
+        status: string;
+        title: string;
+      };
+    };
+    assert.equal(updatedArtifactBody.item.kind, "document");
+    assert.equal(updatedArtifactBody.item.status, "published");
+    assert.equal(updatedArtifactBody.item.title, "Parent Night Summary Final");
+
+    resetRequestLimits();
+
+    const deleteArtifactResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/artifacts/${createdArtifactBody.item.id}`,
+    });
+
+    assert.equal(deleteArtifactResponse.statusCode, 200);
+
+    resetRequestLimits();
+
+    const artifactsAfterDeleteResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts",
+    });
+
+    assert.equal(artifactsAfterDeleteResponse.statusCode, 200);
+    const artifactsAfterDeleteBody = artifactsAfterDeleteResponse.json() as {
+      items: Array<{ id: string }>;
+    };
+    assert.equal(
+      artifactsAfterDeleteBody.items.some(
+        (artifact) => artifact.id === createdArtifactBody.item.id,
+      ),
+      false,
     );
 
     resetRequestLimits();

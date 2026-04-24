@@ -15,45 +15,60 @@ import {
   verifyGoogleCredential,
 } from "../auth/authService";
 import {
+  createArtifact,
+  createEvent,
   createManufacturingItem,
   createMaterial,
   createMember,
   createMechanism,
   createPartDefinition,
   createPartInstance,
+  createSeason,
   createSubsystem,
   createPurchaseItem,
   createTask,
   createWorkLog,
   findDiscipline,
+  findEvent,
+  findArtifact,
   findMaterial,
+  findProject,
   getEvents,
   findMechanism,
   findPartDefinition,
   findPartInstance,
-  findRequirement,
   findSubsystem,
+  findWorkstream,
   getDisciplines,
   getMembers,
   getMechanisms,
   getManufacturingItems,
+  getArtifacts,
   getMaterials,
   getPartDefinitions,
   getPartInstances,
+  getProjects,
   getPurchaseItems,
-  getRequirements,
+  getQaReports,
+  getRisks,
   getSnapshot,
+  getSeasons,
   getSubsystems,
   getTasks,
+  getTestResults,
+  getWorkstreams,
   removeMaterial,
+  removeArtifact,
   removeMember,
   removeMechanism,
   removePartDefinition,
   removePartInstance,
   updateManufacturingItem,
+  updateArtifact,
   updateMaterial,
   updateMember,
   updateMechanism,
+  updateEvent,
   updatePartDefinition,
   updatePartInstance,
   updateSubsystem,
@@ -70,14 +85,23 @@ import {
 const memberSchema = z.object({
   name: z.string().trim().min(2),
   role: z.enum(["student", "lead", "mentor", "admin"]),
+  seasonId: z.string().trim().min(1),
+});
+
+const seasonSchema = z.object({
+  name: z.string().trim().min(2),
+  type: z.enum(["season", "offseason", "initiative"]).default("season"),
+  startDate: z.string().date().optional(),
+  endDate: z.string().date().optional(),
 });
 
 const taskSchema = z.object({
+  projectId: z.string().trim().min(1),
+  workstreamId: z.string().trim().min(1).nullable(),
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
   subsystemId: z.string().min(1),
   disciplineId: z.string().min(1),
-  requirementId: z.string().trim().min(1).nullable(),
   mechanismId: z.string().trim().min(1).nullable(),
   partInstanceId: z.string().trim().min(1).nullable(),
   targetEventId: z.string().trim().min(1).nullable(),
@@ -98,8 +122,35 @@ const taskSchema = z.object({
 });
 
 const taskPatchSchema = taskSchema.partial();
+const eventSchema = z.object({
+  title: z.string().trim().min(2),
+  type: z.enum([
+    "drive-practice",
+    "competition",
+    "deadline",
+    "internal-review",
+    "demo",
+  ]),
+  startDateTime: z.string().trim().min(1),
+  endDateTime: z.string().trim().min(1).nullable(),
+  isExternal: z.boolean().default(false),
+  description: z.string().trim().default(""),
+  relatedSubsystemIds: z.array(z.string().trim().min(1)).default([]),
+});
+const eventPatchSchema = z.object({
+  title: z.string().trim().min(2).optional(),
+  type: z
+    .enum(["drive-practice", "competition", "deadline", "internal-review", "demo"])
+    .optional(),
+  startDateTime: z.string().trim().min(1).optional(),
+  endDateTime: z.string().trim().min(1).nullable().optional(),
+  isExternal: z.boolean().optional(),
+  description: z.string().trim().optional(),
+  relatedSubsystemIds: z.array(z.string().trim().min(1)).optional(),
+});
 const memberPatchSchema = memberSchema.partial();
 const subsystemSchema = z.object({
+  projectId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
   parentSubsystemId: z.string().trim().min(1).nullable().optional(),
@@ -167,6 +218,17 @@ const materialSchema = z.object({
   notes: z.string().trim().default(""),
 });
 const materialPatchSchema = materialSchema.partial();
+const artifactSchema = z.object({
+  projectId: z.string().trim().min(1),
+  workstreamId: z.string().trim().min(1).nullable().optional(),
+  kind: z.enum(["document", "nontechnical"]),
+  title: z.string().trim().min(2),
+  summary: z.string().trim().default(""),
+  status: z.enum(["draft", "in-review", "published"]).default("draft"),
+  link: z.string().trim().default(""),
+  updatedAt: z.string().trim().min(1).optional(),
+});
+const artifactPatchSchema = artifactSchema.partial();
 const manufacturingItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
@@ -246,30 +308,40 @@ function filterWorkLogsForPerson(personId: string | null) {
 }
 
 function validateTaskLinks(input: {
+  projectId: string;
+  workstreamId?: string | null;
   subsystemId: string;
   disciplineId?: string;
-  requirementId?: string | null;
   mechanismId?: string | null;
   partInstanceId?: string | null;
   targetEventId?: string | null;
 }) {
+  const project = findProject(input.projectId);
+  if (!project) {
+    return "The selected project does not exist.";
+  }
+
+  if (input.workstreamId) {
+    const workstream = findWorkstream(input.workstreamId);
+    if (!workstream) {
+      return "The selected workstream does not exist.";
+    }
+
+    if (workstream.projectId !== project.id) {
+      return "The selected workstream does not belong to the selected project.";
+    }
+  }
+
   if (!findSubsystem(input.subsystemId)) {
     return "The selected subsystem does not exist.";
+  }
+  const subsystem = findSubsystem(input.subsystemId);
+  if (subsystem && subsystem.projectId !== project.id) {
+    return "The selected subsystem does not belong to the selected project.";
   }
 
   if (input.disciplineId && !findDiscipline(input.disciplineId)) {
     return "The selected discipline does not exist.";
-  }
-
-  if (input.requirementId) {
-    const requirement = findRequirement(input.requirementId);
-    if (!requirement) {
-      return "The selected requirement does not exist.";
-    }
-
-    if (requirement.subsystemId !== input.subsystemId) {
-      return "The selected requirement does not belong to the selected subsystem.";
-    }
   }
 
   if (input.mechanismId) {
@@ -306,6 +378,29 @@ function validateTaskLinks(input: {
     const event = getEvents().find((candidate) => candidate.id === input.targetEventId);
     if (!event) {
       return "The selected event does not exist.";
+    }
+  }
+
+  return null;
+}
+
+function validateArtifactLinks(input: {
+  projectId: string;
+  workstreamId?: string | null | undefined;
+}) {
+  const project = findProject(input.projectId);
+  if (!project) {
+    return "The selected project does not exist.";
+  }
+
+  if (input.workstreamId) {
+    const workstream = findWorkstream(input.workstreamId);
+    if (!workstream) {
+      return "The selected workstream does not exist.";
+    }
+
+    if (workstream.projectId !== project.id) {
+      return "The selected workstream does not belong to the selected project.";
     }
   }
 
@@ -391,16 +486,30 @@ function validateManufacturingItemLinks(input: {
 }
 
 function validateSubsystemPeople(input: {
+  projectId: string;
   responsibleEngineerId?: string | null;
   mentorIds?: string[];
 }) {
   const members = getMembers();
+  const project = findProject(input.projectId);
+  const seasonId = project?.seasonId ?? null;
 
   if (
     input.responsibleEngineerId &&
     !members.some((member) => member.id === input.responsibleEngineerId)
   ) {
     return "The selected responsible engineer does not exist.";
+  }
+  if (
+    seasonId &&
+    input.responsibleEngineerId &&
+    !members.some(
+      (member) =>
+        member.id === input.responsibleEngineerId &&
+        member.seasonId === seasonId,
+    )
+  ) {
+    return "The responsible engineer must belong to the project's season.";
   }
 
   if (input.mentorIds) {
@@ -411,6 +520,53 @@ function validateSubsystemPeople(input: {
     if (invalidMentor) {
       return "One of the selected mentors does not exist.";
     }
+    if (
+      seasonId &&
+      input.mentorIds.some(
+        (mentorId) =>
+          !members.some(
+            (member) => member.id === mentorId && member.seasonId === seasonId,
+          ),
+      )
+    ) {
+      return "Mentors must belong to the project's season.";
+    }
+  }
+
+  return null;
+}
+
+function wouldCreateSubsystemCycle(
+  subsystemId: string,
+  parentSubsystemId: string | null,
+) {
+  const visitedSubsystemIds = new Set<string>();
+  let nextParentSubsystemId = parentSubsystemId;
+
+  while (nextParentSubsystemId) {
+    if (nextParentSubsystemId === subsystemId) {
+      return true;
+    }
+
+    if (visitedSubsystemIds.has(nextParentSubsystemId)) {
+      return true;
+    }
+
+    visitedSubsystemIds.add(nextParentSubsystemId);
+    nextParentSubsystemId =
+      findSubsystem(nextParentSubsystemId)?.parentSubsystemId ?? null;
+  }
+
+  return false;
+}
+
+function validateEventSubsystemLinks(relatedSubsystemIds: string[]) {
+  const unknownSubsystemId = relatedSubsystemIds.find(
+    (subsystemId) => !findSubsystem(subsystemId),
+  );
+
+  if (unknownSubsystemId) {
+    return "One or more related subsystems do not exist.";
   }
 
   return null;
@@ -625,19 +781,120 @@ export async function registerRoutes(app: FastifyInstance) {
     const personId = readPersonFilter(request);
 
     return {
+      seasons: snapshot.seasons,
+      projects: snapshot.projects,
+      workstreams: snapshot.workstreams,
       members: snapshot.members,
       subsystems: snapshot.subsystems,
       disciplines: snapshot.disciplines,
       mechanisms: snapshot.mechanisms,
-      requirements: snapshot.requirements,
       materials: snapshot.materials,
+      artifacts: snapshot.artifacts,
       partDefinitions: snapshot.partDefinitions,
       partInstances: snapshot.partInstances,
       events: snapshot.events,
+      qaReports: snapshot.qaReports,
+      testResults: snapshot.testResults,
+      risks: snapshot.risks,
       tasks: filterTasksForPerson(personId),
       workLogs: filterWorkLogsForPerson(personId),
       purchaseItems: filterPurchaseItemsForPerson(personId),
       manufacturingItems: filterManufacturingItemsForPerson(personId),
+    };
+  });
+
+  app.get("/api/seasons", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getSeasons(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/seasons", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = seasonSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Season payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const currentYear = new Date().toISOString().slice(0, 4);
+    const startDate = parsed.data.startDate ?? `${currentYear}-01-01`;
+    const endDate = parsed.data.endDate ?? `${currentYear}-12-31`;
+
+    if (startDate > endDate) {
+      return reply.code(400).send({
+        message: "Season start date must be on or before the end date.",
+      });
+    }
+
+    const season = createSeason({
+      name: parsed.data.name,
+      type: parsed.data.type,
+      startDate,
+      endDate,
+    });
+
+    return reply.code(201).send({
+      item: season,
+    });
+  });
+
+  app.get("/api/projects", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getProjects(),
+    };
+  });
+
+  app.get("/api/workstreams", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getWorkstreams(),
+    };
+  });
+
+  app.get("/api/qa-reports", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getQaReports(),
+    };
+  });
+
+  app.get("/api/test-results", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getTestResults(),
+    };
+  });
+
+  app.get("/api/risks", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getRisks(),
     };
   });
 
@@ -693,11 +950,12 @@ export async function registerRoutes(app: FastifyInstance) {
     return {
       items: filterTasksForPerson(personId).map((task) => ({
         id: task.id,
+        projectId: task.projectId,
+        workstreamId: task.workstreamId,
         title: task.title,
         summary: task.summary,
         subsystemId: task.subsystemId,
         disciplineId: task.disciplineId,
-        requirementId: task.requirementId,
         mechanismId: task.mechanismId,
         partInstanceId: task.partInstanceId,
         targetEventId: task.targetEventId,
@@ -720,6 +978,101 @@ export async function registerRoutes(app: FastifyInstance) {
       })),
     };
   });
+
+  app.get("/api/events", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getEvents(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/events", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = eventSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Event payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateEventSubsystemLinks(parsed.data.relatedSubsystemIds);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const event = createEvent({
+      ...parsed.data,
+      endDateTime: parsed.data.endDateTime ?? null,
+      description: parsed.data.description ?? "",
+      relatedSubsystemIds: Array.from(new Set(parsed.data.relatedSubsystemIds)),
+    });
+
+    return reply.code(201).send({
+      item: event,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { eventId: string } }>(
+    "/api/events/:eventId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = eventPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Event update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentEvent = findEvent(request.params.eventId);
+      if (!currentEvent) {
+        return reply.code(404).send({
+          message: "Event not found.",
+        });
+      }
+
+      const nextRelatedSubsystemIds =
+        parsed.data.relatedSubsystemIds === undefined
+          ? currentEvent.relatedSubsystemIds
+          : Array.from(new Set(parsed.data.relatedSubsystemIds));
+
+      const validationError = validateEventSubsystemLinks(nextRelatedSubsystemIds);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const event = updateEvent(request.params.eventId, {
+        ...parsed.data,
+        endDateTime:
+          parsed.data.endDateTime === undefined
+            ? currentEvent.endDateTime
+            : parsed.data.endDateTime,
+        description:
+          parsed.data.description === undefined
+            ? currentEvent.description
+            : parsed.data.description,
+        relatedSubsystemIds: nextRelatedSubsystemIds,
+      });
+
+      return {
+        item: event,
+      };
+    },
+  );
 
   app.get("/api/materials", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
@@ -803,6 +1156,123 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get("/api/artifacts", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getArtifacts(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/artifacts", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = artifactSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Artifact payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateArtifactLinks({
+      projectId: parsed.data.projectId,
+      workstreamId: parsed.data.workstreamId ?? null,
+    });
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const artifact = createArtifact({
+      ...parsed.data,
+      workstreamId: parsed.data.workstreamId ?? null,
+      summary: parsed.data.summary ?? "",
+      status: parsed.data.status ?? "draft",
+      link: parsed.data.link ?? "",
+      updatedAt: parsed.data.updatedAt ?? new Date().toISOString(),
+    });
+
+    return reply.code(201).send({
+      item: artifact,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { artifactId: string } }>(
+    "/api/artifacts/:artifactId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = artifactPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Artifact update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentArtifact = findArtifact(request.params.artifactId);
+      if (!currentArtifact) {
+        return reply.code(404).send({
+          message: "Artifact not found.",
+        });
+      }
+
+      const nextProjectId = parsed.data.projectId ?? currentArtifact.projectId;
+      const nextWorkstreamId =
+        parsed.data.workstreamId === undefined
+          ? currentArtifact.workstreamId
+          : parsed.data.workstreamId;
+      const validationError = validateArtifactLinks({
+        projectId: nextProjectId,
+        workstreamId: nextWorkstreamId,
+      });
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const artifact = updateArtifact(request.params.artifactId, {
+        ...parsed.data,
+        projectId: nextProjectId,
+        workstreamId: nextWorkstreamId ?? null,
+        updatedAt: parsed.data.updatedAt ?? new Date().toISOString(),
+      });
+
+      return {
+        item: artifact,
+      };
+    },
+  );
+
+  app.delete<{ Params: { artifactId: string } }>(
+    "/api/artifacts/:artifactId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const artifact = removeArtifact(request.params.artifactId);
+      if (!artifact) {
+        return reply.code(404).send({
+          message: "Artifact not found.",
+        });
+      }
+
+      return {
+        item: artifact,
+      };
+    },
+  );
+
   app.post<{ Body: unknown }>("/api/tasks", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -852,12 +1322,13 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       const nextTaskShape = {
+        projectId: parsed.data.projectId ?? currentTask.projectId,
+        workstreamId:
+          parsed.data.workstreamId === undefined
+            ? currentTask.workstreamId
+            : parsed.data.workstreamId,
         subsystemId: parsed.data.subsystemId ?? currentTask.subsystemId,
         disciplineId: parsed.data.disciplineId ?? currentTask.disciplineId,
-        requirementId:
-          parsed.data.requirementId === undefined
-            ? currentTask.requirementId
-            : parsed.data.requirementId,
         mechanismId:
           parsed.data.mechanismId === undefined
             ? currentTask.mechanismId
@@ -908,6 +1379,11 @@ export async function registerRoutes(app: FastifyInstance) {
         issues: parsed.error.flatten(),
       });
     }
+    if (!getSeasons().some((season) => season.id === parsed.data.seasonId)) {
+      return reply.code(400).send({
+        message: "Roster payload references an unknown season.",
+      });
+    }
 
     const member = createMember(parsed.data);
     return reply.code(201).send({
@@ -927,6 +1403,14 @@ export async function registerRoutes(app: FastifyInstance) {
         return reply.code(400).send({
           message: "Roster update payload is invalid.",
           issues: parsed.error.flatten(),
+        });
+      }
+      if (
+        parsed.data.seasonId !== undefined &&
+        !getSeasons().some((season) => season.id === parsed.data.seasonId)
+      ) {
+        return reply.code(400).send({
+          message: "Roster update payload references an unknown season.",
         });
       }
 
@@ -976,6 +1460,12 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    if (!findProject(parsed.data.projectId)) {
+      return reply.code(400).send({
+        message: "The selected project does not exist.",
+      });
+    }
+
     const validationError = validateSubsystemPeople(parsed.data);
     if (validationError) {
       return reply.code(400).send({
@@ -983,13 +1473,18 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (
-      parsed.data.parentSubsystemId &&
-      !findSubsystem(parsed.data.parentSubsystemId)
-    ) {
-      return reply.code(400).send({
-        message: "The selected parent subsystem does not exist.",
-      });
+    if (parsed.data.parentSubsystemId) {
+      const parentSubsystem = findSubsystem(parsed.data.parentSubsystemId);
+      if (!parentSubsystem) {
+        return reply.code(400).send({
+          message: "The selected parent subsystem does not exist.",
+        });
+      }
+      if (parentSubsystem.projectId !== parsed.data.projectId) {
+        return reply.code(400).send({
+          message: "The selected parent subsystem does not belong to the selected project.",
+        });
+      }
     }
 
     const subsystem = createSubsystem({
@@ -1026,20 +1521,32 @@ export async function registerRoutes(app: FastifyInstance) {
           message: "Subsystem not found.",
         });
       }
+      const nextProjectId = parsed.data.projectId ?? currentSubsystem.projectId;
+      const nextParentSubsystemId =
+        parsed.data.parentSubsystemId === undefined
+          ? currentSubsystem.parentSubsystemId
+          : parsed.data.parentSubsystemId;
+      const nextResponsibleEngineerId =
+        parsed.data.responsibleEngineerId === undefined
+          ? currentSubsystem.responsibleEngineerId
+          : parsed.data.responsibleEngineerId;
+      const nextMentorIds = parsed.data.mentorIds ?? currentSubsystem.mentorIds;
+      if (!findProject(nextProjectId)) {
+        return reply.code(400).send({
+          message: "The selected project does not exist.",
+        });
+      }
 
-      if (
-        currentSubsystem.isCore &&
-        parsed.data.parentSubsystemId !== undefined &&
-        parsed.data.parentSubsystemId !== null
-      ) {
+      if (currentSubsystem.isCore && nextParentSubsystemId !== null) {
         return reply.code(400).send({
           message: "Drivetrain cannot have a parent subsystem.",
         });
       }
 
       const validationError = validateSubsystemPeople({
-        responsibleEngineerId: parsed.data.responsibleEngineerId,
-        mentorIds: parsed.data.mentorIds,
+        projectId: nextProjectId,
+        responsibleEngineerId: nextResponsibleEngineerId,
+        mentorIds: nextMentorIds,
       });
       if (validationError) {
         return reply.code(400).send({
@@ -1047,37 +1554,40 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      if (
-        parsed.data.parentSubsystemId &&
-        parsed.data.parentSubsystemId === currentSubsystem.id
-      ) {
+      if (nextParentSubsystemId && nextParentSubsystemId === currentSubsystem.id) {
         return reply.code(400).send({
           message: "A subsystem cannot be its own parent.",
         });
       }
 
-      if (
-        parsed.data.parentSubsystemId &&
-        parsed.data.parentSubsystemId !== currentSubsystem.id &&
-        !findSubsystem(parsed.data.parentSubsystemId)
-      ) {
+      if (nextParentSubsystemId && !findSubsystem(nextParentSubsystemId)) {
         return reply.code(400).send({
           message: "The selected parent subsystem does not exist.",
+        });
+      }
+      if (nextParentSubsystemId) {
+        const parentSubsystem = findSubsystem(nextParentSubsystemId);
+        if (parentSubsystem && parentSubsystem.projectId !== nextProjectId) {
+          return reply.code(400).send({
+            message: "The selected parent subsystem does not belong to the selected project.",
+          });
+        }
+      }
+      if (
+        wouldCreateSubsystemCycle(currentSubsystem.id, nextParentSubsystemId)
+      ) {
+        return reply.code(400).send({
+          message: "A subsystem cannot use one of its descendants as its parent.",
         });
       }
 
       const subsystem = updateSubsystem(request.params.subsystemId, {
         ...parsed.data,
-        mentorIds: parsed.data.mentorIds ?? currentSubsystem.mentorIds,
+        projectId: nextProjectId,
+        mentorIds: nextMentorIds,
         risks: parsed.data.risks ?? currentSubsystem.risks,
-        parentSubsystemId:
-          parsed.data.parentSubsystemId === undefined
-            ? currentSubsystem.parentSubsystemId
-            : parsed.data.parentSubsystemId,
-        responsibleEngineerId:
-          parsed.data.responsibleEngineerId === undefined
-            ? currentSubsystem.responsibleEngineerId
-            : parsed.data.responsibleEngineerId,
+        parentSubsystemId: nextParentSubsystemId,
+        responsibleEngineerId: nextResponsibleEngineerId,
       });
 
       return {
