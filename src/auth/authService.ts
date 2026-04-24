@@ -4,7 +4,7 @@ import nodemailer from "nodemailer";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
-import { authConfig, env } from "../config/env";
+import { authConfig, emailSmtpConfig, env } from "../config/env";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
@@ -12,17 +12,17 @@ const SESSION_AUDIENCE = "meco-apps";
 const googleClient =
   authConfig.googleClientIds.length > 0 ? new OAuth2Client() : null;
 const emailTransport =
-  authConfig.emailEnabled && env.AUTH_EMAIL_SMTP_HOST && env.AUTH_EMAIL_FROM
+  authConfig.emailEnabled && emailSmtpConfig.host && emailSmtpConfig.from
     ? nodemailer.createTransport({
-        host: env.AUTH_EMAIL_SMTP_HOST,
-        port: env.AUTH_EMAIL_SMTP_PORT,
-        secure: env.AUTH_EMAIL_SMTP_PORT === 465,
-        requireTLS: env.NODE_ENV === "production" && env.AUTH_EMAIL_SMTP_PORT !== 465,
+        host: emailSmtpConfig.host,
+        port: emailSmtpConfig.port,
+        secure: emailSmtpConfig.port === 465,
+        requireTLS: env.NODE_ENV === "production" && emailSmtpConfig.port !== 465,
         auth:
-          env.AUTH_EMAIL_SMTP_USER && env.AUTH_EMAIL_SMTP_PASS
+          emailSmtpConfig.user && emailSmtpConfig.pass
             ? {
-                user: env.AUTH_EMAIL_SMTP_USER,
-                pass: env.AUTH_EMAIL_SMTP_PASS,
+                user: emailSmtpConfig.user,
+                pass: emailSmtpConfig.pass,
               }
             : undefined,
         tls: {
@@ -115,12 +115,12 @@ function assertEmailAuthReady() {
     throw new AuthError("Email sign-in is not configured on the server yet.", 503);
   }
 
-  if (!env.AUTH_EMAIL_FROM) {
+  if (!emailSmtpConfig.from) {
     throw new AuthError("Email sign-in is not configured on the server yet.", 503);
   }
 
   return {
-    from: env.AUTH_EMAIL_FROM,
+    from: emailSmtpConfig.from,
     transport: emailTransport,
   };
 }

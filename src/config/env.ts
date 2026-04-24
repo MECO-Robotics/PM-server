@@ -16,10 +16,25 @@ const envSchema = z.object({
   AUTH_JWT_SECRET: z.string().min(32).optional(),
   AUTH_TOKEN_TTL: z.string().min(2).default("12h"),
   AUTH_EMAIL_SMTP_HOST: z.string().min(1).optional(),
-  AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().default(587),
+  AUTH_EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
   AUTH_EMAIL_SMTP_USER: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PASS: z.string().min(1).optional(),
   AUTH_EMAIL_FROM: z.string().min(1).optional(),
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().positive().optional(),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASS: z.string().min(1).optional(),
+  SMTP_FROM: z.string().min(1).optional(),
+  EMAIL_SMTP_HOST: z.string().min(1).optional(),
+  EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
+  EMAIL_SMTP_USER: z.string().min(1).optional(),
+  EMAIL_SMTP_PASS: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(1).optional(),
+  MAIL_HOST: z.string().min(1).optional(),
+  MAIL_PORT: z.coerce.number().int().positive().optional(),
+  MAIL_USER: z.string().min(1).optional(),
+  MAIL_PASS: z.string().min(1).optional(),
+  MAIL_FROM: z.string().min(1).optional(),
   AUTH_EMAIL_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   AUTH_EMAIL_CODE_LENGTH: z.coerce.number().int().min(4).max(8).default(6),
   AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
@@ -27,6 +42,24 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
+
+function pickFirstString(...candidates: Array<string | undefined>) {
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function pickFirstNumber(...candidates: Array<number | undefined>) {
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
 
 function parseGoogleClientIds(value: string | undefined) {
   if (!value) {
@@ -57,8 +90,46 @@ function parseCorsOrigins(value: string) {
 }
 
 const googleClientIds = parseGoogleClientIds(env.GOOGLE_CLIENT_ID);
+const resolvedEmailSmtpHost = pickFirstString(
+  env.AUTH_EMAIL_SMTP_HOST,
+  env.SMTP_HOST,
+  env.EMAIL_SMTP_HOST,
+  env.MAIL_HOST,
+);
+const resolvedEmailSmtpPort =
+  pickFirstNumber(
+    env.AUTH_EMAIL_SMTP_PORT,
+    env.SMTP_PORT,
+    env.EMAIL_SMTP_PORT,
+    env.MAIL_PORT,
+  ) ?? 587;
+const resolvedEmailSmtpUser = pickFirstString(
+  env.AUTH_EMAIL_SMTP_USER,
+  env.SMTP_USER,
+  env.EMAIL_SMTP_USER,
+  env.MAIL_USER,
+);
+const resolvedEmailSmtpPass = pickFirstString(
+  env.AUTH_EMAIL_SMTP_PASS,
+  env.SMTP_PASS,
+  env.EMAIL_SMTP_PASS,
+  env.MAIL_PASS,
+);
+const resolvedEmailFrom = pickFirstString(
+  env.AUTH_EMAIL_FROM,
+  env.SMTP_FROM,
+  env.EMAIL_FROM,
+  env.MAIL_FROM,
+);
+export const emailSmtpConfig = {
+  host: resolvedEmailSmtpHost,
+  port: resolvedEmailSmtpPort,
+  user: resolvedEmailSmtpUser,
+  pass: resolvedEmailSmtpPass,
+  from: resolvedEmailFrom,
+} as const;
 const hasEmailDeliveryConfig =
-  Boolean(env.AUTH_EMAIL_SMTP_HOST) && Boolean(env.AUTH_EMAIL_FROM);
+  Boolean(emailSmtpConfig.host) && Boolean(emailSmtpConfig.from);
 const corsOrigins = parseCorsOrigins(env.CORS_ORIGIN);
 
 export const authConfig = {
