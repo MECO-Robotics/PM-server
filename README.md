@@ -201,6 +201,7 @@ When `RESEND_API_KEY` is present, the server uses:
 - host: `smtp.resend.com`
 - user: `resend`
 - password: API key value
+- These values take precedence over `AUTH_EMAIL_SMTP_*` settings from `PRODUCTION_ENV_FILE`.
 
 - The address must end in `@mecorobotics.org` unless you change `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - On localhost, the bundled SMTP sink gives you a no-password listener at `127.0.0.1:1025`.
