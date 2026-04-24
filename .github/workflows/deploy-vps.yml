@@ -97,6 +97,7 @@ jobs:
       - name: Upload production env file
         shell: bash
         env:
+          # Keep SMTP credentials in GitHub Secrets; inject RESEND only at deploy time.
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
