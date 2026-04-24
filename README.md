@@ -187,7 +187,8 @@ Google Identity Services sends a Google ID token to the web app, and the web app
 - For localhost development, add your frontend origin such as `http://localhost:5173` to the OAuth web client's Authorized JavaScript origins in Google Cloud Console.
 - If you use separate Google OAuth client IDs for local and production, set `GOOGLE_CLIENT_ID` to a comma-separated list and put the client ID you want the frontend to use first.
 
-For production, the web origin must be configured in the Google Cloud Console OAuth client and should be served over HTTPS before SSO is enabled on the public site.
+For production, the web origin must be configured in the Google Cloud Console OAuth client and served over HTTPS before SSO is enabled on the public site.
+If you only have a static IP, use a mapped HTTPS hostname (for example `178-104-192-162.nip.io` or `178-104-192-162.sslip.io`) while testing and add that exact HTTPS origin in the OAuth client.
 
 ## Email sign-in fallback
 
