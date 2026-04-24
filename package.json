@@ -11,7 +11,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
-    "prisma:deploy": "prisma db push"
+    "prisma:deploy": "prisma db push --skip-generate"
   },
   "keywords": [
     "meco",
