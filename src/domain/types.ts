@@ -59,6 +59,7 @@ export interface Subsystem {
   name: string;
   description: string;
   isCore: boolean;
+  parentSubsystemId: string | null;
   responsibleEngineerId: string | null;
   mentorIds: string[];
   risks: string[];

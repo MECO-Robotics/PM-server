@@ -63,7 +63,8 @@ const corsOrigins = parseCorsOrigins(env.CORS_ORIGIN);
 
 export const authConfig = {
   enabled: Boolean(
-    env.AUTH_JWT_SECRET && (googleClientIds.length > 0 || hasEmailDeliveryConfig),
+    env.AUTH_JWT_SECRET &&
+      (googleClientIds.length > 0 || hasEmailDeliveryConfig),
   ),
   googleClientId: googleClientIds[0] ?? null,
   googleClientIds,

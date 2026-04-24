@@ -130,6 +130,9 @@ model Subsystem {
   name                  String            @unique
   description           String?
   isCore                Boolean           @default(false)
+  parentSubsystemId     String?
+  parentSubsystem       Subsystem?        @relation("SubsystemParent", fields: [parentSubsystemId], references: [id])
+  childSubsystems       Subsystem[]       @relation("SubsystemParent")
   responsibleEngineerId String
   responsibleEngineer   Member            @relation("ResponsibleEngineer", fields: [responsibleEngineerId], references: [id])
   mechanisms            Mechanism[]

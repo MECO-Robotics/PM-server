@@ -3,6 +3,8 @@ import { beforeEach, test } from "node:test";
 
 import {
   createManufacturingItem,
+  createMechanism,
+  createSubsystem,
   createPartDefinition,
   createPartInstance,
   createMember,
@@ -32,6 +34,45 @@ test("createMember generates unique slugs for repeated names", () => {
   assert.equal(first.id, "ava-chen");
   assert.equal(second.id, "ava-chen-2");
   assert.equal(getSnapshot().members.slice(-2).map((member) => member.id).join(","), "ava-chen,ava-chen-2");
+});
+
+test("createMechanism auto-generates a wiring task for the new mechanism", () => {
+  const mechanism = createMechanism({
+    subsystemId: "drive",
+    name: "Test Mechanism",
+    description: "Temporary mechanism for coverage.",
+  });
+
+  const wiringTask = getSnapshot().tasks.find(
+    (task) => task.mechanismId === mechanism.id && task.title === "Wire Test Mechanism",
+  );
+
+  assert.ok(wiringTask);
+  assert.equal(wiringTask?.subsystemId, "drive");
+  assert.equal(wiringTask?.disciplineId, "electrical");
+});
+
+test("createSubsystem auto-generates an integration task for its parent subsystem", () => {
+  const subsystem = createSubsystem({
+    name: "Test Subsystem",
+    description: "Temporary subsystem for coverage.",
+    parentSubsystemId: "drive",
+    responsibleEngineerId: "ava",
+    mentorIds: ["jordan"],
+    risks: ["Temporary integration risk"],
+  });
+
+  const integrationTask = getSnapshot().tasks.find(
+    (task) => task.title === "Integrate Test Subsystem",
+  );
+
+  assert.equal(subsystem.parentSubsystemId, "drive");
+  assert.ok(integrationTask);
+  assert.equal(integrationTask?.subsystemId, "drive");
+  assert.equal(integrationTask?.disciplineId, "integration");
+  assert.equal(integrationTask?.mechanismId, null);
+  assert.equal(integrationTask?.ownerId, "ava");
+  assert.equal(integrationTask?.mentorId, "jordan");
 });
 
 test("updateTask patches an existing task in place", () => {
@@ -154,9 +195,13 @@ test("removeMember clears linked references across the snapshot", () => {
     snapshot.subsystems.find((subsystem) => subsystem.id === "drive")?.mentorIds,
     [],
   );
-  assert.deepEqual(
-    snapshot.subsystems.find((subsystem) => subsystem.id === "electrical")?.mentorIds,
-    [],
+  assert.equal(
+    snapshot.subsystems.find((subsystem) => subsystem.id === "drive")?.isCore,
+    true,
+  );
+  assert.equal(
+    snapshot.subsystems.some((subsystem) => subsystem.id === "electrical"),
+    false,
   );
   assert.equal(
     snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.mentorId,

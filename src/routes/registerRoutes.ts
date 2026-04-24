@@ -1,10 +1,11 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-import { authConfig as runtimeAuthConfig, requestLimitConfig } from "../config/env";
+import { authConfig as runtimeAuthConfig, env, requestLimitConfig } from "../config/env";
 import { createRequestLimitGuard } from "../security/requestLimits";
 import {
   AuthError,
+  buildDevelopmentSessionUser,
   getPublicAuthConfig,
   isAuthEnabled,
   requireSession,
@@ -101,7 +102,7 @@ const memberPatchSchema = memberSchema.partial();
 const subsystemSchema = z.object({
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
-  isCore: z.boolean().default(false),
+  parentSubsystemId: z.string().trim().min(1).nullable().optional(),
   responsibleEngineerId: z.string().trim().min(1).nullable(),
   mentorIds: z.array(z.string().trim().min(1)).default([]),
   risks: z.array(z.string().trim().min(1)).default([]),
@@ -497,6 +498,28 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
   });
+
+  if (env.NODE_ENV !== "production") {
+    app.post("/api/auth/dev-bypass", async (request, reply) => {
+      if (!allowAuthRouteRequest(request, reply)) {
+        return;
+      }
+
+      if (!runtimeAuthConfig.enabled) {
+        return reply.code(503).send({
+          message: "Development sign-in is not available until auth is configured.",
+        });
+      }
+
+      const user = buildDevelopmentSessionUser();
+      const token = signSessionToken(user);
+
+      return {
+        token,
+        user,
+      };
+    });
+  }
 
   app.post<{ Body: unknown }>("/api/auth/email/start", async (request, reply) => {
     if (!allowAuthEmailRouteRequest(request, reply)) {
@@ -960,8 +983,18 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    if (
+      parsed.data.parentSubsystemId &&
+      !findSubsystem(parsed.data.parentSubsystemId)
+    ) {
+      return reply.code(400).send({
+        message: "The selected parent subsystem does not exist.",
+      });
+    }
+
     const subsystem = createSubsystem({
       ...parsed.data,
+      parentSubsystemId: parsed.data.parentSubsystemId ?? null,
       mentorIds: parsed.data.mentorIds ?? [],
       risks: parsed.data.risks ?? [],
       responsibleEngineerId: parsed.data.responsibleEngineerId ?? null,
@@ -994,6 +1027,16 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
+      if (
+        currentSubsystem.isCore &&
+        parsed.data.parentSubsystemId !== undefined &&
+        parsed.data.parentSubsystemId !== null
+      ) {
+        return reply.code(400).send({
+          message: "Drivetrain cannot have a parent subsystem.",
+        });
+      }
+
       const validationError = validateSubsystemPeople({
         responsibleEngineerId: parsed.data.responsibleEngineerId,
         mentorIds: parsed.data.mentorIds,
@@ -1004,10 +1047,33 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
+      if (
+        parsed.data.parentSubsystemId &&
+        parsed.data.parentSubsystemId === currentSubsystem.id
+      ) {
+        return reply.code(400).send({
+          message: "A subsystem cannot be its own parent.",
+        });
+      }
+
+      if (
+        parsed.data.parentSubsystemId &&
+        parsed.data.parentSubsystemId !== currentSubsystem.id &&
+        !findSubsystem(parsed.data.parentSubsystemId)
+      ) {
+        return reply.code(400).send({
+          message: "The selected parent subsystem does not exist.",
+        });
+      }
+
       const subsystem = updateSubsystem(request.params.subsystemId, {
         ...parsed.data,
         mentorIds: parsed.data.mentorIds ?? currentSubsystem.mentorIds,
         risks: parsed.data.risks ?? currentSubsystem.risks,
+        parentSubsystemId:
+          parsed.data.parentSubsystemId === undefined
+            ? currentSubsystem.parentSubsystemId
+            : parsed.data.parentSubsystemId,
         responsibleEngineerId:
           parsed.data.responsibleEngineerId === undefined
             ? currentSubsystem.responsibleEngineerId

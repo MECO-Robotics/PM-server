@@ -68,6 +68,7 @@ test("buildApp serves health and public auth config without auth enabled", async
       googleClientId: null,
       hostedDomain: "mecorobotics.org",
       emailEnabled: false,
+      devBypassAvailable: false,
     });
     assert.equal(authConfigResponse.headers["cache-control"], "no-store");
     assert.equal(authConfigResponse.headers["pragma"], "no-cache");
