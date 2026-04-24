@@ -426,7 +426,12 @@ function toAuthError(error: unknown) {
 }
 
 function requestEmailDeliveryFailure(error?: unknown): never {
-  const detail = error instanceof Error ? error.message.toLowerCase() : "";
+  const rawDetail = error instanceof Error ? error.message : "";
+  const detail = rawDetail.toLowerCase();
+  const diagnostic =
+    rawDetail.length > 0
+      ? ` (${rawDetail.split(/\r?\n/, 1)[0].slice(0, 180)})`
+      : "";
   const detailSuffix =
     detail.includes("auth") || detail.includes("invalid login")
       ? "SMTP authentication failed."
@@ -441,7 +446,7 @@ function requestEmailDeliveryFailure(error?: unknown): never {
               : "SMTP delivery failed.";
 
   throw new AuthError(
-    `The verification email could not be sent. ${detailSuffix} Please try again later.`,
+    `The verification email could not be sent. ${detailSuffix}${diagnostic} Please try again later.`,
     503,
   );
 }
