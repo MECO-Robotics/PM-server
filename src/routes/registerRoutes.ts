@@ -1,29 +1,61 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
+import { authConfig as runtimeAuthConfig, requestLimitConfig } from "../config/env";
+import { createRequestLimitGuard } from "../security/requestLimits";
 import {
   AuthError,
   getPublicAuthConfig,
   isAuthEnabled,
   requireSession,
+  requestEmailSignInCode,
   signSessionToken,
+  verifyEmailSignInCode,
   verifyGoogleCredential,
 } from "../auth/authService";
 import {
   createManufacturingItem,
+  createMaterial,
   createMember,
+  createMechanism,
+  createPartDefinition,
+  createPartInstance,
+  createSubsystem,
   createPurchaseItem,
   createTask,
+  createWorkLog,
+  findDiscipline,
+  findMaterial,
+  getEvents,
+  findMechanism,
+  findPartDefinition,
+  findPartInstance,
+  findRequirement,
   findSubsystem,
+  getDisciplines,
   getMembers,
+  getMechanisms,
   getManufacturingItems,
+  getMaterials,
+  getPartDefinitions,
+  getPartInstances,
   getPurchaseItems,
+  getRequirements,
   getSnapshot,
   getSubsystems,
   getTasks,
+  removeMaterial,
   removeMember,
+  removeMechanism,
+  removePartDefinition,
+  removePartInstance,
   updateManufacturingItem,
+  updateMaterial,
   updateMember,
+  updateMechanism,
+  updatePartDefinition,
+  updatePartInstance,
+  updateSubsystem,
   updatePurchaseItem,
   updateTask,
 } from "../data/store";
@@ -36,13 +68,18 @@ import {
 
 const memberSchema = z.object({
   name: z.string().trim().min(2),
-  role: z.enum(["student", "mentor", "admin"]),
+  role: z.enum(["student", "lead", "mentor", "admin"]),
 });
 
 const taskSchema = z.object({
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
   subsystemId: z.string().min(1),
+  disciplineId: z.string().min(1),
+  requirementId: z.string().trim().min(1).nullable(),
+  mechanismId: z.string().trim().min(1).nullable(),
+  partInstanceId: z.string().trim().min(1).nullable(),
+  targetEventId: z.string().trim().min(1).nullable(),
   ownerId: z.string().trim().min(1).nullable(),
   mentorId: z.string().trim().min(1).nullable(),
   startDate: z.string().date(),
@@ -61,10 +98,46 @@ const taskSchema = z.object({
 
 const taskPatchSchema = taskSchema.partial();
 const memberPatchSchema = memberSchema.partial();
+const subsystemSchema = z.object({
+  name: z.string().trim().min(2),
+  description: z.string().trim().min(3),
+  isCore: z.boolean().default(false),
+  responsibleEngineerId: z.string().trim().min(1).nullable(),
+  mentorIds: z.array(z.string().trim().min(1)).default([]),
+  risks: z.array(z.string().trim().min(1)).default([]),
+});
+const subsystemPatchSchema = subsystemSchema.partial();
+const mechanismSchema = z.object({
+  subsystemId: z.string().trim().min(1),
+  name: z.string().trim().min(2),
+  description: z.string().trim().min(3),
+});
+const mechanismPatchSchema = mechanismSchema.partial();
+const partDefinitionSchema = z.object({
+  name: z.string().trim().min(2),
+  partNumber: z.string().trim().min(1),
+  revision: z.string().trim().min(1),
+  type: z.string().trim().min(1),
+  source: z.string().trim().min(1),
+  materialId: z.string().trim().min(1).nullable().optional(),
+  description: z.string().trim().default(""),
+});
+const partDefinitionPatchSchema = partDefinitionSchema.partial();
+const partInstanceSchema = z.object({
+  subsystemId: z.string().trim().min(1),
+  mechanismId: z.string().trim().min(1).nullable().optional(),
+  partDefinitionId: z.string().trim().min(1),
+  name: z.string().trim().min(2),
+  quantity: z.coerce.number().min(1),
+  trackIndividually: z.boolean().default(false),
+  status: z.enum(["planned", "needed", "available", "installed", "retired"]),
+});
+const partInstancePatchSchema = partInstanceSchema.partial();
 const purchaseItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
   requestedById: z.string().trim().min(1).nullable(),
+  partDefinitionId: z.string().trim().min(1),
   quantity: z.coerce.number().min(1),
   vendor: z.string().trim().min(2),
   linkLabel: z.string().trim().min(2),
@@ -74,6 +147,25 @@ const purchaseItemSchema = z.object({
   status: z.enum(["requested", "approved", "purchased", "shipped", "delivered"]),
 });
 const purchaseItemPatchSchema = purchaseItemSchema.partial();
+const materialSchema = z.object({
+  name: z.string().trim().min(2),
+  category: z.enum([
+    "metal",
+    "plastic",
+    "filament",
+    "electronics",
+    "hardware",
+    "consumable",
+    "other",
+  ]),
+  unit: z.string().trim().min(1),
+  onHandQuantity: z.coerce.number().min(0),
+  reorderPoint: z.coerce.number().min(0),
+  location: z.string().trim().min(1),
+  vendor: z.string().trim().min(1),
+  notes: z.string().trim().default(""),
+});
+const materialPatchSchema = materialSchema.partial();
 const manufacturingItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),
@@ -81,12 +173,28 @@ const manufacturingItemSchema = z.object({
   process: z.enum(["3d-print", "cnc", "fabrication"]),
   dueDate: z.string().date(),
   material: z.string().trim().min(2),
+  partDefinitionId: z.string().trim().min(1).nullable().optional(),
   quantity: z.coerce.number().min(1),
   status: z.enum(["requested", "approved", "in-progress", "qa", "complete"]),
   mentorReviewed: z.boolean().default(false),
   batchLabel: z.string().trim().min(1).optional(),
 });
 const manufacturingItemPatchSchema = manufacturingItemSchema.partial();
+const workLogSchema = z.object({
+  taskId: z.string().trim().min(1),
+  date: z.string().date(),
+  hours: z.coerce.number().min(0.5),
+  participantIds: z.array(z.string().trim().min(1)).min(1),
+  notes: z.string().trim().default(""),
+});
+const emailCodeLength = runtimeAuthConfig.emailCodeLength;
+const emailSignInRequestSchema = z.object({
+  email: z.string().trim().email(),
+});
+const emailSignInVerifySchema = z.object({
+  email: z.string().trim().email(),
+  code: z.string().trim().length(emailCodeLength),
+});
 
 function readPersonFilter(request: { query?: unknown }) {
   const candidate = request.query as { personId?: unknown } | undefined;
@@ -127,11 +235,208 @@ function filterManufacturingItemsForPerson(personId: string | null) {
   return items.filter((item) => item.requestedById === personId);
 }
 
+function filterWorkLogsForPerson(personId: string | null) {
+  const workLogs = getSnapshot().workLogs;
+  if (!personId) {
+    return workLogs;
+  }
+
+  return workLogs.filter((workLog) => workLog.participantIds.includes(personId));
+}
+
+function validateTaskLinks(input: {
+  subsystemId: string;
+  disciplineId?: string;
+  requirementId?: string | null;
+  mechanismId?: string | null;
+  partInstanceId?: string | null;
+  targetEventId?: string | null;
+}) {
+  if (!findSubsystem(input.subsystemId)) {
+    return "The selected subsystem does not exist.";
+  }
+
+  if (input.disciplineId && !findDiscipline(input.disciplineId)) {
+    return "The selected discipline does not exist.";
+  }
+
+  if (input.requirementId) {
+    const requirement = findRequirement(input.requirementId);
+    if (!requirement) {
+      return "The selected requirement does not exist.";
+    }
+
+    if (requirement.subsystemId !== input.subsystemId) {
+      return "The selected requirement does not belong to the selected subsystem.";
+    }
+  }
+
+  if (input.mechanismId) {
+    const mechanism = findMechanism(input.mechanismId);
+    if (!mechanism) {
+      return "The selected mechanism does not exist.";
+    }
+
+    if (mechanism.subsystemId !== input.subsystemId) {
+      return "The selected mechanism does not belong to the selected subsystem.";
+    }
+  }
+
+  if (input.partInstanceId) {
+    const partInstance = findPartInstance(input.partInstanceId);
+    if (!partInstance) {
+      return "The selected part instance does not exist.";
+    }
+
+    if (partInstance.subsystemId !== input.subsystemId) {
+      return "The selected part instance does not belong to the selected subsystem.";
+    }
+
+    if (!input.mechanismId) {
+      return "The selected part instance must be linked to a mechanism.";
+    }
+
+    if (partInstance.mechanismId && partInstance.mechanismId !== input.mechanismId) {
+      return "The selected part instance does not belong to the selected mechanism.";
+    }
+  }
+
+  if (input.targetEventId) {
+    const event = getEvents().find((candidate) => candidate.id === input.targetEventId);
+    if (!event) {
+      return "The selected event does not exist.";
+    }
+  }
+
+  return null;
+}
+
+function validatePartDefinitionLink(partDefinitionId: string | null | undefined) {
+  if (!partDefinitionId) {
+    return "Please select a real part from the Parts tab.";
+  }
+
+  if (!findPartDefinition(partDefinitionId)) {
+    return "Please select a real part from the Parts tab.";
+  }
+
+  return null;
+}
+
+function validatePartDefinitionMaterialId(materialId: string | null | undefined) {
+  if (materialId === undefined || materialId === null) {
+    return null;
+  }
+
+  if (!findMaterial(materialId)) {
+    return "The selected material does not exist.";
+  }
+
+  return null;
+}
+
+function validatePartInstanceLinks(input: {
+  subsystemId: string;
+  mechanismId?: string | null | undefined;
+  partDefinitionId: string;
+}) {
+  if (!findSubsystem(input.subsystemId)) {
+    return "The selected subsystem does not exist.";
+  }
+
+  if (input.mechanismId) {
+    const mechanism = findMechanism(input.mechanismId);
+    if (!mechanism) {
+      return "The selected mechanism does not exist.";
+    }
+
+    if (mechanism.subsystemId !== input.subsystemId) {
+      return "The selected mechanism does not belong to the selected subsystem.";
+    }
+  }
+
+  return validatePartDefinitionLink(input.partDefinitionId);
+}
+
+function validatePurchaseItemLinks(input: {
+  subsystemId: string;
+  partDefinitionId?: string | null | undefined;
+}) {
+  if (!findSubsystem(input.subsystemId)) {
+    return "The selected subsystem does not exist.";
+  }
+
+  return validatePartDefinitionLink(input.partDefinitionId);
+}
+
+function validateManufacturingItemLinks(input: {
+  subsystemId: string;
+  process: string;
+  partDefinitionId?: string | null | undefined;
+}) {
+  if (!findSubsystem(input.subsystemId)) {
+    return "The selected subsystem does not exist.";
+  }
+
+  if (input.process === "fabrication") {
+    if (input.partDefinitionId) {
+      return validatePartDefinitionLink(input.partDefinitionId);
+    }
+
+    return null;
+  }
+
+  return validatePartDefinitionLink(input.partDefinitionId);
+}
+
+function validateSubsystemPeople(input: {
+  responsibleEngineerId?: string | null;
+  mentorIds?: string[];
+}) {
+  const members = getMembers();
+
+  if (
+    input.responsibleEngineerId &&
+    !members.some((member) => member.id === input.responsibleEngineerId)
+  ) {
+    return "The selected responsible engineer does not exist.";
+  }
+
+  if (input.mentorIds) {
+    const invalidMentor = input.mentorIds.find(
+      (mentorId) => !members.some((member) => member.id === mentorId),
+    );
+
+    if (invalidMentor) {
+      return "One of the selected mentors does not exist.";
+    }
+  }
+
+  return null;
+}
+
+const allowApiRouteRequest = createRequestLimitGuard({
+  scope: "api",
+  ...requestLimitConfig.api,
+});
+const allowAuthRouteRequest = createRequestLimitGuard({
+  scope: "auth",
+  ...requestLimitConfig.auth,
+});
+const allowAuthEmailRouteRequest = createRequestLimitGuard({
+  scope: "auth-email",
+  ...requestLimitConfig.authEmail,
+});
+
 export async function registerRoutes(app: FastifyInstance) {
   const requireApiSessionIfEnabled = (
     request: Parameters<typeof requireSession>[0],
     reply: Parameters<typeof requireSession>[1],
   ) => {
+    if (!allowApiRouteRequest(request, reply)) {
+      return false;
+    }
+
     if (!isAuthEnabled()) {
       return true;
     }
@@ -147,7 +452,11 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get("/api/auth/config", async () => {
+  app.get("/api/auth/config", async (request, reply) => {
+    if (!allowAuthRouteRequest(request, reply)) {
+      return;
+    }
+
     return getPublicAuthConfig();
   });
 
@@ -156,6 +465,10 @@ export async function registerRoutes(app: FastifyInstance) {
       credential?: string;
     };
   }>("/api/auth/google", async (request, reply) => {
+    if (!allowAuthRouteRequest(request, reply)) {
+      return;
+    }
+
     const credential = request.body?.credential;
     if (!credential) {
       return reply.code(400).send({
@@ -185,7 +498,75 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post<{ Body: unknown }>("/api/auth/email/start", async (request, reply) => {
+    if (!allowAuthEmailRouteRequest(request, reply)) {
+      return;
+    }
+
+    const parsed = emailSignInRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Email sign-in payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    try {
+      return await requestEmailSignInCode(parsed.data.email);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return reply.code(error.statusCode).send({
+          message: error.message,
+        });
+      }
+
+      request.log.error({ err: error }, "Email sign-in code request failed");
+      return reply.code(500).send({
+        message: "Email sign-in failed unexpectedly.",
+      });
+    }
+  });
+
+  app.post<{ Body: unknown }>("/api/auth/email/verify", async (request, reply) => {
+    if (!allowAuthEmailRouteRequest(request, reply)) {
+      return;
+    }
+
+    const parsed = emailSignInVerifySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Email verification payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    try {
+      const user = verifyEmailSignInCode(parsed.data.email, parsed.data.code);
+      const token = signSessionToken(user);
+
+      return {
+        token,
+        user,
+      };
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return reply.code(error.statusCode).send({
+          message: error.message,
+        });
+      }
+
+      request.log.error({ err: error }, "Email authentication failed");
+      return reply.code(500).send({
+        message: "Email authentication failed unexpectedly.",
+      });
+    }
+  });
+
   app.get("/api/auth/me", async (request, reply) => {
+    if (!allowAuthRouteRequest(request, reply)) {
+      return;
+    }
+
     if (!isAuthEnabled()) {
       return {
         enabled: false,
@@ -223,10 +604,59 @@ export async function registerRoutes(app: FastifyInstance) {
     return {
       members: snapshot.members,
       subsystems: snapshot.subsystems,
+      disciplines: snapshot.disciplines,
+      mechanisms: snapshot.mechanisms,
+      requirements: snapshot.requirements,
+      materials: snapshot.materials,
+      partDefinitions: snapshot.partDefinitions,
+      partInstances: snapshot.partInstances,
+      events: snapshot.events,
       tasks: filterTasksForPerson(personId),
+      workLogs: filterWorkLogsForPerson(personId),
       purchaseItems: filterPurchaseItemsForPerson(personId),
       manufacturingItems: filterManufacturingItemsForPerson(personId),
     };
+  });
+
+  app.post<{ Body: unknown }>("/api/work-logs", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = workLogSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Work log payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const taskExists = getTasks().some((task) => task.id === parsed.data.taskId);
+    if (!taskExists) {
+      return reply.code(400).send({
+        message: "The selected task does not exist.",
+      });
+    }
+
+    const memberIds = new Set(getMembers().map((member) => member.id));
+    const missingParticipant = parsed.data.participantIds.find(
+      (participantId) => !memberIds.has(participantId),
+    );
+    if (missingParticipant) {
+      return reply.code(400).send({
+        message: "One or more selected participants do not exist.",
+      });
+    }
+
+    const workLog = createWorkLog({
+      ...parsed.data,
+      notes: parsed.data.notes.trim(),
+      participantIds: Array.from(new Set(parsed.data.participantIds)),
+    });
+
+    return reply.code(201).send({
+      item: workLog,
+    });
   });
 
   app.get("/api/tasks", async (request, reply) => {
@@ -243,6 +673,11 @@ export async function registerRoutes(app: FastifyInstance) {
         title: task.title,
         summary: task.summary,
         subsystemId: task.subsystemId,
+        disciplineId: task.disciplineId,
+        requirementId: task.requirementId,
+        mechanismId: task.mechanismId,
+        partInstanceId: task.partInstanceId,
+        targetEventId: task.targetEventId,
         ownerId: task.ownerId,
         mentorId: task.mentorId,
         startDate: task.startDate,
@@ -263,6 +698,88 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
+  app.get("/api/materials", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getMaterials(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/materials", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = materialSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Material payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const material = createMaterial({
+      ...parsed.data,
+      notes: parsed.data.notes ?? "",
+    });
+
+    return reply.code(201).send({
+      item: material,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { materialId: string } }>(
+    "/api/materials/:materialId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = materialPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Material update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentMaterial = findMaterial(request.params.materialId);
+      if (!currentMaterial) {
+        return reply.code(404).send({
+          message: "Material not found.",
+        });
+      }
+
+      const material = updateMaterial(request.params.materialId, parsed.data);
+      return {
+        item: material,
+      };
+    },
+  );
+
+  app.delete<{ Params: { materialId: string } }>(
+    "/api/materials/:materialId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const material = removeMaterial(request.params.materialId);
+      if (!material) {
+        return reply.code(404).send({
+          message: "Material not found.",
+        });
+      }
+
+      return {
+        item: material,
+      };
+    },
+  );
+
   app.post<{ Body: unknown }>("/api/tasks", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -276,9 +793,10 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findSubsystem(parsed.data.subsystemId)) {
+    const taskValidationError = validateTaskLinks(parsed.data);
+    if (taskValidationError) {
       return reply.code(400).send({
-        message: "The selected subsystem does not exist.",
+        message: taskValidationError,
       });
     }
 
@@ -303,22 +821,42 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      if (
-        parsed.data.subsystemId &&
-        !findSubsystem(parsed.data.subsystemId)
-      ) {
-        return reply.code(400).send({
-          message: "The selected subsystem does not exist.",
-        });
-      }
-
-      const updatedTask = updateTask(request.params.taskId, parsed.data);
-      if (!updatedTask) {
+      const currentTask = getTasks().find((task) => task.id === request.params.taskId);
+      if (!currentTask) {
         return reply.code(404).send({
           message: "Task not found.",
         });
       }
 
+      const nextTaskShape = {
+        subsystemId: parsed.data.subsystemId ?? currentTask.subsystemId,
+        disciplineId: parsed.data.disciplineId ?? currentTask.disciplineId,
+        requirementId:
+          parsed.data.requirementId === undefined
+            ? currentTask.requirementId
+            : parsed.data.requirementId,
+        mechanismId:
+          parsed.data.mechanismId === undefined
+            ? currentTask.mechanismId
+            : parsed.data.mechanismId,
+        partInstanceId:
+          parsed.data.partInstanceId === undefined
+            ? currentTask.partInstanceId
+            : parsed.data.partInstanceId,
+        targetEventId:
+          parsed.data.targetEventId === undefined
+            ? currentTask.targetEventId
+            : parsed.data.targetEventId,
+      };
+
+      const taskValidationError = validateTaskLinks(nextTaskShape);
+      if (taskValidationError) {
+        return reply.code(400).send({
+          message: taskValidationError,
+        });
+      }
+
+      const updatedTask = updateTask(request.params.taskId, parsed.data);
       return {
         item: updatedTask,
       };
@@ -402,6 +940,387 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   );
 
+  app.post<{ Body: unknown }>("/api/subsystems", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = subsystemSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Subsystem payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateSubsystemPeople(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const subsystem = createSubsystem({
+      ...parsed.data,
+      mentorIds: parsed.data.mentorIds ?? [],
+      risks: parsed.data.risks ?? [],
+      responsibleEngineerId: parsed.data.responsibleEngineerId ?? null,
+    });
+
+    return reply.code(201).send({
+      item: subsystem,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { subsystemId: string } }>(
+    "/api/subsystems/:subsystemId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = subsystemPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Subsystem update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentSubsystem = findSubsystem(request.params.subsystemId);
+      if (!currentSubsystem) {
+        return reply.code(404).send({
+          message: "Subsystem not found.",
+        });
+      }
+
+      const validationError = validateSubsystemPeople({
+        responsibleEngineerId: parsed.data.responsibleEngineerId,
+        mentorIds: parsed.data.mentorIds,
+      });
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const subsystem = updateSubsystem(request.params.subsystemId, {
+        ...parsed.data,
+        mentorIds: parsed.data.mentorIds ?? currentSubsystem.mentorIds,
+        risks: parsed.data.risks ?? currentSubsystem.risks,
+        responsibleEngineerId:
+          parsed.data.responsibleEngineerId === undefined
+            ? currentSubsystem.responsibleEngineerId
+            : parsed.data.responsibleEngineerId,
+      });
+
+      return {
+        item: subsystem,
+      };
+    },
+  );
+
+  app.post<{ Body: unknown }>("/api/mechanisms", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = mechanismSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Mechanism payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    if (!findSubsystem(parsed.data.subsystemId)) {
+      return reply.code(400).send({
+        message: "The selected subsystem does not exist.",
+      });
+    }
+
+    const mechanism = createMechanism(parsed.data);
+    return reply.code(201).send({
+      item: mechanism,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { mechanismId: string } }>(
+    "/api/mechanisms/:mechanismId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = mechanismPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Mechanism update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentMechanism = findMechanism(request.params.mechanismId);
+      if (!currentMechanism) {
+        return reply.code(404).send({
+          message: "Mechanism not found.",
+        });
+      }
+
+      const nextSubsystemId = parsed.data.subsystemId ?? currentMechanism.subsystemId;
+      if (!findSubsystem(nextSubsystemId)) {
+        return reply.code(400).send({
+          message: "The selected subsystem does not exist.",
+        });
+      }
+
+      const mechanism = updateMechanism(request.params.mechanismId, parsed.data);
+      return {
+        item: mechanism,
+      };
+    },
+  );
+
+  app.delete<{ Params: { mechanismId: string } }>(
+    "/api/mechanisms/:mechanismId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const mechanism = removeMechanism(request.params.mechanismId);
+      if (!mechanism) {
+        return reply.code(404).send({
+          message: "Mechanism not found.",
+        });
+      }
+
+      return {
+        item: mechanism,
+      };
+    },
+  );
+
+  app.get("/api/part-definitions", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getPartDefinitions(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/part-definitions", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = partDefinitionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Part definition payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const materialError = validatePartDefinitionMaterialId(parsed.data.materialId ?? null);
+    if (materialError) {
+      return reply.code(400).send({
+        message: materialError,
+      });
+    }
+
+    const partDefinition = createPartDefinition({
+      ...parsed.data,
+      materialId: parsed.data.materialId ?? null,
+      description: parsed.data.description ?? "",
+    });
+
+    return reply.code(201).send({
+      item: partDefinition,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { partDefinitionId: string } }>(
+    "/api/part-definitions/:partDefinitionId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = partDefinitionPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Part definition update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentPartDefinition = findPartDefinition(request.params.partDefinitionId);
+      if (!currentPartDefinition) {
+        return reply.code(404).send({
+          message: "Part definition not found.",
+        });
+      }
+
+      const nextMaterialId =
+        parsed.data.materialId === undefined
+          ? currentPartDefinition.materialId
+          : parsed.data.materialId;
+      const materialError = validatePartDefinitionMaterialId(nextMaterialId);
+      if (materialError) {
+        return reply.code(400).send({
+          message: materialError,
+        });
+      }
+
+      const partDefinition = updatePartDefinition(request.params.partDefinitionId, {
+        ...parsed.data,
+        materialId: nextMaterialId ?? null,
+        description: parsed.data.description ?? currentPartDefinition.description,
+      });
+
+      return {
+        item: partDefinition,
+      };
+    },
+  );
+
+  app.delete<{ Params: { partDefinitionId: string } }>(
+    "/api/part-definitions/:partDefinitionId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const partDefinition = removePartDefinition(request.params.partDefinitionId);
+      if (!partDefinition) {
+        return reply.code(404).send({
+          message: "Part definition not found.",
+        });
+      }
+
+      return {
+        item: partDefinition,
+      };
+    },
+  );
+
+  app.get("/api/part-instances", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getPartInstances(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/part-instances", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = partInstanceSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Part instance payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validatePartInstanceLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const partInstance = createPartInstance({
+      ...parsed.data,
+      mechanismId: parsed.data.mechanismId ?? null,
+    });
+
+    return reply.code(201).send({
+      item: partInstance,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { partInstanceId: string } }>(
+    "/api/part-instances/:partInstanceId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = partInstancePatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Part instance update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentPartInstance = findPartInstance(request.params.partInstanceId);
+      if (!currentPartInstance) {
+        return reply.code(404).send({
+          message: "Part instance not found.",
+        });
+      }
+
+      const nextPartInstanceShape = {
+        subsystemId: parsed.data.subsystemId ?? currentPartInstance.subsystemId,
+        mechanismId:
+          parsed.data.mechanismId === undefined
+            ? currentPartInstance.mechanismId
+            : parsed.data.mechanismId,
+        partDefinitionId:
+          parsed.data.partDefinitionId === undefined
+            ? currentPartInstance.partDefinitionId
+            : parsed.data.partDefinitionId,
+      };
+
+      const validationError = validatePartInstanceLinks(nextPartInstanceShape);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const partInstance = updatePartInstance(request.params.partInstanceId, {
+        ...parsed.data,
+        subsystemId: nextPartInstanceShape.subsystemId,
+        mechanismId: nextPartInstanceShape.mechanismId ?? null,
+        partDefinitionId: nextPartInstanceShape.partDefinitionId,
+      });
+
+      return {
+        item: partInstance,
+      };
+    },
+  );
+
+  app.delete<{ Params: { partInstanceId: string } }>(
+    "/api/part-instances/:partInstanceId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const partInstance = removePartInstance(request.params.partInstanceId);
+      if (!partInstance) {
+        return reply.code(404).send({
+          message: "Part instance not found.",
+        });
+      }
+
+      return {
+        item: partInstance,
+      };
+    },
+  );
+
   app.get("/api/meetings", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -442,13 +1361,30 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findSubsystem(parsed.data.subsystemId)) {
+    const validationError = validateManufacturingItemLinks(parsed.data);
+    if (validationError) {
       return reply.code(400).send({
-        message: "The selected subsystem does not exist.",
+        message: validationError,
       });
     }
 
-    const item = createManufacturingItem(parsed.data);
+    const partDefinition = parsed.data.partDefinitionId
+      ? findPartDefinition(parsed.data.partDefinitionId)
+      : null;
+    if (!partDefinition && parsed.data.process !== "fabrication") {
+      return reply.code(400).send({
+        message: "Please select a real part from the Parts tab.",
+      });
+    }
+
+    const item = createManufacturingItem({
+      ...parsed.data,
+      partDefinitionId: parsed.data.partDefinitionId ?? null,
+      title:
+        parsed.data.process === "fabrication"
+          ? parsed.data.title
+          : partDefinition?.name ?? parsed.data.title,
+    });
     return reply.code(201).send({
       item,
     });
@@ -469,18 +1405,45 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      if (parsed.data.subsystemId && !findSubsystem(parsed.data.subsystemId)) {
-        return reply.code(400).send({
-          message: "The selected subsystem does not exist.",
-        });
-      }
-
-      const item = updateManufacturingItem(request.params.itemId, parsed.data);
-      if (!item) {
+      const currentItem = getManufacturingItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
         return reply.code(404).send({
           message: "Manufacturing item not found.",
         });
       }
+
+      const nextItemShape = {
+        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
+        process: parsed.data.process ?? currentItem.process,
+        partDefinitionId:
+          parsed.data.partDefinitionId === undefined
+            ? currentItem.partDefinitionId
+            : parsed.data.partDefinitionId,
+      };
+
+      const validationError = validateManufacturingItemLinks(nextItemShape);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const partDefinition = nextItemShape.partDefinitionId
+        ? findPartDefinition(nextItemShape.partDefinitionId)
+        : null;
+      if (!partDefinition && nextItemShape.process !== "fabrication") {
+        return reply.code(400).send({
+          message: "Please select a real part from the Parts tab.",
+        });
+      }
+
+      const item = updateManufacturingItem(request.params.itemId, {
+        ...parsed.data,
+        title:
+          nextItemShape.process === "fabrication"
+            ? parsed.data.title ?? currentItem.title
+            : partDefinition?.name ?? parsed.data.title ?? currentItem.title,
+      });
 
       return {
         item,
@@ -513,13 +1476,24 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    if (!findSubsystem(parsed.data.subsystemId)) {
+    const validationError = validatePurchaseItemLinks(parsed.data);
+    if (validationError) {
       return reply.code(400).send({
-        message: "The selected subsystem does not exist.",
+        message: validationError,
       });
     }
 
-    const item = createPurchaseItem(parsed.data);
+    const partDefinition = findPartDefinition(parsed.data.partDefinitionId);
+    if (!partDefinition) {
+      return reply.code(400).send({
+        message: "Please select a real part from the Parts tab.",
+      });
+    }
+
+    const item = createPurchaseItem({
+      ...parsed.data,
+      title: partDefinition.name,
+    });
     return reply.code(201).send({
       item,
     });
@@ -540,18 +1514,45 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      if (parsed.data.subsystemId && !findSubsystem(parsed.data.subsystemId)) {
-        return reply.code(400).send({
-          message: "The selected subsystem does not exist.",
-        });
-      }
-
-      const item = updatePurchaseItem(request.params.itemId, parsed.data);
-      if (!item) {
+      const currentItem = getPurchaseItems().find((item) => item.id === request.params.itemId);
+      if (!currentItem) {
         return reply.code(404).send({
           message: "Purchase item not found.",
         });
       }
+
+      const nextItemShape = {
+        subsystemId: parsed.data.subsystemId ?? currentItem.subsystemId,
+        partDefinitionId:
+          parsed.data.partDefinitionId === undefined
+            ? currentItem.partDefinitionId
+            : parsed.data.partDefinitionId,
+      };
+
+      const validationError = validatePurchaseItemLinks(nextItemShape);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      if (!nextItemShape.partDefinitionId) {
+        return reply.code(400).send({
+          message: "Please select a real part from the Parts tab.",
+        });
+      }
+
+      const partDefinition = findPartDefinition(nextItemShape.partDefinitionId);
+      if (!partDefinition) {
+        return reply.code(400).send({
+          message: "Please select a real part from the Parts tab.",
+        });
+      }
+
+      const item = updatePurchaseItem(request.params.itemId, {
+        ...parsed.data,
+        title: partDefinition.name,
+      });
 
       return {
         item,

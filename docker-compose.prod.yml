@@ -19,6 +19,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true
     depends_on:
       postgres:
         condition: service_healthy
@@ -27,6 +28,10 @@ services:
     command: sh -c "npm run prisma:deploy && npm run start"
     ports:
       - "${PUBLIC_PORT:-8080}:8080"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 15s

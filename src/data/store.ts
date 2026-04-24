@@ -1,16 +1,24 @@
 import { snapshot as initialSnapshot } from "./mockData";
 import type {
+  Discipline,
   ManufacturingItem,
   ManufacturingProcess,
   ManufacturingStatus,
+  Material,
+  MaterialCategory,
+  Mechanism,
   Member,
+  PartDefinition,
+  PartInstance,
   PlatformSnapshot,
   PurchaseItem,
   PurchaseStatus,
+  Requirement,
   Subsystem,
   Task,
   TaskPriority,
   TaskStatus,
+  WorkLog,
 } from "../domain/types";
 
 function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
@@ -23,6 +31,11 @@ export interface TaskInput {
   title: string;
   summary: string;
   subsystemId: string;
+  disciplineId: string;
+  requirementId: string | null;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  targetEventId: string | null;
   ownerId: string | null;
   mentorId: string | null;
   startDate: string;
@@ -39,6 +52,14 @@ export interface TaskInput {
   documentationLinked: boolean;
 }
 
+export interface WorkLogInput {
+  taskId: string;
+  date: string;
+  hours: number;
+  participantIds: string[];
+  notes: string;
+}
+
 export interface MemberInput {
   name: string;
   role: Member["role"];
@@ -48,6 +69,7 @@ export interface PurchaseItemInput {
   title: string;
   subsystemId: string;
   requestedById: string | null;
+  partDefinitionId: string | null;
   quantity: number;
   vendor: string;
   linkLabel: string;
@@ -64,10 +86,57 @@ export interface ManufacturingItemInput {
   process: ManufacturingProcess;
   dueDate: string;
   material: string;
+  partDefinitionId: string | null;
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
   batchLabel?: string;
+}
+
+export interface MaterialInput {
+  name: string;
+  category: MaterialCategory;
+  unit: string;
+  onHandQuantity: number;
+  reorderPoint: number;
+  location: string;
+  vendor: string;
+  notes: string;
+}
+
+export interface SubsystemInput {
+  name: string;
+  description: string;
+  isCore: boolean;
+  responsibleEngineerId: string | null;
+  mentorIds: string[];
+  risks: string[];
+}
+
+export interface MechanismInput {
+  subsystemId: string;
+  name: string;
+  description: string;
+}
+
+export interface PartDefinitionInput {
+  name: string;
+  partNumber: string;
+  revision: string;
+  type: string;
+  source: string;
+  materialId: string | null;
+  description: string;
+}
+
+export interface PartInstanceInput {
+  subsystemId: string;
+  mechanismId: string | null;
+  partDefinitionId: string;
+  name: string;
+  quantity: number;
+  trackIndividually: boolean;
+  status: PartInstance["status"];
 }
 
 function toSlug(value: string) {
@@ -92,8 +161,25 @@ function uniqueId(base: string, existingIds: Set<string>) {
   return `${base}-${counter}`;
 }
 
+function nextWorkLogId() {
+  const highestSequence = currentSnapshot.workLogs.reduce((max, workLog) => {
+    const match = /^log-(\d+)$/.exec(workLog.id);
+    if (!match) {
+      return max;
+    }
+
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  return `log-${highestSequence + 1}`;
+}
+
 export function getSnapshot() {
   return currentSnapshot;
+}
+
+export function resetStore() {
+  currentSnapshot = cloneSnapshot(initialSnapshot);
 }
 
 export function getMembers() {
@@ -104,8 +190,36 @@ export function getSubsystems() {
   return currentSnapshot.subsystems;
 }
 
+export function getDisciplines() {
+  return currentSnapshot.disciplines;
+}
+
+export function getMechanisms() {
+  return currentSnapshot.mechanisms;
+}
+
+export function getRequirements() {
+  return currentSnapshot.requirements;
+}
+
+export function getMaterials() {
+  return currentSnapshot.materials;
+}
+
+export function getPartDefinitions() {
+  return currentSnapshot.partDefinitions;
+}
+
+export function getPartInstances() {
+  return currentSnapshot.partInstances;
+}
+
 export function getTasks() {
   return currentSnapshot.tasks;
+}
+
+export function getEvents() {
+  return currentSnapshot.events;
 }
 
 export function getPurchaseItems() {
@@ -116,6 +230,398 @@ export function getManufacturingItems() {
   return currentSnapshot.manufacturingItems;
 }
 
+export function createMaterial(input: MaterialInput) {
+  const materialIds = new Set(currentSnapshot.materials.map((material) => material.id));
+  const material: Material = {
+    id: uniqueId(toSlug(input.name) || "material", materialIds),
+    name: input.name,
+    category: input.category,
+    unit: input.unit,
+    onHandQuantity: input.onHandQuantity,
+    reorderPoint: input.reorderPoint,
+    location: input.location,
+    vendor: input.vendor,
+    notes: input.notes,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    materials: [...currentSnapshot.materials, material],
+  };
+
+  return material;
+}
+
+export function updateMaterial(materialId: string, input: Partial<MaterialInput>) {
+  let updatedMaterial: Material | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    materials: currentSnapshot.materials.map((material) => {
+      if (material.id !== materialId) {
+        return material;
+      }
+
+      updatedMaterial = {
+        ...material,
+        ...input,
+      };
+
+      return updatedMaterial;
+    }),
+  };
+
+  return updatedMaterial;
+}
+
+export function removeMaterial(materialId: string) {
+  const material = currentSnapshot.materials.find(
+    (candidate) => candidate.id === materialId,
+  );
+  if (!material) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    materials: currentSnapshot.materials.filter(
+      (candidate) => candidate.id !== materialId,
+    ),
+  };
+
+  return material;
+}
+
+export function createSubsystem(input: SubsystemInput) {
+  const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
+  const subsystem: Subsystem = {
+    id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
+    name: input.name,
+    description: input.description,
+    isCore: input.isCore,
+    responsibleEngineerId: input.responsibleEngineerId,
+    mentorIds: input.mentorIds,
+    risks: input.risks,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    subsystems: [...currentSnapshot.subsystems, subsystem],
+  };
+
+  return subsystem;
+}
+
+export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInput>) {
+  let updatedSubsystem: Subsystem | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    subsystems: currentSnapshot.subsystems.map((subsystem) => {
+      if (subsystem.id !== subsystemId) {
+        return subsystem;
+      }
+
+      updatedSubsystem = {
+        ...subsystem,
+        ...input,
+      };
+
+      return updatedSubsystem;
+    }),
+  };
+
+  return updatedSubsystem;
+}
+
+export function createPartDefinition(input: PartDefinitionInput) {
+  const partDefinitionIds = new Set(
+    currentSnapshot.partDefinitions.map((partDefinition) => partDefinition.id),
+  );
+  const partDefinition: PartDefinition = {
+    id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
+    name: input.name,
+    partNumber: input.partNumber,
+    revision: input.revision,
+    type: input.type,
+    source: input.source,
+    materialId: input.materialId,
+    description: input.description,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partDefinitions: [...currentSnapshot.partDefinitions, partDefinition],
+  };
+
+  return partDefinition;
+}
+
+export function updatePartDefinition(
+  partDefinitionId: string,
+  input: Partial<PartDefinitionInput>,
+) {
+  let updatedPartDefinition: PartDefinition | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partDefinitions: currentSnapshot.partDefinitions.map((partDefinition) => {
+      if (partDefinition.id !== partDefinitionId) {
+        return partDefinition;
+      }
+
+      updatedPartDefinition = {
+        ...partDefinition,
+        ...input,
+      };
+
+      return updatedPartDefinition;
+    }),
+  };
+
+  return updatedPartDefinition;
+}
+
+export function removePartDefinition(partDefinitionId: string) {
+  const partDefinition = currentSnapshot.partDefinitions.find(
+    (candidate) => candidate.id === partDefinitionId,
+  );
+  if (!partDefinition) {
+    return null;
+  }
+
+  const removedPartInstanceIds = new Set(
+    currentSnapshot.partInstances
+      .filter((partInstance) => partInstance.partDefinitionId === partDefinitionId)
+      .map((partInstance) => partInstance.id),
+  );
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partDefinitions: currentSnapshot.partDefinitions.filter(
+      (candidate) => candidate.id !== partDefinitionId,
+    ),
+    partInstances: currentSnapshot.partInstances.filter(
+      (partInstance) => partInstance.partDefinitionId !== partDefinitionId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) =>
+      removedPartInstanceIds.has(task.partInstanceId ?? "")
+        ? {
+            ...task,
+            partInstanceId: null,
+          }
+        : task,
+    ),
+    manufacturingItems: currentSnapshot.manufacturingItems.map((item) =>
+      item.partDefinitionId === partDefinitionId
+        ? {
+            ...item,
+            partDefinitionId: null,
+          }
+        : item,
+    ),
+    purchaseItems: currentSnapshot.purchaseItems.map((item) =>
+      item.partDefinitionId === partDefinitionId
+        ? {
+            ...item,
+            partDefinitionId: null,
+          }
+        : item,
+    ),
+  };
+
+  return partDefinition;
+}
+
+export function createMechanism(input: MechanismInput) {
+  const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
+  const mechanism: Mechanism = {
+    id: uniqueId(toSlug(input.name) || "mechanism", mechanismIds),
+    subsystemId: input.subsystemId,
+    name: input.name,
+    description: input.description,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    mechanisms: [...currentSnapshot.mechanisms, mechanism],
+  };
+
+  return mechanism;
+}
+
+export function createPartInstance(input: PartInstanceInput) {
+  const partInstanceIds = new Set(
+    currentSnapshot.partInstances.map((partInstance) => partInstance.id),
+  );
+  const partInstance: PartInstance = {
+    id: uniqueId(toSlug(input.name) || "part-instance", partInstanceIds),
+    subsystemId: input.subsystemId,
+    mechanismId: input.mechanismId,
+    partDefinitionId: input.partDefinitionId,
+    name: input.name,
+    quantity: input.quantity,
+    trackIndividually: input.trackIndividually,
+    status: input.status,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partInstances: [...currentSnapshot.partInstances, partInstance],
+  };
+
+  return partInstance;
+}
+
+export function updatePartInstance(
+  partInstanceId: string,
+  input: Partial<PartInstanceInput>,
+) {
+  let updatedPartInstance: PartInstance | null = null;
+
+  const currentPartInstance = currentSnapshot.partInstances.find(
+    (partInstance) => partInstance.id === partInstanceId,
+  );
+  if (!currentPartInstance) {
+    return null;
+  }
+
+  const nextMechanismId =
+    input.mechanismId === undefined ? currentPartInstance.mechanismId : input.mechanismId;
+  const nextSubsystemId =
+    input.subsystemId ??
+    (nextMechanismId
+      ? findMechanism(nextMechanismId)?.subsystemId ?? currentPartInstance.subsystemId
+      : currentPartInstance.subsystemId);
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partInstances: currentSnapshot.partInstances.map((partInstance) => {
+      if (partInstance.id !== partInstanceId) {
+        return partInstance;
+      }
+
+      updatedPartInstance = {
+        ...partInstance,
+        ...input,
+        subsystemId: nextSubsystemId,
+        mechanismId: nextMechanismId,
+      };
+
+      return updatedPartInstance;
+    }),
+  };
+
+  return updatedPartInstance;
+}
+
+export function removePartInstance(partInstanceId: string) {
+  const partInstance = currentSnapshot.partInstances.find(
+    (candidate) => candidate.id === partInstanceId,
+  );
+  if (!partInstance) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    partInstances: currentSnapshot.partInstances.filter(
+      (candidate) => candidate.id !== partInstanceId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) =>
+      task.partInstanceId === partInstanceId
+        ? {
+            ...task,
+            partInstanceId: null,
+          }
+        : task,
+    ),
+  };
+
+  return partInstance;
+}
+
+export function updateMechanism(mechanismId: string, input: Partial<MechanismInput>) {
+  let updatedMechanism: Mechanism | null = null;
+
+  const currentMechanism = currentSnapshot.mechanisms.find(
+    (mechanism) => mechanism.id === mechanismId,
+  );
+  if (!currentMechanism) {
+    return null;
+  }
+
+  const nextSubsystemId = input.subsystemId ?? currentMechanism.subsystemId;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    mechanisms: currentSnapshot.mechanisms.map((mechanism) => {
+      if (mechanism.id !== mechanismId) {
+        return mechanism;
+      }
+
+      updatedMechanism = {
+        ...mechanism,
+        ...input,
+      };
+
+      return updatedMechanism;
+    }),
+    tasks: currentSnapshot.tasks.map((task) =>
+      task.mechanismId === mechanismId
+        ? {
+            ...task,
+            subsystemId: nextSubsystemId,
+          }
+        : task,
+    ),
+    partInstances: currentSnapshot.partInstances.map((partInstance) =>
+      partInstance.mechanismId === mechanismId
+        ? {
+            ...partInstance,
+            subsystemId: nextSubsystemId,
+          }
+        : partInstance,
+    ),
+  };
+
+  return updatedMechanism;
+}
+
+export function removeMechanism(mechanismId: string) {
+  const mechanism = currentSnapshot.mechanisms.find(
+    (candidate) => candidate.id === mechanismId,
+  );
+  if (!mechanism) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    mechanisms: currentSnapshot.mechanisms.filter(
+      (candidate) => candidate.id !== mechanismId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) =>
+      task.mechanismId === mechanismId
+        ? {
+            ...task,
+            mechanismId: null,
+          }
+        : task,
+    ),
+    partInstances: currentSnapshot.partInstances.map((partInstance) =>
+      partInstance.mechanismId === mechanismId
+        ? {
+            ...partInstance,
+            mechanismId: null,
+          }
+        : partInstance,
+    ),
+  };
+
+  return mechanism;
+}
+
 export function createTask(input: TaskInput) {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
@@ -123,6 +629,11 @@ export function createTask(input: TaskInput) {
     title: input.title,
     summary: input.summary,
     subsystemId: input.subsystemId,
+    disciplineId: input.disciplineId,
+    requirementId: input.requirementId,
+    mechanismId: input.mechanismId,
+    partInstanceId: input.partInstanceId,
+    targetEventId: input.targetEventId,
     ownerId: input.ownerId,
     mentorId: input.mentorId,
     startDate: input.startDate,
@@ -145,6 +656,24 @@ export function createTask(input: TaskInput) {
   };
 
   return task;
+}
+
+export function createWorkLog(input: WorkLogInput) {
+  const workLog: WorkLog = {
+    id: nextWorkLogId(),
+    taskId: input.taskId,
+    date: input.date,
+    hours: input.hours,
+    participantIds: input.participantIds,
+    notes: input.notes,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    workLogs: [...currentSnapshot.workLogs, workLog],
+  };
+
+  return workLog;
 }
 
 export function updateTask(taskId: string, input: Partial<TaskInput>) {
@@ -176,6 +705,7 @@ export function createPurchaseItem(input: PurchaseItemInput) {
     title: input.title,
     subsystemId: input.subsystemId,
     requestedById: input.requestedById,
+    partDefinitionId: input.partDefinitionId,
     quantity: input.quantity,
     vendor: input.vendor,
     linkLabel: input.linkLabel,
@@ -228,6 +758,7 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     process: input.process,
     dueDate: input.dueDate,
     material: input.material,
+    partDefinitionId: input.partDefinitionId,
     quantity: input.quantity,
     status: input.status,
     mentorReviewed: input.mentorReviewed,
@@ -357,4 +888,28 @@ export function removeMember(memberId: string) {
 
 export function findSubsystem(subsystemId: string): Subsystem | undefined {
   return currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId);
+}
+
+export function findDiscipline(disciplineId: string): Discipline | undefined {
+  return currentSnapshot.disciplines.find((discipline) => discipline.id === disciplineId);
+}
+
+export function findMechanism(mechanismId: string): Mechanism | undefined {
+  return currentSnapshot.mechanisms.find((mechanism) => mechanism.id === mechanismId);
+}
+
+export function findRequirement(requirementId: string): Requirement | undefined {
+  return currentSnapshot.requirements.find((requirement) => requirement.id === requirementId);
+}
+
+export function findPartDefinition(partDefinitionId: string): PartDefinition | undefined {
+  return currentSnapshot.partDefinitions.find((partDefinition) => partDefinition.id === partDefinitionId);
+}
+
+export function findPartInstance(partInstanceId: string): PartInstance | undefined {
+  return currentSnapshot.partInstances.find((partInstance) => partInstance.id === partInstanceId);
+}
+
+export function findMaterial(materialId: string): Material | undefined {
+  return currentSnapshot.materials.find((material) => material.id === materialId);
 }

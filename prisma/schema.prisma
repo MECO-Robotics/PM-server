@@ -26,6 +26,35 @@ enum TaskPriority {
   LOW
 }
 
+enum DisciplineCode {
+  MECHANICAL
+  ELECTRICAL
+  SOFTWARE
+  INTEGRATION
+  QA_TEST
+}
+
+enum EventType {
+  DRIVE_PRACTICE
+  COMPETITION
+  DEADLINE
+  INTERNAL_REVIEW
+  DEMO
+}
+
+enum MoscowPriority {
+  MUST
+  SHOULD
+  COULD
+  WONT
+}
+
+enum RequirementStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETE
+}
+
 enum BlockerType {
   TASK_DEPENDENCY
   MANUFACTURING_DELAY
@@ -99,8 +128,13 @@ model Member {
 model Subsystem {
   id                    String            @id @default(cuid())
   name                  String            @unique
+  description           String?
+  isCore                Boolean           @default(false)
   responsibleEngineerId String
   responsibleEngineer   Member            @relation("ResponsibleEngineer", fields: [responsibleEngineerId], references: [id])
+  mechanisms            Mechanism[]
+  requirements          Requirement[]
+  partInstances         PartInstance[]
   tasks                 Task[]
   manufacturingItems    ManufacturingItem[]
   purchaseItems         PurchaseItem[]
@@ -109,6 +143,70 @@ model Subsystem {
   risks                 Risk[]
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
+}
+
+model Discipline {
+  id        String         @id @default(cuid())
+  code      DisciplineCode @unique
+  name      String         @unique
+  tasks     Task[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model Mechanism {
+  id           String         @id @default(cuid())
+  subsystemId  String
+  name         String
+  description  String?
+  subsystem    Subsystem      @relation(fields: [subsystemId], references: [id])
+  partInstances PartInstance[]
+  tasks        Task[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Requirement {
+  id             String            @id @default(cuid())
+  subsystemId    String
+  title          String
+  description    String
+  moscowPriority MoscowPriority
+  status         RequirementStatus @default(PLANNED)
+  subsystem      Subsystem         @relation(fields: [subsystemId], references: [id])
+  tasks          Task[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model PartDefinition {
+  id                 String             @id @default(cuid())
+  name               String
+  partNumber         String             @unique
+  revision           String
+  type               String
+  source             String
+  partInstances      PartInstance[]
+  manufacturingItems ManufacturingItem[] @relation("ManufacturingPartDefinition")
+  purchaseItems      PurchaseItem[]      @relation("PurchasePartDefinition")
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+model PartInstance {
+  id                String         @id @default(cuid())
+  partDefinitionId  String
+  subsystemId       String
+  mechanismId       String?
+  name              String
+  quantity          Int            @default(1)
+  trackIndividually Boolean        @default(false)
+  partDefinition    PartDefinition @relation(fields: [partDefinitionId], references: [id])
+  subsystem         Subsystem      @relation(fields: [subsystemId], references: [id])
+  mechanism         Mechanism?     @relation(fields: [mechanismId], references: [id])
+  tasks             Task[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 }
 
 model SubsystemMember {
@@ -141,10 +239,20 @@ model Task {
   requiresDocumentation   Boolean               @default(true)
   documentationUrl        String?
   subsystemId             String
+  disciplineId            String
+  requirementId           String?
+  mechanismId             String?
+  partInstanceId          String?
+  targetEventId           String?
   ownerId                 String
   mentorId                String
   parentTaskId            String?
   subsystem               Subsystem             @relation(fields: [subsystemId], references: [id])
+  discipline              Discipline            @relation(fields: [disciplineId], references: [id])
+  requirement             Requirement?          @relation(fields: [requirementId], references: [id])
+  mechanism               Mechanism?            @relation(fields: [mechanismId], references: [id])
+  partInstance            PartInstance?         @relation(fields: [partInstanceId], references: [id])
+  targetEvent             Event?                @relation(fields: [targetEventId], references: [id])
   owner                   Member                @relation("TaskOwner", fields: [ownerId], references: [id])
   mentor                  Member                @relation("TaskMentor", fields: [mentorId], references: [id])
   parentTask              Task?                 @relation("TaskIterations", fields: [parentTaskId], references: [id])
@@ -159,6 +267,20 @@ model Task {
   riskLinks               RiskTask[]
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
+}
+
+model Event {
+  id                 String    @id @default(cuid())
+  title              String
+  type               EventType
+  startDateTime      DateTime
+  endDateTime        DateTime?
+  isExternal         Boolean   @default(false)
+  description        String?
+  relatedSubsystemIds String[]
+  tasks              Task[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model TaskDependency {
@@ -251,6 +373,7 @@ model ManufacturingItem {
   dueDate           DateTime?
   priority          TaskPriority?
   material          String?
+  partDefinitionId  String?
   quantity          Int                   @default(1)
   mentorReviewed    Boolean               @default(false)
   process           ManufacturingProcess
@@ -261,6 +384,7 @@ model ManufacturingItem {
   subsystem         Subsystem             @relation(fields: [subsystemId], references: [id])
   requestedBy       Member                @relation("ManufacturingRequester", fields: [requestedById], references: [id])
   batch             ManufacturingBatch?   @relation(fields: [batchId], references: [id])
+  partDefinition    PartDefinition?       @relation("ManufacturingPartDefinition", fields: [partDefinitionId], references: [id])
   qaReviews         QAReview[]
   taskLinks         TaskManufacturingItem[]
   createdAt         DateTime              @default(now())
@@ -287,6 +411,7 @@ model PurchaseItem {
   status           PurchaseStatus     @default(REQUESTED)
   subsystemId      String
   requestedById    String
+  partDefinitionId String?
   approvedById     String?
   approvedAt       DateTime?
   purchasedAt      DateTime?
@@ -294,6 +419,7 @@ model PurchaseItem {
   subsystem        Subsystem          @relation(fields: [subsystemId], references: [id])
   requestedBy      Member             @relation("PurchaseRequester", fields: [requestedById], references: [id])
   approvedBy       Member?            @relation("PurchaseApprover", fields: [approvedById], references: [id])
+  partDefinition   PartDefinition?    @relation("PurchasePartDefinition", fields: [partDefinitionId], references: [id])
   taskLinks        TaskPurchaseItem[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
