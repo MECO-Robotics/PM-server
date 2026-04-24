@@ -16,6 +16,7 @@ const emailTransport =
     ? nodemailer.createTransport({
         host: emailSmtpConfig.host,
         port: emailSmtpConfig.port,
+        name: emailSmtpConfig.name,
         secure: emailSmtpConfig.port === 465,
         requireTLS: env.NODE_ENV === "production" && emailSmtpConfig.port !== 465,
         auth:
