@@ -164,6 +164,9 @@ GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 AUTH_JWT_SECRET=replace-with-a-long-random-secret
 AUTH_TOKEN_TTL=12h
+# Resend option:
+# Set RESEND_API_KEY to use Resend SMTP.
+RESEND_API_KEY=your-resend-api-key
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_SMTP_USER=your-smtp-username
@@ -190,7 +193,16 @@ For production, the web origin must be configured in the Google Cloud Console OA
 
 ## Email sign-in fallback
 
-If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, the server will also expose `POST /api/auth/email/start` and `POST /api/auth/email/verify`.
+If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, or set `RESEND_API_KEY` with `AUTH_EMAIL_FROM`, the server will also expose `POST /api/auth/email/start` and `POST /api/auth/email/verify`.
+
+Resend-specific settings:
+- `RESEND_API_KEY=your-resend-api-key`
+- `AUTH_EMAIL_FROM="MECO Robotics <no-reply@mecorobotics.org>"`
+
+When `RESEND_API_KEY` is present, the server uses:
+- host: `smtp.resend.com`
+- user: `resend`
+- password: API key value
 
 - The address must end in `@mecorobotics.org` unless you change `GOOGLE_ALLOWED_HOSTED_DOMAIN`.
 - On localhost, the bundled SMTP sink gives you a no-password listener at `127.0.0.1:1025`.
@@ -212,3 +224,5 @@ On every push to `main`, GitHub Actions will:
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
+
+

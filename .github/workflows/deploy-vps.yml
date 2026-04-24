@@ -142,6 +142,8 @@ jobs:
               "GOOGLE_CLIENT_ID",
               "AUTH_JWT_SECRET",
               "AUTH_TOKEN_TTL",
+              "RESEND_API_KEY",
+              "AUTH_EMAIL_SMTP_FROM",
               "AUTH_EMAIL_SMTP_HOST",
               "AUTH_EMAIL_SMTP_PORT",
               "AUTH_EMAIL_SMTP_USER",

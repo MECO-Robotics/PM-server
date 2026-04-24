@@ -20,7 +20,9 @@ const envSchema = z.object({
   AUTH_EMAIL_SMTP_NAME: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_USER: z.string().min(1).optional(),
   AUTH_EMAIL_SMTP_PASS: z.string().min(1).optional(),
+  AUTH_EMAIL_SMTP_FROM: z.string().min(1).optional(),
   AUTH_EMAIL_FROM: z.string().min(1).optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
   SMTP_NAME: z.string().min(1).optional(),
@@ -94,11 +96,13 @@ function parseCorsOrigins(value: string) {
 }
 
 const googleClientIds = parseGoogleClientIds(env.GOOGLE_CLIENT_ID);
+const resolvedResendApiKey = pickFirstString(env.RESEND_API_KEY);
 const resolvedEmailSmtpHost = pickFirstString(
   env.AUTH_EMAIL_SMTP_HOST,
   env.SMTP_HOST,
   env.EMAIL_SMTP_HOST,
   env.MAIL_HOST,
+  resolvedResendApiKey ? "smtp.resend.com" : undefined,
 );
 const resolvedEmailSmtpPort =
   pickFirstNumber(
@@ -112,6 +116,7 @@ const resolvedEmailSmtpUser = pickFirstString(
   env.SMTP_USER,
   env.EMAIL_SMTP_USER,
   env.MAIL_USER,
+  resolvedResendApiKey ? "resend" : undefined,
 );
 const resolvedEmailSmtpName = pickFirstString(
   env.AUTH_EMAIL_SMTP_NAME,
@@ -124,9 +129,11 @@ const resolvedEmailSmtpPass = pickFirstString(
   env.SMTP_PASS,
   env.EMAIL_SMTP_PASS,
   env.MAIL_PASS,
+  resolvedResendApiKey,
 );
 const resolvedEmailFrom = pickFirstString(
   env.AUTH_EMAIL_FROM,
+  env.AUTH_EMAIL_SMTP_FROM,
   env.SMTP_FROM,
   env.EMAIL_FROM,
   env.MAIL_FROM,
