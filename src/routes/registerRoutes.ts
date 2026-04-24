@@ -23,6 +23,7 @@ import {
   createSubsystem,
   createPurchaseItem,
   createTask,
+  createWorkLog,
   findDiscipline,
   findMaterial,
   getEvents,
@@ -179,6 +180,13 @@ const manufacturingItemSchema = z.object({
   batchLabel: z.string().trim().min(1).optional(),
 });
 const manufacturingItemPatchSchema = manufacturingItemSchema.partial();
+const workLogSchema = z.object({
+  taskId: z.string().trim().min(1),
+  date: z.string().date(),
+  hours: z.coerce.number().min(0.5),
+  participantIds: z.array(z.string().trim().min(1)).min(1),
+  notes: z.string().trim().default(""),
+});
 const emailCodeLength = runtimeAuthConfig.emailCodeLength;
 const emailSignInRequestSchema = z.object({
   email: z.string().trim().email(),
@@ -225,6 +233,15 @@ function filterManufacturingItemsForPerson(personId: string | null) {
   }
 
   return items.filter((item) => item.requestedById === personId);
+}
+
+function filterWorkLogsForPerson(personId: string | null) {
+  const workLogs = getSnapshot().workLogs;
+  if (!personId) {
+    return workLogs;
+  }
+
+  return workLogs.filter((workLog) => workLog.participantIds.includes(personId));
 }
 
 function validateTaskLinks(input: {
@@ -595,9 +612,51 @@ export async function registerRoutes(app: FastifyInstance) {
       partInstances: snapshot.partInstances,
       events: snapshot.events,
       tasks: filterTasksForPerson(personId),
+      workLogs: filterWorkLogsForPerson(personId),
       purchaseItems: filterPurchaseItemsForPerson(personId),
       manufacturingItems: filterManufacturingItemsForPerson(personId),
     };
+  });
+
+  app.post<{ Body: unknown }>("/api/work-logs", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = workLogSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Work log payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const taskExists = getTasks().some((task) => task.id === parsed.data.taskId);
+    if (!taskExists) {
+      return reply.code(400).send({
+        message: "The selected task does not exist.",
+      });
+    }
+
+    const memberIds = new Set(getMembers().map((member) => member.id));
+    const missingParticipant = parsed.data.participantIds.find(
+      (participantId) => !memberIds.has(participantId),
+    );
+    if (missingParticipant) {
+      return reply.code(400).send({
+        message: "One or more selected participants do not exist.",
+      });
+    }
+
+    const workLog = createWorkLog({
+      ...parsed.data,
+      notes: parsed.data.notes.trim(),
+      participantIds: Array.from(new Set(parsed.data.participantIds)),
+    });
+
+    return reply.code(201).send({
+      item: workLog,
+    });
   });
 
   app.get("/api/tasks", async (request, reply) => {

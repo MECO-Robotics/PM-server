@@ -190,6 +190,11 @@ test("buildApp serves health and public auth config without auth enabled", async
         status: string;
         title: string;
       }>;
+      workLogs: Array<{
+        id: string;
+        participantIds: string[];
+        taskId: string;
+      }>;
     };
 
     const seededFabricationItem = bootstrapBody.manufacturingItems.find(
@@ -199,6 +204,77 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.equal(seededFabricationItem?.process, "fabrication");
     assert.equal(seededFabricationItem?.partDefinitionId, null);
     assert.equal(seededFabricationItem?.batchLabel, "FAB-03");
+    assert.ok(bootstrapBody.workLogs.some((workLog) => workLog.id === "log-1"));
+
+    resetRequestLimits();
+
+    const filteredBootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?personId=priya",
+    });
+
+    assert.equal(filteredBootstrapResponse.statusCode, 200);
+    const filteredBootstrapBody = filteredBootstrapResponse.json() as {
+      workLogs: Array<{
+        id: string;
+        participantIds: string[];
+      }>;
+    };
+    assert.deepEqual(
+      filteredBootstrapBody.workLogs.map((workLog) => workLog.id),
+      ["log-3", "log-4"],
+    );
+
+    resetRequestLimits();
+
+    const workLogCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/work-logs",
+      payload: {
+        taskId: "swerve-sensor-bundle",
+        date: "2026-04-23",
+        hours: 1.5,
+        participantIds: ["priya", "lucas"],
+        notes: "Route test work log",
+      },
+    });
+
+    assert.equal(workLogCreateResponse.statusCode, 201);
+    const workLogCreatedBody = workLogCreateResponse.json() as {
+      item: {
+        date: string;
+        hours: number;
+        id: string;
+        notes: string;
+        participantIds: string[];
+        taskId: string;
+      };
+    };
+    assert.equal(workLogCreatedBody.item.taskId, "swerve-sensor-bundle");
+    assert.equal(workLogCreatedBody.item.hours, 1.5);
+    assert.deepEqual(workLogCreatedBody.item.participantIds, ["priya", "lucas"]);
+    assert.equal(workLogCreatedBody.item.notes, "Route test work log");
+
+    resetRequestLimits();
+
+    const filteredBootstrapAfterWorkLogResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?personId=priya",
+    });
+
+    assert.equal(filteredBootstrapAfterWorkLogResponse.statusCode, 200);
+    const filteredBootstrapAfterWorkLogBody = filteredBootstrapAfterWorkLogResponse.json() as {
+      workLogs: Array<{
+        id: string;
+        notes: string;
+        participantIds: string[];
+      }>;
+    };
+    const createdWorkLog = filteredBootstrapAfterWorkLogBody.workLogs.find(
+      (workLog) => workLog.notes === "Route test work log",
+    );
+    assert.ok(createdWorkLog);
+    assert.deepEqual(createdWorkLog?.participantIds, ["priya", "lucas"]);
 
     resetRequestLimits();
 

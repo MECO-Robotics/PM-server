@@ -18,6 +18,7 @@ import type {
   Task,
   TaskPriority,
   TaskStatus,
+  WorkLog,
 } from "../domain/types";
 
 function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
@@ -49,6 +50,14 @@ export interface TaskInput {
   linkedPurchaseIds: string[];
   requiresDocumentation: boolean;
   documentationLinked: boolean;
+}
+
+export interface WorkLogInput {
+  taskId: string;
+  date: string;
+  hours: number;
+  participantIds: string[];
+  notes: string;
 }
 
 export interface MemberInput {
@@ -150,6 +159,19 @@ function uniqueId(base: string, existingIds: Set<string>) {
   }
 
   return `${base}-${counter}`;
+}
+
+function nextWorkLogId() {
+  const highestSequence = currentSnapshot.workLogs.reduce((max, workLog) => {
+    const match = /^log-(\d+)$/.exec(workLog.id);
+    if (!match) {
+      return max;
+    }
+
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  return `log-${highestSequence + 1}`;
 }
 
 export function getSnapshot() {
@@ -634,6 +656,24 @@ export function createTask(input: TaskInput) {
   };
 
   return task;
+}
+
+export function createWorkLog(input: WorkLogInput) {
+  const workLog: WorkLog = {
+    id: nextWorkLogId(),
+    taskId: input.taskId,
+    date: input.date,
+    hours: input.hours,
+    participantIds: input.participantIds,
+    notes: input.notes,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    workLogs: [...currentSnapshot.workLogs, workLog],
+  };
+
+  return workLog;
 }
 
 export function updateTask(taskId: string, input: Partial<TaskInput>) {
