@@ -190,6 +190,7 @@ jobs:
             sleep 5
           done
           echo "Application never became healthy."
+          docker compose --env-file .env.production -f docker-compose.prod.yml logs app --tail=200 || true
           docker compose --env-file .env.production -f docker-compose.prod.yml ps
           exit 1
           EOF
