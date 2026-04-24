@@ -57,8 +57,9 @@ import {
   getTasks,
   getTestResults,
   getWorkstreams,
-  removeMaterial,
+  removeEvent,
   removeArtifact,
+  removeMaterial,
   removeMember,
   removeMechanism,
   removePartDefinition,
@@ -84,7 +85,9 @@ import {
 
 const memberSchema = z.object({
   name: z.string().trim().min(2),
+  email: z.union([z.literal(""), z.string().trim().email()]).default(""),
   role: z.enum(["student", "lead", "mentor", "admin"]),
+  elevated: z.boolean().default(false),
   seasonId: z.string().trim().min(1),
 });
 
@@ -1067,6 +1070,26 @@ export async function registerRoutes(app: FastifyInstance) {
             : parsed.data.description,
         relatedSubsystemIds: nextRelatedSubsystemIds,
       });
+
+      return {
+        item: event,
+      };
+    },
+  );
+
+  app.delete<{ Params: { eventId: string } }>(
+    "/api/events/:eventId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const event = removeEvent(request.params.eventId);
+      if (!event) {
+        return reply.code(404).send({
+          message: "Event not found.",
+        });
+      }
 
       return {
         item: event,

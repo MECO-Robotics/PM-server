@@ -3,8 +3,8 @@ import { PlatformSnapshot } from "../domain/types";
 export const snapshot: PlatformSnapshot = {
   seasons: [
     {
-      id: "season-2026-build",
-      name: "2026 Build Season",
+      id: "default-season",
+      name: "Default Season",
       type: "season",
       startDate: "2026-01-06",
       endDate: "2026-04-30",
@@ -13,7 +13,7 @@ export const snapshot: PlatformSnapshot = {
   projects: [
     {
       id: "project-robot-2026",
-      seasonId: "season-2026-build",
+      seasonId: "default-season",
       name: "Competition Robot 2026",
       projectType: "robot",
       description: "Primary robot delivery effort for the 2026 season.",
@@ -21,7 +21,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       id: "project-operations-2026",
-      seasonId: "season-2026-build",
+      seasonId: "default-season",
       name: "Team Operations 2026",
       projectType: "operations",
       description: "Non-robot workflows for documents, outreach, and sponsor deliverables.",
@@ -29,7 +29,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       id: "project-outreach-2026",
-      seasonId: "season-2026-build",
+      seasonId: "default-season",
       name: "Outreach Program 2026",
       projectType: "outreach",
       description: "Community demos, STEM nights, and sponsor-facing engagement events.",
@@ -37,7 +37,7 @@ export const snapshot: PlatformSnapshot = {
     },
     {
       id: "project-scouting-initiative-2026",
-      seasonId: "season-2026-build",
+      seasonId: "default-season",
       name: "Scouting Initiative 2026",
       projectType: "other",
       description: "Data collection, analytics workflows, and strategy support operations.",
@@ -101,20 +101,20 @@ export const snapshot: PlatformSnapshot = {
     },
   ],
   members: [
-    { id: "ava", name: "Ava Chen", role: "student", seasonId: "season-2026-build" },
-    { id: "lucas", name: "Lucas Brooks", role: "student", seasonId: "season-2026-build" },
-    { id: "priya", name: "Priya Patel", role: "lead", seasonId: "season-2026-build" },
-    { id: "ethan", name: "Ethan Hall", role: "student", seasonId: "season-2026-build" },
-    { id: "jordan", name: "Jordan Lee", role: "mentor", seasonId: "season-2026-build" },
-    { id: "riley", name: "Riley Kim", role: "mentor", seasonId: "season-2026-build" },
-    { id: "maya", name: "Maya Ortiz", role: "admin", seasonId: "season-2026-build" },
-    { id: "noah", name: "Noah Martinez", role: "student", seasonId: "season-2026-build" },
-    { id: "zoe", name: "Zoe Park", role: "student", seasonId: "season-2026-build" },
-    { id: "ben", name: "Ben Walker", role: "student", seasonId: "season-2026-build" },
-    { id: "sofia", name: "Sofia Rivera", role: "lead", seasonId: "season-2026-build" },
-    { id: "marco", name: "Marco Silva", role: "mentor", seasonId: "season-2026-build" },
-    { id: "lena", name: "Lena Novak", role: "admin", seasonId: "season-2026-build" },
-    { id: "olivia", name: "Olivia Grant", role: "student", seasonId: "season-2026-build" },
+    { id: "ava", name: "Ava Chen", email: "ava.chen@mecorobotics.org", role: "student", elevated: false, seasonId: "default-season" },
+    { id: "lucas", name: "Lucas Brooks", email: "lucas.brooks@mecorobotics.org", role: "student", elevated: false, seasonId: "default-season" },
+    { id: "priya", name: "Priya Patel", email: "priya.patel@mecorobotics.org", role: "lead", elevated: true, seasonId: "default-season" },
+    { id: "ethan", name: "Ethan Hall", email: "ethan.hall@mecorobotics.org", role: "student", elevated: false, seasonId: "default-season" },
+    { id: "jordan", name: "Jordan Lee", email: "jordan.lee@mecorobotics.org", role: "mentor", elevated: false, seasonId: "default-season" },
+    { id: "riley", name: "Riley Kim", email: "riley.kim@mecorobotics.org", role: "mentor", elevated: false, seasonId: "default-season" },
+    { id: "maya", name: "Maya Ortiz", email: "maya.ortiz@mecorobotics.org", role: "admin", elevated: true, seasonId: "default-season" },
+    { id: "noah", name: "Noah Martinez", email: "noah.martinez@mecorobotics.org", role: "student", elevated: false, seasonId: "default-season" },
+    { id: "zoe", name: "Zoe Park", email: "zoe.park@mecorobotics.org", role: "student", elevated: false, seasonId: "default-season" },
+    { id: "ben", name: "Ben Walker", email: "ben.walker@mecorobotics.org", role: "student", elevated: false, seasonId: "default-season" },
+    { id: "sofia", name: "Sofia Rivera", email: "sofia.rivera@mecorobotics.org", role: "lead", elevated: true, seasonId: "default-season" },
+    { id: "marco", name: "Marco Silva", email: "marco.silva@mecorobotics.org", role: "mentor", elevated: false, seasonId: "default-season" },
+    { id: "lena", name: "Lena Novak", email: "lena.novak@mecorobotics.org", role: "admin", elevated: true, seasonId: "default-season" },
+    { id: "olivia", name: "Olivia Grant", email: "olivia.grant@mecorobotics.org", role: "student", elevated: false, seasonId: "default-season" },
   ],
   subsystems: [
     {

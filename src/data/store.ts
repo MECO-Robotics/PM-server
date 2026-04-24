@@ -33,6 +33,10 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
 
+function isElevatedMemberRole(role: Member["role"]): boolean {
+  return role === "lead" || role === "admin";
+}
+
 export interface TaskInput {
   projectId: string;
   workstreamId: string | null;
@@ -69,7 +73,9 @@ export interface WorkLogInput {
 
 export interface MemberInput {
   name: string;
+  email: string;
   role: Member["role"];
+  elevated: boolean;
   seasonId: string;
 }
 
@@ -1017,6 +1023,28 @@ export function updateEvent(eventId: string, input: Partial<EventInput>) {
   return updatedEvent;
 }
 
+export function removeEvent(eventId: string) {
+  const event = currentSnapshot.events.find((candidate) => candidate.id === eventId);
+  if (!event) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    events: currentSnapshot.events.filter((candidate) => candidate.id !== eventId),
+    tasks: currentSnapshot.tasks.map((task) =>
+      task.targetEventId === eventId
+        ? {
+            ...task,
+            targetEventId: null,
+          }
+        : task,
+    ),
+  };
+
+  return event;
+}
+
 export function createWorkLog(input: WorkLogInput) {
   const workLog: WorkLog = {
     id: nextWorkLogId(),
@@ -1162,7 +1190,9 @@ export function createMember(input: MemberInput) {
   const member: Member = {
     id: uniqueId(toSlug(input.name) || "member", memberIds),
     name: input.name,
+    email: input.email.trim(),
     role: input.role,
+    elevated: isElevatedMemberRole(input.role),
     seasonId: input.seasonId,
   };
 
@@ -1184,9 +1214,14 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
         return member;
       }
 
+      const nextRole = input.role ?? member.role;
+      const nextEmail = input.email === undefined ? member.email : input.email.trim();
       updatedMember = {
         ...member,
         ...input,
+        role: nextRole,
+        email: nextEmail,
+        elevated: isElevatedMemberRole(nextRole),
       };
 
       return updatedMember;

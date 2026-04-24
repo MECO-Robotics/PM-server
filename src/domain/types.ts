@@ -57,7 +57,9 @@ export type RiskAttachmentType = "project" | "workstream" | "mechanism" | "part-
 export interface Member {
   id: string;
   name: string;
+  email: string;
   role: MemberRole;
+  elevated: boolean;
   seasonId: string;
 }
 
