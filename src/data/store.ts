@@ -107,7 +107,7 @@ export interface MaterialInput {
 export interface SubsystemInput {
   name: string;
   description: string;
-  isCore: boolean;
+  parentSubsystemId: string | null;
   responsibleEngineerId: string | null;
   mentorIds: string[];
   risks: string[];
@@ -159,6 +159,86 @@ function uniqueId(base: string, existingIds: Set<string>) {
   }
 
   return `${base}-${counter}`;
+}
+
+function createMechanismWiringTask(mechanism: Mechanism): Task | null {
+  const subsystem = currentSnapshot.subsystems.find(
+    (candidate) => candidate.id === mechanism.subsystemId,
+  );
+  if (!subsystem) {
+    return null;
+  }
+
+  const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
+  const task: Task = {
+    id: uniqueId(toSlug(`Wire ${mechanism.name}`) || "wire-task", taskIds),
+    title: `Wire ${mechanism.name}`,
+    summary: `Complete wiring and harness verification for ${mechanism.name}.`,
+    subsystemId: subsystem.id,
+    disciplineId: "electrical",
+    requirementId: null,
+    mechanismId: mechanism.id,
+    partInstanceId: null,
+    targetEventId: null,
+    ownerId: subsystem.responsibleEngineerId,
+    mentorId: subsystem.mentorIds[0] ?? null,
+    startDate: new Date().toISOString().slice(0, 10),
+    dueDate: new Date().toISOString().slice(0, 10),
+    priority: "medium",
+    status: "not-started",
+    estimatedHours: 4,
+    actualHours: 0,
+    blockers: [],
+    dependencyIds: [],
+    linkedManufacturingIds: [],
+    linkedPurchaseIds: [],
+    requiresDocumentation: true,
+    documentationLinked: false,
+  };
+
+  return task;
+}
+
+function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
+  if (!subsystem.parentSubsystemId) {
+    return null;
+  }
+
+  const parentSubsystem = currentSnapshot.subsystems.find(
+    (candidate) => candidate.id === subsystem.parentSubsystemId,
+  );
+  if (!parentSubsystem) {
+    return null;
+  }
+
+  const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
+  const task: Task = {
+    id: uniqueId(toSlug(`Integrate ${subsystem.name}`) || "integration-task", taskIds),
+    title: `Integrate ${subsystem.name}`,
+    summary: `Complete integration and interface verification for ${subsystem.name}.`,
+    subsystemId: parentSubsystem.id,
+    disciplineId: "integration",
+    requirementId: null,
+    mechanismId: null,
+    partInstanceId: null,
+    targetEventId: null,
+    ownerId: parentSubsystem.responsibleEngineerId,
+    mentorId: parentSubsystem.mentorIds[0] ?? null,
+    startDate: new Date().toISOString().slice(0, 10),
+    dueDate: new Date().toISOString().slice(0, 10),
+    priority: "medium",
+    status: "not-started",
+    estimatedHours: 4,
+    actualHours: 0,
+    blockers: [],
+    dependencyIds: [],
+    linkedManufacturingIds: [],
+    linkedPurchaseIds: [],
+    requiresDocumentation: true,
+    documentationLinked: false,
+  };
+
+  return task;
 }
 
 function nextWorkLogId() {
@@ -298,15 +378,19 @@ export function createSubsystem(input: SubsystemInput) {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
     name: input.name,
     description: input.description,
-    isCore: input.isCore,
+    isCore: false,
+    parentSubsystemId: input.parentSubsystemId,
     responsibleEngineerId: input.responsibleEngineerId,
     mentorIds: input.mentorIds,
     risks: input.risks,
   };
 
+  const integrationTask = createSubsystemIntegrationTask(subsystem);
+
   currentSnapshot = {
     ...currentSnapshot,
     subsystems: [...currentSnapshot.subsystems, subsystem],
+    tasks: integrationTask ? [...currentSnapshot.tasks, integrationTask] : currentSnapshot.tasks,
   };
 
   return subsystem;
@@ -314,6 +398,18 @@ export function createSubsystem(input: SubsystemInput) {
 
 export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInput>) {
   let updatedSubsystem: Subsystem | null = null;
+  const currentSubsystem = currentSnapshot.subsystems.find(
+    (subsystem) => subsystem.id === subsystemId,
+  );
+  if (!currentSubsystem) {
+    return null;
+  }
+
+  const nextParentSubsystemId = currentSubsystem.isCore
+    ? null
+    : input.parentSubsystemId === undefined
+      ? currentSubsystem.parentSubsystemId
+      : input.parentSubsystemId;
 
   currentSnapshot = {
     ...currentSnapshot,
@@ -325,6 +421,7 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       updatedSubsystem = {
         ...subsystem,
         ...input,
+        parentSubsystemId: nextParentSubsystemId,
       };
 
       return updatedSubsystem;
@@ -442,9 +539,12 @@ export function createMechanism(input: MechanismInput) {
     description: input.description,
   };
 
+  const wiringTask = createMechanismWiringTask(mechanism);
+
   currentSnapshot = {
     ...currentSnapshot,
     mechanisms: [...currentSnapshot.mechanisms, mechanism],
+    tasks: wiringTask ? [...currentSnapshot.tasks, wiringTask] : currentSnapshot.tasks,
   };
 
   return mechanism;

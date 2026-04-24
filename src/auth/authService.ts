@@ -82,6 +82,7 @@ export function getPublicAuthConfig() {
     googleClientId: authConfig.enabled ? authConfig.googleClientId : null,
     hostedDomain: authConfig.hostedDomain,
     emailEnabled: authConfig.enabled && authConfig.emailEnabled,
+    devBypassAvailable: env.NODE_ENV !== "production" && authConfig.enabled,
   };
 }
 
@@ -233,6 +234,17 @@ function buildEmailSessionUser(email: string): SessionUser {
     authProvider: "email",
     email,
     name: email,
+    picture: null,
+    hostedDomain: authConfig.hostedDomain,
+  };
+}
+
+export function buildDevelopmentSessionUser(): SessionUser {
+  return {
+    accountId: "local-dev",
+    authProvider: "email",
+    email: `dev@${authConfig.hostedDomain}`,
+    name: "Local Dev",
     picture: null,
     hostedDomain: authConfig.hostedDomain,
   };

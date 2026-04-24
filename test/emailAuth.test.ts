@@ -32,6 +32,7 @@ test("buildApp advertises email sign-in when localhost SMTP is configured", asyn
       googleClientId: null,
       hostedDomain: "mecorobotics.org",
       emailEnabled: true,
+      devBypassAvailable: true,
     });
   } finally {
     await app.close();

@@ -177,7 +177,7 @@ function makeWorkflowSnapshot() {
     {
       id: "purchase-b",
       title: "Ferrule refill kit",
-      subsystemId: "electrical",
+      subsystemId: "drive",
       requestedById: "priya",
       quantity: 1,
       vendor: "AutomationDirect",
