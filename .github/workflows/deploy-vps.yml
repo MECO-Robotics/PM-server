@@ -98,9 +98,15 @@ jobs:
         shell: bash
         env:
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           umask 077
-          printf '%s' "$PRODUCTION_ENV_FILE" > .env.production.partial
+          {
+            printf '%s' "$PRODUCTION_ENV_FILE"
+            if [[ -n "${RESEND_API_KEY}" ]]; then
+              printf '\nRESEND_API_KEY=%s' "$RESEND_API_KEY"
+            fi
+          } > .env.production.partial
           scp .env.production.partial "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/.env.production.partial"
 
       - name: Merge production env file on VPS

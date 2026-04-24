@@ -139,6 +139,7 @@ Add these secrets to `MECO-Robotics/PM-server`:
 - `VPS_USER`: deploy user, for example `root` or `deploy`
 - `VPS_SSH_KEY`: private SSH key used by GitHub Actions
 - `PRODUCTION_ENV_FILE`: full contents of the `.env.production` file, including SMTP settings if you want email sign-in enabled
+- `RESEND_API_KEY`: optional Resend API key for email sign-in
 
 ## Example production env file
 
@@ -164,9 +165,6 @@ GOOGLE_ALLOWED_HOSTED_DOMAIN=mecorobotics.org
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 AUTH_JWT_SECRET=replace-with-a-long-random-secret
 AUTH_TOKEN_TTL=12h
-# Resend option:
-# Set RESEND_API_KEY to use Resend SMTP.
-RESEND_API_KEY=your-resend-api-key
 AUTH_EMAIL_SMTP_HOST=smtp.your-provider.example
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_SMTP_USER=your-smtp-username
@@ -196,7 +194,7 @@ For production, the web origin must be configured in the Google Cloud Console OA
 If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, or set `RESEND_API_KEY` with `AUTH_EMAIL_FROM`, the server will also expose `POST /api/auth/email/start` and `POST /api/auth/email/verify`.
 
 Resend-specific settings:
-- `RESEND_API_KEY=your-resend-api-key`
+- `RESEND_API_KEY`: set in GitHub Secrets as `RESEND_API_KEY` to keep this credential out of the `.env.production` secret blob
 - `AUTH_EMAIL_FROM="MECO Robotics <no-reply@mecorobotics.org>"`
 
 When `RESEND_API_KEY` is present, the server uses:
