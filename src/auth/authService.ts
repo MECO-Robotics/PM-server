@@ -28,6 +28,9 @@ const emailTransport =
         tls: {
           minVersion: "TLSv1.2",
         },
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000,
+        socketTimeout: 30_000,
         disableFileAccess: true,
         disableUrlAccess: true,
       })
