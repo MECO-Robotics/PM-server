@@ -73,10 +73,10 @@ export interface WorkLogInput {
 
 export interface MemberInput {
   name: string;
-  email: string;
+  email?: string;
   role: Member["role"];
-  elevated: boolean;
-  seasonId: string;
+  elevated?: boolean;
+  seasonId?: string;
 }
 
 export interface SeasonInput {
@@ -1187,13 +1187,14 @@ export function updateManufacturingItem(
 
 export function createMember(input: MemberInput) {
   const memberIds = new Set(currentSnapshot.members.map((member) => member.id));
+  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const member: Member = {
     id: uniqueId(toSlug(input.name) || "member", memberIds),
     name: input.name,
-    email: input.email.trim(),
+    email: (input.email ?? "").trim(),
     role: input.role,
     elevated: isElevatedMemberRole(input.role),
-    seasonId: input.seasonId,
+    seasonId: input.seasonId ?? fallbackSeasonId,
   };
 
   currentSnapshot = {

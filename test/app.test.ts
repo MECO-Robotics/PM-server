@@ -304,6 +304,49 @@ test("buildApp serves health and public auth config without auth enabled", async
 
     resetRequestLimits();
 
+    const paginatedArtifactsResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts?page=2&pageSize=30",
+    });
+
+    assert.equal(paginatedArtifactsResponse.statusCode, 200);
+    const paginatedArtifactsBody = paginatedArtifactsResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: {
+        hasNextPage: boolean;
+        hasPreviousPage: boolean;
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+      };
+    };
+    assert.equal(paginatedArtifactsBody.pagination.pageSize, 30);
+    assert.equal(paginatedArtifactsBody.pagination.page, 1);
+    assert.equal(paginatedArtifactsBody.pagination.totalPages >= 1, true);
+    assert.equal(
+      paginatedArtifactsBody.pagination.totalItems >= paginatedArtifactsBody.items.length,
+      true,
+    );
+    assert.equal(paginatedArtifactsBody.pagination.hasPreviousPage, false);
+
+    resetRequestLimits();
+
+    const invalidPageSizeArtifactsResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts?pageSize=99",
+    });
+
+    assert.equal(invalidPageSizeArtifactsResponse.statusCode, 200);
+    const invalidPageSizeArtifactsBody = invalidPageSizeArtifactsResponse.json() as {
+      pagination: {
+        pageSize: number;
+      };
+    };
+    assert.equal(invalidPageSizeArtifactsBody.pagination.pageSize, 15);
+
+    resetRequestLimits();
+
     const createArtifactResponse = await app.inject({
       method: "POST",
       url: "/api/artifacts",

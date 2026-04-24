@@ -262,6 +262,49 @@ const emailSignInVerifySchema = z.object({
   code: z.string().trim().length(emailCodeLength),
 });
 
+const PAGE_SIZE_OPTIONS = [15, 30, 60] as const;
+type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number];
+const DEFAULT_PAGE_SIZE: PageSizeOption = PAGE_SIZE_OPTIONS[0];
+
+const paginatedQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().optional(),
+});
+
+function parsePaginationQuery(query: unknown) {
+  const parsed = paginatedQuerySchema.safeParse(query ?? {});
+  const requestedPage = parsed.success ? parsed.data.page : undefined;
+  const requestedPageSize = parsed.success ? parsed.data.pageSize : undefined;
+  const pageSize = PAGE_SIZE_OPTIONS.includes(requestedPageSize as PageSizeOption)
+    ? (requestedPageSize as PageSizeOption)
+    : DEFAULT_PAGE_SIZE;
+
+  return {
+    page: requestedPage ?? 1,
+    pageSize,
+  };
+}
+
+function paginateItems<T>(items: T[], query: unknown) {
+  const { page: requestedPage, pageSize } = parsePaginationQuery(query);
+  const totalItems = items.length;
+  const totalPages = totalItems === 0 ? 1 : Math.ceil(totalItems / pageSize);
+  const page = Math.min(requestedPage, totalPages);
+  const startIndex = (page - 1) * pageSize;
+
+  return {
+    items: items.slice(startIndex, startIndex + pageSize),
+    pagination: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    },
+  };
+}
+
 function readPersonFilter(request: { query?: unknown }) {
   const candidate = request.query as { personId?: unknown } | undefined;
   const personId =
@@ -811,8 +854,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getSeasons(), request.query);
+
     return {
-      items: getSeasons(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -856,8 +902,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getProjects(), request.query);
+
     return {
-      items: getProjects(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -866,8 +915,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getWorkstreams(), request.query);
+
     return {
-      items: getWorkstreams(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -876,8 +928,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getQaReports(), request.query);
+
     return {
-      items: getQaReports(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -886,8 +941,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getTestResults(), request.query);
+
     return {
-      items: getTestResults(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -896,8 +954,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getRisks(), request.query);
+
     return {
-      items: getRisks(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -949,36 +1010,39 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const personId = readPersonFilter(request);
+    const items = filterTasksForPerson(personId).map((task) => ({
+      id: task.id,
+      projectId: task.projectId,
+      workstreamId: task.workstreamId,
+      title: task.title,
+      summary: task.summary,
+      subsystemId: task.subsystemId,
+      disciplineId: task.disciplineId,
+      mechanismId: task.mechanismId,
+      partInstanceId: task.partInstanceId,
+      targetEventId: task.targetEventId,
+      ownerId: task.ownerId,
+      mentorId: task.mentorId,
+      startDate: task.startDate,
+      dueDate: task.dueDate,
+      status: formatTaskStatus(task.status),
+      rawStatus: task.status,
+      priority: task.priority,
+      estimatedHours: task.estimatedHours,
+      actualHours: task.actualHours,
+      dependencyIds: task.dependencyIds,
+      gate: evaluateTaskCompletion(task, snapshot),
+      blockers: task.blockers,
+      linkedManufacturingIds: task.linkedManufacturingIds,
+      linkedPurchaseIds: task.linkedPurchaseIds,
+      requiresDocumentation: task.requiresDocumentation,
+      documentationLinked: task.documentationLinked,
+    }));
+    const paginated = paginateItems(items, request.query);
 
     return {
-      items: filterTasksForPerson(personId).map((task) => ({
-        id: task.id,
-        projectId: task.projectId,
-        workstreamId: task.workstreamId,
-        title: task.title,
-        summary: task.summary,
-        subsystemId: task.subsystemId,
-        disciplineId: task.disciplineId,
-        mechanismId: task.mechanismId,
-        partInstanceId: task.partInstanceId,
-        targetEventId: task.targetEventId,
-        ownerId: task.ownerId,
-        mentorId: task.mentorId,
-        startDate: task.startDate,
-        dueDate: task.dueDate,
-        status: formatTaskStatus(task.status),
-        rawStatus: task.status,
-        priority: task.priority,
-        estimatedHours: task.estimatedHours,
-        actualHours: task.actualHours,
-        dependencyIds: task.dependencyIds,
-        gate: evaluateTaskCompletion(task, snapshot),
-        blockers: task.blockers,
-        linkedManufacturingIds: task.linkedManufacturingIds,
-        linkedPurchaseIds: task.linkedPurchaseIds,
-        requiresDocumentation: task.requiresDocumentation,
-        documentationLinked: task.documentationLinked,
-      })),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -987,8 +1051,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getEvents(), request.query);
+
     return {
-      items: getEvents(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -1102,8 +1169,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getMaterials(), request.query);
+
     return {
-      items: getMaterials(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -1184,8 +1254,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getArtifacts(), request.query);
+
     return {
-      items: getArtifacts(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -1385,8 +1458,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getMembers(), request.query);
+
     return {
-      items: getMembers(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -1705,8 +1781,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getPartDefinitions(), request.query);
+
     return {
-      items: getPartDefinitions(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -1811,8 +1890,11 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
+    const paginated = paginateItems(getPartInstances(), request.query);
+
     return {
-      items: getPartInstances(),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
@@ -1938,9 +2020,14 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const personId = readPersonFilter(request);
+    const paginated = paginateItems(
+      filterManufacturingItemsForPerson(personId),
+      request.query,
+    );
 
     return {
-      items: filterManufacturingItemsForPerson(personId),
+      items: paginated.items,
+      pagination: paginated.pagination,
       qaReviews: getSnapshot().qaReviews.filter(
         (review) => review.subjectType === "manufacturing",
       ),
@@ -2056,9 +2143,11 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const personId = readPersonFilter(request);
+    const paginated = paginateItems(filterPurchaseItemsForPerson(personId), request.query);
 
     return {
-      items: filterPurchaseItemsForPerson(personId),
+      items: paginated.items,
+      pagination: paginated.pagination,
     };
   });
 
