@@ -40,12 +40,16 @@ function isElevatedMemberRole(role: Member["role"]): boolean {
 export interface TaskInput {
   projectId: string;
   workstreamId: string | null;
+  workstreamIds: string[];
   title: string;
   summary: string;
   subsystemId: string;
+  subsystemIds: string[];
   disciplineId: string;
   mechanismId: string | null;
+  mechanismIds: string[];
   partInstanceId: string | null;
+  partInstanceIds: string[];
   targetEventId: string | null;
   ownerId: string | null;
   mentorId: string | null;
@@ -204,6 +208,39 @@ function uniqueId(base: string, existingIds: Set<string>) {
   return `${base}-${counter}`;
 }
 
+function uniqueIds(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(values.filter((value): value is string => Boolean(value))),
+  );
+}
+
+function normalizeTaskTargets(task: Task): Task {
+  const workstreamIds = uniqueIds(
+    task.workstreamIds.length > 0 ? task.workstreamIds : [task.workstreamId],
+  );
+  const subsystemIds = uniqueIds(
+    task.subsystemIds.length > 0 ? task.subsystemIds : [task.subsystemId],
+  );
+  const mechanismIds = uniqueIds(
+    task.mechanismIds.length > 0 ? task.mechanismIds : [task.mechanismId],
+  );
+  const partInstanceIds = uniqueIds(
+    task.partInstanceIds.length > 0 ? task.partInstanceIds : [task.partInstanceId],
+  );
+
+  return {
+    ...task,
+    workstreamId: workstreamIds[0] ?? null,
+    workstreamIds,
+    subsystemId: subsystemIds[0] ?? task.subsystemId,
+    subsystemIds,
+    mechanismId: mechanismIds[0] ?? null,
+    mechanismIds,
+    partInstanceId: partInstanceIds[0] ?? null,
+    partInstanceIds,
+  };
+}
+
 const DEFAULT_SEASON_PROJECTS: Array<{
   key: string;
   name: string;
@@ -266,12 +303,16 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     id: uniqueId(toSlug(`Wire ${mechanism.name}`) || "wire-task", taskIds),
     projectId: ownership.projectId,
     workstreamId: ownership.workstreamId,
+    workstreamIds: uniqueIds([ownership.workstreamId]),
     title: `Wire ${mechanism.name}`,
     summary: `Complete wiring and harness verification for ${mechanism.name}.`,
     subsystemId: subsystem.id,
+    subsystemIds: [subsystem.id],
     disciplineId: "electrical",
     mechanismId: mechanism.id,
+    mechanismIds: [mechanism.id],
     partInstanceId: null,
+    partInstanceIds: [],
     targetEventId: null,
     ownerId: subsystem.responsibleEngineerId,
     mentorId: subsystem.mentorIds[0] ?? null,
@@ -314,12 +355,16 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     id: uniqueId(toSlug(`Integrate ${subsystem.name}`) || "integration-task", taskIds),
     projectId: ownership.projectId,
     workstreamId: null,
+    workstreamIds: [],
     title: `Integrate ${subsystem.name}`,
     summary: `Complete integration and interface verification for ${subsystem.name}.`,
     subsystemId: parentSubsystem.id,
+    subsystemIds: [parentSubsystem.id],
     disciplineId: "integration",
     mechanismId: null,
+    mechanismIds: [],
     partInstanceId: null,
+    partInstanceIds: [],
     targetEventId: null,
     ownerId: parentSubsystem.responsibleEngineerId,
     mentorId: parentSubsystem.mentorIds[0] ?? null,
@@ -705,8 +750,11 @@ export function removeSubsystem(subsystemId: string) {
       .filter(
         (task) =>
           subsystemIdsToRemove.has(task.subsystemId) ||
+          task.subsystemIds.some((candidate) => subsystemIdsToRemove.has(candidate)) ||
           mechanismIdsToRemove.has(task.mechanismId ?? "") ||
-          partInstanceIdsToRemove.has(task.partInstanceId ?? ""),
+          task.mechanismIds.some((candidate) => mechanismIdsToRemove.has(candidate)) ||
+          partInstanceIdsToRemove.has(task.partInstanceId ?? "") ||
+          task.partInstanceIds.some((candidate) => partInstanceIdsToRemove.has(candidate)),
       )
       .map((task) => task.id),
   );
@@ -864,14 +912,23 @@ export function removePartDefinition(partDefinitionId: string) {
     partInstances: currentSnapshot.partInstances.filter(
       (partInstance) => partInstance.partDefinitionId !== partDefinitionId,
     ),
-    tasks: currentSnapshot.tasks.map((task) =>
-      removedPartInstanceIds.has(task.partInstanceId ?? "")
-        ? {
-            ...task,
-            partInstanceId: null,
-          }
-        : task,
-    ),
+    tasks: currentSnapshot.tasks.map((task) => {
+      const partInstanceIds = task.partInstanceIds.filter(
+        (partInstanceId) => !removedPartInstanceIds.has(partInstanceId),
+      );
+      if (
+        partInstanceIds.length === task.partInstanceIds.length &&
+        !removedPartInstanceIds.has(task.partInstanceId ?? "")
+      ) {
+        return task;
+      }
+
+      return normalizeTaskTargets({
+        ...task,
+        partInstanceId: partInstanceIds[0] ?? null,
+        partInstanceIds,
+      });
+    }),
     manufacturingItems: currentSnapshot.manufacturingItems.map((item) =>
       item.partDefinitionId === partDefinitionId
         ? {
@@ -991,14 +1048,23 @@ export function removePartInstance(partInstanceId: string) {
     partInstances: currentSnapshot.partInstances.filter(
       (candidate) => candidate.id !== partInstanceId,
     ),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.partInstanceId === partInstanceId
-        ? {
-            ...task,
-            partInstanceId: null,
-          }
-        : task,
-    ),
+    tasks: currentSnapshot.tasks.map((task) => {
+      if (
+        task.partInstanceId !== partInstanceId &&
+        !task.partInstanceIds.includes(partInstanceId)
+      ) {
+        return task;
+      }
+
+      const partInstanceIds = task.partInstanceIds.filter(
+        (candidate) => candidate !== partInstanceId,
+      );
+      return normalizeTaskTargets({
+        ...task,
+        partInstanceId: partInstanceIds[0] ?? null,
+        partInstanceIds,
+      });
+    }),
   };
 
   return partInstance;
@@ -1030,14 +1096,22 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
 
       return updatedMechanism;
     }),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.mechanismId === mechanismId
-        ? {
-            ...task,
-            subsystemId: nextSubsystemId,
-          }
-        : task,
-    ),
+    tasks: currentSnapshot.tasks.map((task) => {
+      if (task.mechanismId !== mechanismId && !task.mechanismIds.includes(mechanismId)) {
+        return task;
+      }
+
+      return normalizeTaskTargets({
+        ...task,
+        subsystemId: nextSubsystemId,
+        subsystemIds: uniqueIds([
+          nextSubsystemId,
+          ...task.subsystemIds.filter(
+            (subsystemId) => subsystemId !== currentMechanism.subsystemId,
+          ),
+        ]),
+      });
+    }),
     partInstances: currentSnapshot.partInstances.map((partInstance) =>
       partInstance.mechanismId === mechanismId
         ? {
@@ -1064,14 +1138,20 @@ export function removeMechanism(mechanismId: string) {
     mechanisms: currentSnapshot.mechanisms.filter(
       (candidate) => candidate.id !== mechanismId,
     ),
-    tasks: currentSnapshot.tasks.map((task) =>
-      task.mechanismId === mechanismId
-        ? {
-            ...task,
-            mechanismId: null,
-          }
-        : task,
-    ),
+    tasks: currentSnapshot.tasks.map((task) => {
+      if (task.mechanismId !== mechanismId && !task.mechanismIds.includes(mechanismId)) {
+        return task;
+      }
+
+      const mechanismIds = task.mechanismIds.filter(
+        (candidate) => candidate !== mechanismId,
+      );
+      return normalizeTaskTargets({
+        ...task,
+        mechanismId: mechanismIds[0] ?? null,
+        mechanismIds,
+      });
+    }),
     partInstances: currentSnapshot.partInstances.map((partInstance) =>
       partInstance.mechanismId === mechanismId
         ? {
@@ -1091,12 +1171,16 @@ export function createTask(input: TaskInput) {
     id: uniqueId(toSlug(input.title) || "task", taskIds),
     projectId: input.projectId,
     workstreamId: input.workstreamId,
+    workstreamIds: input.workstreamIds,
     title: input.title,
     summary: input.summary,
     subsystemId: input.subsystemId,
+    subsystemIds: input.subsystemIds,
     disciplineId: input.disciplineId,
     mechanismId: input.mechanismId,
+    mechanismIds: input.mechanismIds,
     partInstanceId: input.partInstanceId,
+    partInstanceIds: input.partInstanceIds,
     targetEventId: input.targetEventId,
     ownerId: input.ownerId,
     mentorId: input.mentorId,
@@ -1114,12 +1198,14 @@ export function createTask(input: TaskInput) {
     documentationLinked: input.documentationLinked,
   };
 
+  const normalizedTask = normalizeTaskTargets(task);
+
   currentSnapshot = {
     ...currentSnapshot,
-    tasks: [...currentSnapshot.tasks, task],
+    tasks: [...currentSnapshot.tasks, normalizedTask],
   };
 
-  return task;
+  return normalizedTask;
 }
 
 export function createEvent(input: EventInput) {
@@ -1255,10 +1341,25 @@ export function updateTask(taskId: string, input: Partial<TaskInput>) {
         return task;
       }
 
-      updatedTask = {
+      const scalarTargetUpdates: Partial<TaskInput> = {};
+      if (input.workstreamId !== undefined && input.workstreamIds === undefined) {
+        scalarTargetUpdates.workstreamIds = uniqueIds([input.workstreamId]);
+      }
+      if (input.subsystemId !== undefined && input.subsystemIds === undefined) {
+        scalarTargetUpdates.subsystemIds = uniqueIds([input.subsystemId]);
+      }
+      if (input.mechanismId !== undefined && input.mechanismIds === undefined) {
+        scalarTargetUpdates.mechanismIds = uniqueIds([input.mechanismId]);
+      }
+      if (input.partInstanceId !== undefined && input.partInstanceIds === undefined) {
+        scalarTargetUpdates.partInstanceIds = uniqueIds([input.partInstanceId]);
+      }
+
+      updatedTask = normalizeTaskTargets({
         ...task,
         ...input,
-      };
+        ...scalarTargetUpdates,
+      });
 
       return updatedTask;
     }),

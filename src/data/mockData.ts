@@ -1,6 +1,30 @@
-import { PlatformSnapshot } from "../domain/types";
+import type { PlatformSnapshot, Task } from "../domain/types";
 
-export const snapshot: PlatformSnapshot = {
+type SeedTask = Omit<
+  Task,
+  "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds"
+> &
+  Partial<
+    Pick<Task, "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds">
+  >;
+
+function uniqueIds(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(values.filter((value): value is string => Boolean(value))),
+  );
+}
+
+function normalizeTaskTargets(task: SeedTask): Task {
+  return {
+    ...task,
+    workstreamIds: task.workstreamIds ?? uniqueIds([task.workstreamId]),
+    subsystemIds: task.subsystemIds ?? uniqueIds([task.subsystemId]),
+    mechanismIds: task.mechanismIds ?? uniqueIds([task.mechanismId]),
+    partInstanceIds: task.partInstanceIds ?? uniqueIds([task.partInstanceId]),
+  };
+}
+
+const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
   seasons: [
     {
       id: "default-season",
@@ -745,6 +769,16 @@ export const snapshot: PlatformSnapshot = {
       endDateTime: "2026-05-05T20:00:00-04:00",
       isExternal: true,
       description: "Community outreach event featuring kiosk demos and student-led tours.",
+      relatedSubsystemIds: ["outreach"],
+    },
+    {
+      id: "outreach-milestone-may-05",
+      title: "Outreach Milestone",
+      type: "demo",
+      startDateTime: "2026-05-05T17:00:00-04:00",
+      endDateTime: "2026-05-05T17:30:00-04:00",
+      isExternal: true,
+      description: "Final outreach readiness checkpoint before STEM Night demos begin.",
       relatedSubsystemIds: ["outreach"],
     },
     {
@@ -2036,4 +2070,9 @@ export const snapshot: PlatformSnapshot = {
       severity: "medium",
     },
   ],
+};
+
+export const snapshot: PlatformSnapshot = {
+  ...snapshotSeed,
+  tasks: snapshotSeed.tasks.map(normalizeTaskTargets),
 };

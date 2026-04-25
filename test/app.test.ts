@@ -422,6 +422,69 @@ test("buildApp serves health and public auth config without auth enabled", async
 
     resetRequestLimits();
 
+    const multiTargetTaskCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        projectId: "project-robot-2026",
+        workstreamIds: ["workstream-drive", "workstream-controls"],
+        title: "Multi-target task payload",
+        summary: "Created with multiple linked workstreams, subsystems, mechanisms, and parts.",
+        subsystemIds: ["drive", "controls"],
+        disciplineId: "mechanical",
+        mechanismIds: ["swerve-module", "auto-safety"],
+        partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
+        targetEventId: null,
+        ownerId: mobileMemberCreatedBody.item.id,
+        mentorId: "riley",
+        dueDate: "2026-05-08",
+        priority: "high",
+        status: "not-started",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 2,
+        actualHours: 0,
+      },
+    });
+
+    assert.equal(multiTargetTaskCreateResponse.statusCode, 201);
+    const multiTargetTaskCreatedBody = multiTargetTaskCreateResponse.json() as {
+      item: {
+        id: string;
+        workstreamId: string | null;
+        workstreamIds: string[];
+        subsystemId: string;
+        subsystemIds: string[];
+        mechanismId: string | null;
+        mechanismIds: string[];
+        partInstanceId: string | null;
+        partInstanceIds: string[];
+      };
+    };
+    assert.equal(multiTargetTaskCreatedBody.item.workstreamId, "workstream-drive");
+    assert.deepEqual(multiTargetTaskCreatedBody.item.workstreamIds, [
+      "workstream-drive",
+      "workstream-controls",
+    ]);
+    assert.equal(multiTargetTaskCreatedBody.item.subsystemId, "drive");
+    assert.deepEqual(multiTargetTaskCreatedBody.item.subsystemIds, ["drive", "controls"]);
+    assert.equal(multiTargetTaskCreatedBody.item.mechanismId, "swerve-module");
+    assert.deepEqual(multiTargetTaskCreatedBody.item.mechanismIds, [
+      "swerve-module",
+      "auto-safety",
+    ]);
+    assert.equal(
+      multiTargetTaskCreatedBody.item.partInstanceId,
+      "pi-swerve-encoder-bracket-front-left",
+    );
+    assert.deepEqual(multiTargetTaskCreatedBody.item.partInstanceIds, [
+      "pi-swerve-encoder-bracket-front-left",
+    ]);
+
+    resetRequestLimits();
+
     const mobileManufacturingCreateResponse = await app.inject({
       method: "POST",
       url: "/api/manufacturing",

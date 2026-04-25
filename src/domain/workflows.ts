@@ -73,7 +73,9 @@ export function buildDashboard(snapshot: PlatformSnapshot) {
     },
     subsystemCards: snapshot.subsystems.map((subsystem) => {
       const tasks = snapshot.tasks.filter(
-        (task) => task.subsystemId === subsystem.id,
+        (task) =>
+          task.subsystemId === subsystem.id ||
+          (task.subsystemIds ?? [task.subsystemId]).includes(subsystem.id),
       );
       const done = tasks.filter((task) => task.status === "complete").length;
 

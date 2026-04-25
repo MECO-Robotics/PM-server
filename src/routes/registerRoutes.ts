@@ -107,12 +107,16 @@ const seasonSchema = z.object({
 const taskSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
   workstreamId: z.string().trim().min(1).nullable().optional(),
+  workstreamIds: z.array(z.string().trim().min(1)).optional(),
   title: z.string().trim().min(3),
   summary: z.string().trim().min(3),
-  subsystemId: z.string().min(1),
+  subsystemId: z.string().trim().min(1).optional(),
+  subsystemIds: z.array(z.string().trim().min(1)).optional(),
   disciplineId: z.string().min(1),
-  mechanismId: z.string().trim().min(1).nullable(),
-  partInstanceId: z.string().trim().min(1).nullable(),
+  mechanismId: z.string().trim().min(1).nullable().optional(),
+  mechanismIds: z.array(z.string().trim().min(1)).optional(),
+  partInstanceId: z.string().trim().min(1).nullable().optional(),
+  partInstanceIds: z.array(z.string().trim().min(1)).optional(),
   targetEventId: z.string().trim().min(1).nullable(),
   ownerId: z.string().trim().min(1).nullable(),
   mentorId: z.string().trim().min(1).nullable(),
@@ -409,6 +413,107 @@ function resolveWorkstreamId(input: {
   );
 }
 
+function uniqueIds(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(values.filter((value): value is string => Boolean(value))),
+  );
+}
+
+function readTargetIds(input: {
+  id?: string | null;
+  ids?: string[];
+  fallbackId?: string | null;
+  fallbackIds?: string[];
+}) {
+  if (input.ids !== undefined) {
+    return uniqueIds(input.ids);
+  }
+
+  if (input.id !== undefined) {
+    return uniqueIds([input.id]);
+  }
+
+  return uniqueIds(input.fallbackIds ?? [input.fallbackId]);
+}
+
+function normalizeTaskTargets(
+  input: {
+    workstreamId?: string | null;
+    workstreamIds?: string[];
+    subsystemId?: string;
+    subsystemIds?: string[];
+    mechanismId?: string | null;
+    mechanismIds?: string[];
+    partInstanceId?: string | null;
+    partInstanceIds?: string[];
+  },
+  fallback?: {
+    workstreamId: string | null;
+    workstreamIds: string[];
+    subsystemId: string;
+    subsystemIds: string[];
+    mechanismId: string | null;
+    mechanismIds: string[];
+    partInstanceId: string | null;
+    partInstanceIds: string[];
+  },
+) {
+  const partInstanceIds = readTargetIds({
+    id: input.partInstanceId,
+    ids: input.partInstanceIds,
+    fallbackId: fallback?.partInstanceId,
+    fallbackIds: fallback?.partInstanceIds,
+  });
+  const partInstances = partInstanceIds
+    .map((partInstanceId) => findPartInstance(partInstanceId))
+    .filter((partInstance): partInstance is NonNullable<typeof partInstance> =>
+      Boolean(partInstance),
+    );
+  const explicitMechanismIds = readTargetIds({
+    id: input.mechanismId,
+    ids: input.mechanismIds,
+    fallbackId: fallback?.mechanismId,
+    fallbackIds: fallback?.mechanismIds,
+  });
+  const mechanismIds = uniqueIds([
+    ...explicitMechanismIds,
+    ...partInstances.map((partInstance) => partInstance.mechanismId),
+  ]);
+  const mechanisms = mechanismIds
+    .map((mechanismId) => findMechanism(mechanismId))
+    .filter((mechanism): mechanism is NonNullable<typeof mechanism> =>
+      Boolean(mechanism),
+    );
+  const explicitSubsystemIds = readTargetIds({
+    id: input.subsystemId,
+    ids: input.subsystemIds,
+    fallbackId: fallback?.subsystemId,
+    fallbackIds: fallback?.subsystemIds,
+  });
+  const subsystemIds = uniqueIds([
+    ...explicitSubsystemIds,
+    ...mechanisms.map((mechanism) => mechanism.subsystemId),
+    ...partInstances.map((partInstance) => partInstance.subsystemId),
+  ]);
+  const workstreamIds = readTargetIds({
+    id: input.workstreamId,
+    ids: input.workstreamIds,
+    fallbackId: fallback?.workstreamId,
+    fallbackIds: fallback?.workstreamIds,
+  });
+
+  return {
+    workstreamId: workstreamIds[0] ?? null,
+    workstreamIds,
+    subsystemId: subsystemIds[0] ?? "",
+    subsystemIds,
+    mechanismId: mechanismIds[0] ?? null,
+    mechanismIds,
+    partInstanceId: partInstanceIds[0] ?? null,
+    partInstanceIds,
+  };
+}
+
 function withManufacturingQaReviewCounts(
   items: ReturnType<typeof getManufacturingItems>,
   snapshot = getSnapshot(),
@@ -451,10 +556,14 @@ function validateWorkLogLinks(input: {
 function validateTaskLinks(input: {
   projectId: string;
   workstreamId?: string | null;
-  subsystemId: string;
+  workstreamIds?: string[];
+  subsystemId?: string | null;
+  subsystemIds: string[];
   disciplineId?: string;
   mechanismId?: string | null;
+  mechanismIds?: string[];
   partInstanceId?: string | null;
+  partInstanceIds?: string[];
   targetEventId?: string | null;
 }) {
   const project = findProject(input.projectId);
@@ -462,8 +571,12 @@ function validateTaskLinks(input: {
     return "The selected project does not exist.";
   }
 
-  if (input.workstreamId) {
-    const workstream = findWorkstream(input.workstreamId);
+  const workstreamIds = uniqueIds([
+    ...(input.workstreamIds ?? []),
+    input.workstreamId,
+  ]);
+  for (const workstreamId of workstreamIds) {
+    const workstream = findWorkstream(workstreamId);
     if (!workstream) {
       return "The selected workstream does not exist.";
     }
@@ -473,45 +586,62 @@ function validateTaskLinks(input: {
     }
   }
 
-  if (!findSubsystem(input.subsystemId)) {
-    return "The selected subsystem does not exist.";
+  const subsystemIds = uniqueIds([
+    ...input.subsystemIds,
+    input.subsystemId,
+  ]);
+  if (subsystemIds.length === 0) {
+    return "Select at least one subsystem, mechanism, or part instance target.";
   }
-  const subsystem = findSubsystem(input.subsystemId);
-  if (subsystem && subsystem.projectId !== project.id) {
-    return "The selected subsystem does not belong to the selected project.";
+  for (const subsystemId of subsystemIds) {
+    const subsystem = findSubsystem(subsystemId);
+    if (!subsystem) {
+      return "The selected subsystem does not exist.";
+    }
+    if (subsystem.projectId !== project.id) {
+      return "The selected subsystem does not belong to the selected project.";
+    }
   }
 
   if (input.disciplineId && !findDiscipline(input.disciplineId)) {
     return "The selected discipline does not exist.";
   }
 
-  if (input.mechanismId) {
-    const mechanism = findMechanism(input.mechanismId);
+  const mechanismIds = uniqueIds([
+    ...(input.mechanismIds ?? []),
+    input.mechanismId,
+  ]);
+  for (const mechanismId of mechanismIds) {
+    const mechanism = findMechanism(mechanismId);
     if (!mechanism) {
       return "The selected mechanism does not exist.";
     }
 
-    if (mechanism.subsystemId !== input.subsystemId) {
-      return "The selected mechanism does not belong to the selected subsystem.";
+    if (!subsystemIds.includes(mechanism.subsystemId)) {
+      return "One or more selected mechanisms do not belong to a selected subsystem.";
     }
   }
 
-  if (input.partInstanceId) {
-    const partInstance = findPartInstance(input.partInstanceId);
+  const partInstanceIds = uniqueIds([
+    ...(input.partInstanceIds ?? []),
+    input.partInstanceId,
+  ]);
+  for (const partInstanceId of partInstanceIds) {
+    const partInstance = findPartInstance(partInstanceId);
     if (!partInstance) {
       return "The selected part instance does not exist.";
     }
 
-    if (partInstance.subsystemId !== input.subsystemId) {
-      return "The selected part instance does not belong to the selected subsystem.";
+    if (!subsystemIds.includes(partInstance.subsystemId)) {
+      return "One or more selected part instances do not belong to a selected subsystem.";
     }
 
-    if (!input.mechanismId) {
+    if (!partInstance.mechanismId) {
       return "The selected part instance must be linked to a mechanism.";
     }
 
-    if (partInstance.mechanismId && partInstance.mechanismId !== input.mechanismId) {
-      return "The selected part instance does not belong to the selected mechanism.";
+    if (!mechanismIds.includes(partInstance.mechanismId)) {
+      return "One or more selected part instances do not belong to a selected mechanism.";
     }
   }
 
@@ -1179,12 +1309,16 @@ export async function registerRoutes(app: FastifyInstance) {
       id: task.id,
       projectId: task.projectId,
       workstreamId: task.workstreamId,
+      workstreamIds: task.workstreamIds,
       title: task.title,
       summary: task.summary,
       subsystemId: task.subsystemId,
+      subsystemIds: task.subsystemIds,
       disciplineId: task.disciplineId,
       mechanismId: task.mechanismId,
+      mechanismIds: task.mechanismIds,
       partInstanceId: task.partInstanceId,
+      partInstanceIds: task.partInstanceIds,
       targetEventId: task.targetEventId,
       ownerId: task.ownerId,
       mentorId: task.mentorId,
@@ -1547,9 +1681,10 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    const targetIds = normalizeTaskTargets(parsed.data);
     const projectId = resolveProjectId({
       projectId: parsed.data.projectId,
-      subsystemId: parsed.data.subsystemId,
+      subsystemId: targetIds.subsystemId,
     });
     if (!projectId) {
       return reply.code(400).send({
@@ -1557,14 +1692,21 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    const defaultWorkstreamId = resolveWorkstreamId({
+      projectId,
+      requestedWorkstreamId: parsed.data.workstreamId,
+      subsystemId: targetIds.subsystemId,
+    });
+    const workstreamIds =
+      targetIds.workstreamIds.length > 0
+        ? targetIds.workstreamIds
+        : uniqueIds([defaultWorkstreamId]);
     const taskInput = {
       ...parsed.data,
       projectId,
-      workstreamId: resolveWorkstreamId({
-        projectId,
-        requestedWorkstreamId: parsed.data.workstreamId,
-        subsystemId: parsed.data.subsystemId,
-      }),
+      ...targetIds,
+      workstreamId: workstreamIds[0] ?? null,
+      workstreamIds,
       startDate: parsed.data.startDate ?? parsed.data.dueDate,
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
       documentationLinked: parsed.data.documentationLinked ?? false,
@@ -1605,31 +1747,32 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
+      const targetIds = normalizeTaskTargets(parsed.data, currentTask);
       const nextProjectId = resolveProjectId({
         projectId: parsed.data.projectId,
-        subsystemId: parsed.data.subsystemId,
+        subsystemId: targetIds.subsystemId,
       }) ?? currentTask.projectId;
+      const workstreamWasProvided =
+        parsed.data.workstreamId !== undefined || parsed.data.workstreamIds !== undefined;
+      const subsystemWasProvided =
+        parsed.data.subsystemId !== undefined || parsed.data.subsystemIds !== undefined;
+      const defaultWorkstreamId =
+        !workstreamWasProvided && subsystemWasProvided
+          ? resolveWorkstreamId({
+              projectId: nextProjectId,
+              subsystemId: targetIds.subsystemId,
+            })
+          : targetIds.workstreamId;
+      const workstreamIds =
+        workstreamWasProvided || !subsystemWasProvided
+          ? targetIds.workstreamIds
+          : uniqueIds([defaultWorkstreamId]);
       const nextTaskShape = {
         projectId: nextProjectId,
-        workstreamId:
-          parsed.data.workstreamId === undefined
-            ? parsed.data.subsystemId
-              ? resolveWorkstreamId({
-                  projectId: nextProjectId,
-                  subsystemId: parsed.data.subsystemId,
-                })
-              : currentTask.workstreamId
-            : parsed.data.workstreamId,
-        subsystemId: parsed.data.subsystemId ?? currentTask.subsystemId,
+        ...targetIds,
+        workstreamId: workstreamIds[0] ?? null,
+        workstreamIds,
         disciplineId: parsed.data.disciplineId ?? currentTask.disciplineId,
-        mechanismId:
-          parsed.data.mechanismId === undefined
-            ? currentTask.mechanismId
-            : parsed.data.mechanismId,
-        partInstanceId:
-          parsed.data.partInstanceId === undefined
-            ? currentTask.partInstanceId
-            : parsed.data.partInstanceId,
         targetEventId:
           parsed.data.targetEventId === undefined
             ? currentTask.targetEventId
@@ -1647,6 +1790,13 @@ export async function registerRoutes(app: FastifyInstance) {
         ...parsed.data,
         projectId: nextTaskShape.projectId,
         workstreamId: nextTaskShape.workstreamId,
+        workstreamIds: nextTaskShape.workstreamIds,
+        subsystemId: nextTaskShape.subsystemId,
+        subsystemIds: nextTaskShape.subsystemIds,
+        mechanismId: nextTaskShape.mechanismId,
+        mechanismIds: nextTaskShape.mechanismIds,
+        partInstanceId: nextTaskShape.partInstanceId,
+        partInstanceIds: nextTaskShape.partInstanceIds,
       });
       return {
         item: updatedTask,

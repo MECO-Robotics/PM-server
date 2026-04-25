@@ -138,12 +138,16 @@ export interface Task {
   id: string;
   projectId: string;
   workstreamId: string | null;
+  workstreamIds: string[];
   title: string;
   summary: string;
   subsystemId: string;
+  subsystemIds: string[];
   disciplineId: string;
   mechanismId: string | null;
+  mechanismIds: string[];
   partInstanceId: string | null;
+  partInstanceIds: string[];
   targetEventId: string | null;
   ownerId: string | null;
   mentorId: string | null;

@@ -21,6 +21,17 @@ beforeEach(() => {
   resetStore();
 });
 
+test("seed data includes an Outreach milestone linked to the outreach subsystem", () => {
+  const snapshot = getSnapshot();
+  const event = snapshot.events.find((candidate) => candidate.id === "outreach-milestone-may-05");
+
+  assert.ok(event);
+  assert.equal(event.title, "Outreach Milestone");
+  assert.equal(event.type, "demo");
+  assert.equal(event.isExternal, true);
+  assert.deepEqual(event.relatedSubsystemIds, ["outreach"]);
+});
+
 test("createMember generates unique slugs for repeated names", () => {
   const first = createMember({
     name: "Ava Chen",
