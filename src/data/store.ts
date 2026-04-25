@@ -652,6 +652,148 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
   return updatedSubsystem;
 }
 
+export function removeSubsystem(subsystemId: string) {
+  const subsystem = currentSnapshot.subsystems.find(
+    (candidate) => candidate.id === subsystemId,
+  );
+  if (!subsystem) {
+    return null;
+  }
+
+  const subsystemIdsToRemove = new Set([subsystemId]);
+  let foundDescendant = true;
+  while (foundDescendant) {
+    foundDescendant = false;
+    for (const candidate of currentSnapshot.subsystems) {
+      if (
+        candidate.parentSubsystemId &&
+        subsystemIdsToRemove.has(candidate.parentSubsystemId) &&
+        !subsystemIdsToRemove.has(candidate.id)
+      ) {
+        subsystemIdsToRemove.add(candidate.id);
+        foundDescendant = true;
+      }
+    }
+  }
+
+  const mechanismIdsToRemove = new Set(
+    currentSnapshot.mechanisms
+      .filter((mechanism) => subsystemIdsToRemove.has(mechanism.subsystemId))
+      .map((mechanism) => mechanism.id),
+  );
+  const partInstanceIdsToRemove = new Set(
+    currentSnapshot.partInstances
+      .filter(
+        (partInstance) =>
+          subsystemIdsToRemove.has(partInstance.subsystemId) ||
+          mechanismIdsToRemove.has(partInstance.mechanismId ?? ""),
+      )
+      .map((partInstance) => partInstance.id),
+  );
+  const manufacturingItemIdsToRemove = new Set(
+    currentSnapshot.manufacturingItems
+      .filter((item) => subsystemIdsToRemove.has(item.subsystemId))
+      .map((item) => item.id),
+  );
+  const purchaseItemIdsToRemove = new Set(
+    currentSnapshot.purchaseItems
+      .filter((item) => subsystemIdsToRemove.has(item.subsystemId))
+      .map((item) => item.id),
+  );
+  const taskIdsToRemove = new Set(
+    currentSnapshot.tasks
+      .filter(
+        (task) =>
+          subsystemIdsToRemove.has(task.subsystemId) ||
+          mechanismIdsToRemove.has(task.mechanismId ?? "") ||
+          partInstanceIdsToRemove.has(task.partInstanceId ?? ""),
+      )
+      .map((task) => task.id),
+  );
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    subsystems: currentSnapshot.subsystems.filter(
+      (candidate) => !subsystemIdsToRemove.has(candidate.id),
+    ),
+    mechanisms: currentSnapshot.mechanisms.filter(
+      (mechanism) => !mechanismIdsToRemove.has(mechanism.id),
+    ),
+    partInstances: currentSnapshot.partInstances.filter(
+      (partInstance) => !partInstanceIdsToRemove.has(partInstance.id),
+    ),
+    tasks: currentSnapshot.tasks
+      .filter((task) => !taskIdsToRemove.has(task.id))
+      .map((task) => ({
+        ...task,
+        dependencyIds: task.dependencyIds.filter(
+          (dependencyId) => !taskIdsToRemove.has(dependencyId),
+        ),
+        linkedManufacturingIds: task.linkedManufacturingIds.filter(
+          (itemId) => !manufacturingItemIdsToRemove.has(itemId),
+        ),
+        linkedPurchaseIds: task.linkedPurchaseIds.filter(
+          (itemId) => !purchaseItemIdsToRemove.has(itemId),
+        ),
+      })),
+    workLogs: currentSnapshot.workLogs.filter(
+      (workLog) => !taskIdsToRemove.has(workLog.taskId),
+    ),
+    events: currentSnapshot.events.map((event) => ({
+      ...event,
+      relatedSubsystemIds: event.relatedSubsystemIds.filter(
+        (relatedSubsystemId) => !subsystemIdsToRemove.has(relatedSubsystemId),
+      ),
+    })),
+    qaReports: currentSnapshot.qaReports.filter(
+      (report) => !taskIdsToRemove.has(report.taskId),
+    ),
+    risks: currentSnapshot.risks.filter((risk) => {
+      if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
+        return false;
+      }
+
+      if (
+        risk.attachmentType === "mechanism" &&
+        mechanismIdsToRemove.has(risk.attachmentId)
+      ) {
+        return false;
+      }
+
+      if (
+        risk.attachmentType === "part-instance" &&
+        partInstanceIdsToRemove.has(risk.attachmentId)
+      ) {
+        return false;
+      }
+
+      return true;
+    }),
+    manufacturingItems: currentSnapshot.manufacturingItems.filter(
+      (item) => !manufacturingItemIdsToRemove.has(item.id),
+    ),
+    purchaseItems: currentSnapshot.purchaseItems.filter(
+      (item) => !purchaseItemIdsToRemove.has(item.id),
+    ),
+    qaReviews: currentSnapshot.qaReviews.filter((review) => {
+      if (review.subjectType === "task" && taskIdsToRemove.has(review.subjectId)) {
+        return false;
+      }
+
+      if (
+        review.subjectType === "manufacturing" &&
+        manufacturingItemIdsToRemove.has(review.subjectId)
+      ) {
+        return false;
+      }
+
+      return true;
+    }),
+  };
+
+  return subsystem;
+}
+
 export function createPartDefinition(input: PartDefinitionInput) {
   const partDefinitionIds = new Set(
     currentSnapshot.partDefinitions.map((partDefinition) => partDefinition.id),
@@ -1063,6 +1205,46 @@ export function createWorkLog(input: WorkLogInput) {
   return workLog;
 }
 
+export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
+  let updatedWorkLog: WorkLog | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    workLogs: currentSnapshot.workLogs.map((workLog) => {
+      if (workLog.id !== workLogId) {
+        return workLog;
+      }
+
+      updatedWorkLog = {
+        ...workLog,
+        ...input,
+      };
+
+      return updatedWorkLog;
+    }),
+  };
+
+  return updatedWorkLog;
+}
+
+export function removeWorkLog(workLogId: string) {
+  const workLog = currentSnapshot.workLogs.find(
+    (candidate) => candidate.id === workLogId,
+  );
+  if (!workLog) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    workLogs: currentSnapshot.workLogs.filter(
+      (candidate) => candidate.id !== workLogId,
+    ),
+  };
+
+  return workLog;
+}
+
 export function updateTask(taskId: string, input: Partial<TaskInput>) {
   let updatedTask: Task | null = null;
 
@@ -1083,6 +1265,33 @@ export function updateTask(taskId: string, input: Partial<TaskInput>) {
   };
 
   return updatedTask;
+}
+
+export function removeTask(taskId: string) {
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (!task) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    tasks: currentSnapshot.tasks
+      .filter((candidate) => candidate.id !== taskId)
+      .map((candidate) => ({
+        ...candidate,
+        dependencyIds: candidate.dependencyIds.filter(
+          (dependencyId) => dependencyId !== taskId,
+        ),
+      })),
+    workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
+    qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
+    qaReviews: currentSnapshot.qaReviews.filter(
+      (review) => review.subjectType !== "task" || review.subjectId !== taskId,
+    ),
+    risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId),
+  };
+
+  return task;
 }
 
 export function createPurchaseItem(input: PurchaseItemInput) {
@@ -1135,6 +1344,30 @@ export function updatePurchaseItem(
   return updatedItem;
 }
 
+export function removePurchaseItem(itemId: string) {
+  const item = currentSnapshot.purchaseItems.find(
+    (candidate) => candidate.id === itemId,
+  );
+  if (!item) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    purchaseItems: currentSnapshot.purchaseItems.filter(
+      (candidate) => candidate.id !== itemId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) => ({
+      ...task,
+      linkedPurchaseIds: task.linkedPurchaseIds.filter(
+        (linkedItemId) => linkedItemId !== itemId,
+      ),
+    })),
+  };
+
+  return item;
+}
+
 export function createManufacturingItem(input: ManufacturingItemInput) {
   const itemIds = new Set(currentSnapshot.manufacturingItems.map((item) => item.id));
   const item: ManufacturingItem = {
@@ -1183,6 +1416,34 @@ export function updateManufacturingItem(
   };
 
   return updatedItem;
+}
+
+export function removeManufacturingItem(itemId: string) {
+  const item = currentSnapshot.manufacturingItems.find(
+    (candidate) => candidate.id === itemId,
+  );
+  if (!item) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    manufacturingItems: currentSnapshot.manufacturingItems.filter(
+      (candidate) => candidate.id !== itemId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) => ({
+      ...task,
+      linkedManufacturingIds: task.linkedManufacturingIds.filter(
+        (linkedItemId) => linkedItemId !== itemId,
+      ),
+    })),
+    qaReviews: currentSnapshot.qaReviews.filter(
+      (review) =>
+        review.subjectType !== "manufacturing" || review.subjectId !== itemId,
+    ),
+  };
+
+  return item;
 }
 
 export function createMember(input: MemberInput) {

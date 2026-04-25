@@ -228,13 +228,28 @@ test("buildApp serves health and public auth config without auth enabled", async
         projectId: string;
         workstreamId: string | null;
       }>;
+      attendanceRecords: Array<{
+        id: string;
+        memberId: string;
+      }>;
+      escalations: Array<{
+        title: string;
+      }>;
       manufacturingItems: Array<{
         batchLabel?: string;
         id: string;
         partDefinitionId: string | null;
         process: string;
+        qaReviewCount: number;
         status: string;
         title: string;
+      }>;
+      meetings: Array<{
+        id: string;
+      }>;
+      qaReviews: Array<{
+        id: string;
+        subjectId: string;
       }>;
       workLogs: Array<{
         id: string;
@@ -250,6 +265,16 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.equal(seededFabricationItem?.process, "fabrication");
     assert.equal(seededFabricationItem?.partDefinitionId, null);
     assert.equal(seededFabricationItem?.batchLabel, "FAB-03");
+    const seededManufacturingQaItem = bootstrapBody.manufacturingItems.find(
+      (item) => item.id === "sensor-bracket",
+    );
+    assert.equal(seededManufacturingQaItem?.qaReviewCount, 1);
+    assert.ok(bootstrapBody.meetings.some((meeting) => meeting.id === "design-review"));
+    assert.ok(
+      bootstrapBody.attendanceRecords.some((record) => record.id === "att-1"),
+    );
+    assert.ok(bootstrapBody.qaReviews.some((review) => review.id === "qa-1"));
+    assert.ok(bootstrapBody.escalations.length > 0);
     const seededOperationsArtifact = bootstrapBody.artifacts.find(
       (artifact) => artifact.id === "artifact-sponsor-recap-apr",
     );
@@ -301,6 +326,159 @@ test("buildApp serves health and public auth config without auth enabled", async
           artifact.kind === "document",
       ),
     );
+
+    resetRequestLimits();
+
+    const mobileMemberCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: {
+        name: "Mobile Test Student",
+        role: "student",
+      },
+    });
+
+    assert.equal(mobileMemberCreateResponse.statusCode, 201);
+    const mobileMemberCreatedBody = mobileMemberCreateResponse.json() as {
+      item: {
+        email: string;
+        elevated: boolean;
+        id: string;
+        seasonId: string;
+      };
+    };
+    assert.equal(mobileMemberCreatedBody.item.email, "");
+    assert.equal(mobileMemberCreatedBody.item.elevated, false);
+    assert.equal(mobileMemberCreatedBody.item.seasonId, "default-season");
+
+    resetRequestLimits();
+
+    const mobileSubsystemCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        name: "Mobile Test Intake",
+        description: "Subsystem created with the mobile app payload shape.",
+        parentSubsystemId: "manipulator",
+        responsibleEngineerId: mobileMemberCreatedBody.item.id,
+        mentorIds: ["riley"],
+        risks: [],
+      },
+    });
+
+    assert.equal(mobileSubsystemCreateResponse.statusCode, 201);
+    const mobileSubsystemCreatedBody = mobileSubsystemCreateResponse.json() as {
+      item: {
+        id: string;
+        projectId: string;
+      };
+    };
+    assert.equal(mobileSubsystemCreatedBody.item.projectId, "project-robot-2026");
+
+    resetRequestLimits();
+
+    const mobileTaskCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Mobile task payload",
+        summary: "Created from the mobile app's compact task draft.",
+        subsystemId: mobileSubsystemCreatedBody.item.id,
+        disciplineId: "mechanical",
+        requirementId: null,
+        mechanismId: null,
+        partInstanceId: null,
+        targetEventId: null,
+        ownerId: mobileMemberCreatedBody.item.id,
+        mentorId: "riley",
+        dueDate: "2026-05-06",
+        priority: "medium",
+        status: "not-started",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 0,
+        actualHours: 0,
+      },
+    });
+
+    assert.equal(mobileTaskCreateResponse.statusCode, 201);
+    const mobileTaskCreatedBody = mobileTaskCreateResponse.json() as {
+      item: {
+        id: string;
+        projectId: string;
+        startDate: string;
+        workstreamId: string | null;
+      };
+    };
+    assert.equal(mobileTaskCreatedBody.item.projectId, "project-robot-2026");
+    assert.equal(mobileTaskCreatedBody.item.startDate, "2026-05-06");
+    assert.equal(
+      typeof mobileTaskCreatedBody.item.workstreamId === "string" ||
+        mobileTaskCreatedBody.item.workstreamId === null,
+      true,
+    );
+
+    resetRequestLimits();
+
+    const mobileManufacturingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/manufacturing",
+      payload: {
+        title: "Mobile CNC Item",
+        subsystemId: mobileSubsystemCreatedBody.item.id,
+        requestedById: mobileMemberCreatedBody.item.id,
+        process: "cnc",
+        dueDate: "2026-05-07",
+        material: "Aluminum plate",
+        quantity: 1,
+        status: "requested",
+        mentorReviewed: false,
+        qaReviewCount: 0,
+      },
+    });
+
+    assert.equal(mobileManufacturingCreateResponse.statusCode, 201);
+    const mobileManufacturingCreatedBody =
+      mobileManufacturingCreateResponse.json() as {
+        item: {
+          id: string;
+          partDefinitionId: string | null;
+          title: string;
+        };
+      };
+    assert.equal(mobileManufacturingCreatedBody.item.partDefinitionId, null);
+    assert.equal(mobileManufacturingCreatedBody.item.title, "Mobile CNC Item");
+
+    resetRequestLimits();
+
+    const mobilePurchaseCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/purchases",
+      payload: {
+        title: "Mobile purchase item",
+        subsystemId: mobileSubsystemCreatedBody.item.id,
+        requestedById: mobileMemberCreatedBody.item.id,
+        quantity: 1,
+        vendor: "Mobile Vendor",
+        linkLabel: "mobile.example/item",
+        estimatedCost: 42,
+        approvedByMentor: false,
+        status: "requested",
+      },
+    });
+
+    assert.equal(mobilePurchaseCreateResponse.statusCode, 201);
+    const mobilePurchaseCreatedBody = mobilePurchaseCreateResponse.json() as {
+      item: {
+        id: string;
+        partDefinitionId: string | null;
+        title: string;
+      };
+    };
+    assert.equal(mobilePurchaseCreatedBody.item.partDefinitionId, null);
+    assert.equal(mobilePurchaseCreatedBody.item.title, "Mobile purchase item");
 
     resetRequestLimits();
 
@@ -486,6 +664,30 @@ test("buildApp serves health and public auth config without auth enabled", async
 
     resetRequestLimits();
 
+    const workLogUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/work-logs/${workLogCreatedBody.item.id}`,
+      payload: {
+        hours: 2,
+        participantIds: ["lucas"],
+        notes: "Route test work log updated from mobile",
+      },
+    });
+
+    assert.equal(workLogUpdateResponse.statusCode, 200);
+    const workLogUpdatedBody = workLogUpdateResponse.json() as {
+      item: {
+        hours: number;
+        notes: string;
+        participantIds: string[];
+      };
+    };
+    assert.equal(workLogUpdatedBody.item.hours, 2);
+    assert.equal(workLogUpdatedBody.item.notes, "Route test work log updated from mobile");
+    assert.deepEqual(workLogUpdatedBody.item.participantIds, ["lucas"]);
+
+    resetRequestLimits();
+
     const fabricationCreateResponse = await app.inject({
       method: "POST",
       url: "/api/manufacturing",
@@ -569,6 +771,65 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.equal(createdFabricationItem?.process, "fabrication");
     assert.equal(createdFabricationItem?.partDefinitionId, null);
     assert.equal(createdFabricationItem?.status, "in-progress");
+
+    resetRequestLimits();
+
+    const mobileTaskDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${mobileTaskCreatedBody.item.id}`,
+    });
+
+    assert.equal(mobileTaskDeleteResponse.statusCode, 200);
+    assert.equal(mobileTaskDeleteResponse.json().item.id, mobileTaskCreatedBody.item.id);
+
+    resetRequestLimits();
+
+    const mobileWorkLogDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/work-logs/${workLogCreatedBody.item.id}`,
+    });
+
+    assert.equal(mobileWorkLogDeleteResponse.statusCode, 200);
+    assert.equal(mobileWorkLogDeleteResponse.json().item.id, workLogCreatedBody.item.id);
+
+    resetRequestLimits();
+
+    const mobileManufacturingDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/manufacturing/${mobileManufacturingCreatedBody.item.id}`,
+    });
+
+    assert.equal(mobileManufacturingDeleteResponse.statusCode, 200);
+    assert.equal(
+      mobileManufacturingDeleteResponse.json().item.id,
+      mobileManufacturingCreatedBody.item.id,
+    );
+
+    resetRequestLimits();
+
+    const mobilePurchaseDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/purchases/${mobilePurchaseCreatedBody.item.id}`,
+    });
+
+    assert.equal(mobilePurchaseDeleteResponse.statusCode, 200);
+    assert.equal(
+      mobilePurchaseDeleteResponse.json().item.id,
+      mobilePurchaseCreatedBody.item.id,
+    );
+
+    resetRequestLimits();
+
+    const mobileSubsystemDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/subsystems/${mobileSubsystemCreatedBody.item.id}`,
+    });
+
+    assert.equal(mobileSubsystemDeleteResponse.statusCode, 200);
+    assert.equal(
+      mobileSubsystemDeleteResponse.json().item.id,
+      mobileSubsystemCreatedBody.item.id,
+    );
   } finally {
     await app.close();
     resetRequestLimits();
