@@ -1,17 +1,45 @@
-import type { PlatformSnapshot, Task } from "../domain/types";
+import type {
+  Mechanism,
+  PartDefinition,
+  PlatformSnapshot,
+  Subsystem,
+  Task,
+} from "../domain/types";
+
+type IteratedSeed<T extends { iteration: number }> = Omit<T, "iteration"> &
+  Partial<Pick<T, "iteration">>;
+
+type SeedSubsystem = IteratedSeed<Subsystem>;
+type SeedMechanism = IteratedSeed<Mechanism>;
+type SeedPartDefinition = IteratedSeed<PartDefinition>;
 
 type SeedTask = Omit<
   Task,
-  "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds"
+  "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds" | "assigneeIds"
 > &
   Partial<
-    Pick<Task, "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds">
+    Pick<Task, "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds" | "assigneeIds">
   >;
 
 function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value))),
   );
+}
+
+function normalizeIteration(iteration: number | undefined) {
+  return Number.isFinite(iteration) && iteration && iteration >= 1
+    ? Math.trunc(iteration)
+    : 1;
+}
+
+function withIteration<T extends { iteration?: number }>(
+  item: T,
+): Omit<T, "iteration"> & { iteration: number } {
+  return {
+    ...item,
+    iteration: normalizeIteration(item.iteration),
+  };
 }
 
 function normalizeTaskTargets(task: SeedTask): Task {
@@ -21,10 +49,19 @@ function normalizeTaskTargets(task: SeedTask): Task {
     subsystemIds: task.subsystemIds ?? uniqueIds([task.subsystemId]),
     mechanismIds: task.mechanismIds ?? uniqueIds([task.mechanismId]),
     partInstanceIds: task.partInstanceIds ?? uniqueIds([task.partInstanceId]),
+    assigneeIds: task.assigneeIds ?? uniqueIds([task.ownerId]),
   };
 }
 
-const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
+const snapshotSeed: Omit<
+  PlatformSnapshot,
+  "subsystems" | "mechanisms" | "partDefinitions" | "tasks"
+> & {
+  subsystems: SeedSubsystem[];
+  mechanisms: SeedMechanism[];
+  partDefinitions: SeedPartDefinition[];
+  tasks: SeedTask[];
+} = {
   seasons: [
     {
       id: "default-season",
@@ -44,27 +81,43 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       status: "active",
     },
     {
-      id: "project-operations-2026",
+      id: "project-media-2026",
       seasonId: "default-season",
-      name: "Team Operations 2026",
-      projectType: "operations",
-      description: "Non-robot workflows for documents, outreach, and sponsor deliverables.",
+      name: "Media",
+      projectType: "other",
+      description: "Public-facing content, visual assets, and sponsor-ready media packages.",
       status: "active",
     },
     {
       id: "project-outreach-2026",
       seasonId: "default-season",
-      name: "Outreach Program 2026",
+      name: "Outreach",
       projectType: "outreach",
       description: "Community demos, STEM nights, and sponsor-facing engagement events.",
       status: "planned",
     },
     {
-      id: "project-scouting-initiative-2026",
+      id: "project-operations-2026",
       seasonId: "default-season",
-      name: "Scouting Initiative 2026",
+      name: "Operations",
+      projectType: "operations",
+      description: "Team logistics, documentation, travel, and event readiness.",
+      status: "active",
+    },
+    {
+      id: "project-strategy-2026",
+      seasonId: "default-season",
+      name: "Strategy",
       projectType: "other",
-      description: "Data collection, analytics workflows, and strategy support operations.",
+      description: "Match analysis, competitive planning, and strategic decisions.",
+      status: "active",
+    },
+    {
+      id: "project-training-2026",
+      seasonId: "default-season",
+      name: "Training",
+      projectType: "other",
+      description: "Scout onboarding, practice runs, and team training workflows.",
       status: "active",
     },
   ],
@@ -86,6 +139,12 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       projectId: "project-robot-2026",
       name: "Controls",
       description: "Robot software, safety interlocks, and autonomous behavior.",
+    },
+    {
+      id: "workstream-media-content",
+      projectId: "project-media-2026",
+      name: "Content",
+      description: "Photos, video, graphics, demo scripts, and public-facing media assets.",
     },
     {
       id: "workstream-operations-comms",
@@ -113,13 +172,13 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
     },
     {
       id: "workstream-scouting-data",
-      projectId: "project-scouting-initiative-2026",
+      projectId: "project-training-2026",
       name: "Data Pipeline",
       description: "Tablet intake, sync reliability, and downstream strategy reports.",
     },
     {
       id: "workstream-scouting-training",
-      projectId: "project-scouting-initiative-2026",
+      projectId: "project-training-2026",
       name: "Training",
       description: "Scout onboarding, rubric clarity, and quality assurance drills.",
     },
@@ -231,7 +290,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
     },
     {
       id: "scouting",
-      projectId: "project-scouting-initiative-2026",
+      projectId: "project-training-2026",
       name: "Scouting",
       description: "Match data collection and strategy insights pipeline.",
       isCore: true,
@@ -474,8 +533,8 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
     },
     {
       id: "artifact-demo-script-v2",
-      projectId: "project-outreach-2026",
-      workstreamId: "workstream-outreach-content",
+      projectId: "project-media-2026",
+      workstreamId: "workstream-media-content",
       kind: "nontechnical",
       title: "Demo Script v2",
       summary: "Public-facing script for robot showcase with safety and sponsor callouts.",
@@ -485,7 +544,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
     },
     {
       id: "artifact-scouting-rubric",
-      projectId: "project-scouting-initiative-2026",
+      projectId: "project-training-2026",
       workstreamId: "workstream-scouting-training",
       kind: "document",
       title: "Scouting Rubric",
@@ -496,7 +555,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
     },
     {
       id: "artifact-scouting-ingest-notes",
-      projectId: "project-scouting-initiative-2026",
+      projectId: "project-training-2026",
       workstreamId: "workstream-scouting-data",
       kind: "document",
       title: "Scouting Ingest Reliability Notes",
@@ -719,6 +778,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: "2026-04-25T20:30:00-04:00",
       isExternal: false,
       description: "Full robot practice used to validate control tuning and readiness.",
+      projectIds: ["project-robot-2026"],
       relatedSubsystemIds: ["drive", "controls"],
     },
     {
@@ -729,6 +789,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: "2026-04-24T20:00:00-04:00",
       isExternal: false,
       description: "Subsystem leads review readiness before the next practice block.",
+      projectIds: ["project-robot-2026"],
       relatedSubsystemIds: ["drive", "manipulator", "controls"],
     },
     {
@@ -739,6 +800,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: "2026-04-30T19:00:00-04:00",
       isExternal: true,
       description: "External milestone that the team is aligning key finishing tasks to.",
+      projectIds: ["project-robot-2026"],
       relatedSubsystemIds: ["drive", "manipulator", "controls"],
     },
     {
@@ -749,6 +811,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: null,
       isExternal: false,
       description: "Final freeze for pit checklists, spare bins, and field-support documentation.",
+      projectIds: ["project-operations-2026"],
       relatedSubsystemIds: ["pit-readiness", "operations"],
     },
     {
@@ -759,6 +822,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: "2026-05-09T18:30:00-04:00",
       isExternal: true,
       description: "Practice competition to test robot reliability, scouting flow, and pit execution.",
+      projectIds: ["project-robot-2026", "project-training-2026", "project-operations-2026"],
       relatedSubsystemIds: ["drive", "controls", "vision", "scouting", "pit-readiness"],
     },
     {
@@ -769,6 +833,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: "2026-05-05T20:00:00-04:00",
       isExternal: true,
       description: "Community outreach event featuring kiosk demos and student-led tours.",
+      projectIds: ["project-outreach-2026"],
       relatedSubsystemIds: ["outreach"],
     },
     {
@@ -779,6 +844,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: "2026-05-05T17:30:00-04:00",
       isExternal: true,
       description: "Final outreach readiness checkpoint before STEM Night demos begin.",
+      projectIds: ["project-outreach-2026"],
       relatedSubsystemIds: ["outreach"],
     },
     {
@@ -789,6 +855,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
       endDateTime: "2026-05-02T12:00:00-04:00",
       isExternal: false,
       description: "Cross-functional check before week-zero scrimmage.",
+      projectIds: ["project-robot-2026"],
       relatedSubsystemIds: ["drive", "manipulator", "controls", "vision", "climber"],
     },
   ],
@@ -1289,7 +1356,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
     },
     {
       id: "scouting-tablet-refresh",
-      projectId: "project-scouting-initiative-2026",
+      projectId: "project-training-2026",
       workstreamId: "workstream-scouting-data",
       title: "Scouting tablet refresh",
       summary: "Re-image tablets and validate event sync reliability under load.",
@@ -1315,7 +1382,7 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
     },
     {
       id: "scouting-rubric-training",
-      projectId: "project-scouting-initiative-2026",
+      projectId: "project-training-2026",
       workstreamId: "workstream-scouting-training",
       title: "Scouting rubric training",
       summary: "Deliver training sessions for scouts and measure agreement on sample matches.",
@@ -2074,5 +2141,8 @@ const snapshotSeed: Omit<PlatformSnapshot, "tasks"> & { tasks: SeedTask[] } = {
 
 export const snapshot: PlatformSnapshot = {
   ...snapshotSeed,
+  subsystems: snapshotSeed.subsystems.map(withIteration),
+  mechanisms: snapshotSeed.mechanisms.map(withIteration),
+  partDefinitions: snapshotSeed.partDefinitions.map(withIteration),
   tasks: snapshotSeed.tasks.map(normalizeTaskTargets),
 };

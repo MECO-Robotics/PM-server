@@ -249,6 +249,7 @@ model Task {
   partInstanceId          String?
   targetEventId           String?
   ownerId                 String
+  assigneeIds             String[]
   mentorId                String
   parentTaskId            String?
   subsystem               Subsystem             @relation(fields: [subsystemId], references: [id])
@@ -281,6 +282,7 @@ model Event {
   endDateTime        DateTime?
   isExternal         Boolean   @default(false)
   description        String?
+  projectIds         String[]
   relatedSubsystemIds String[]
   tasks              Task[]
   createdAt          DateTime  @default(now())

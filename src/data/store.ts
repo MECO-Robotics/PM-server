@@ -37,6 +37,12 @@ function isElevatedMemberRole(role: Member["role"]): boolean {
   return role === "lead" || role === "admin";
 }
 
+function normalizeIteration(iteration: number | undefined) {
+  return Number.isFinite(iteration) && iteration && iteration >= 1
+    ? Math.trunc(iteration)
+    : 1;
+}
+
 export interface TaskInput {
   projectId: string;
   workstreamId: string | null;
@@ -52,6 +58,7 @@ export interface TaskInput {
   partInstanceIds: string[];
   targetEventId: string | null;
   ownerId: string | null;
+  assigneeIds: string[];
   mentorId: string | null;
   startDate: string;
   dueDate: string;
@@ -88,6 +95,14 @@ export interface SeasonInput {
   type: Season["type"];
   startDate: string;
   endDate: string;
+}
+
+export interface ProjectInput {
+  seasonId: string;
+  name: string;
+  projectType: Project["projectType"];
+  description?: string;
+  status?: Project["status"];
 }
 
 export interface PurchaseItemInput {
@@ -140,10 +155,17 @@ export interface ArtifactInput {
   updatedAt: string;
 }
 
+export interface WorkstreamInput {
+  projectId: string;
+  name: string;
+  description: string;
+}
+
 export interface SubsystemInput {
   projectId: string;
   name: string;
   description: string;
+  iteration?: number;
   parentSubsystemId: string | null;
   responsibleEngineerId: string | null;
   mentorIds: string[];
@@ -154,12 +176,14 @@ export interface MechanismInput {
   subsystemId: string;
   name: string;
   description: string;
+  iteration?: number;
 }
 
 export interface PartDefinitionInput {
   name: string;
   partNumber: string;
   revision: string;
+  iteration?: number;
   type: string;
   source: string;
   materialId: string | null;
@@ -183,6 +207,7 @@ export interface EventInput {
   endDateTime: string | null;
   isExternal: boolean;
   description: string;
+  projectIds: string[];
   relatedSubsystemIds: string[];
 }
 
@@ -227,6 +252,10 @@ function normalizeTaskTargets(task: Task): Task {
   const partInstanceIds = uniqueIds(
     task.partInstanceIds.length > 0 ? task.partInstanceIds : [task.partInstanceId],
   );
+  const taskAssigneeIds = Array.isArray(task.assigneeIds) ? task.assigneeIds : [];
+  const assigneeIds = uniqueIds(
+    taskAssigneeIds.length > 0 ? taskAssigneeIds : [task.ownerId],
+  );
 
   return {
     ...task,
@@ -238,6 +267,7 @@ function normalizeTaskTargets(task: Task): Task {
     mechanismIds,
     partInstanceId: partInstanceIds[0] ?? null,
     partInstanceIds,
+    assigneeIds,
   };
 }
 
@@ -247,11 +277,11 @@ const DEFAULT_SEASON_PROJECTS: Array<{
   projectType: Project["projectType"];
 }> = [
   { key: "robot", name: "Robot", projectType: "robot" },
-  { key: "business", name: "Business", projectType: "other" },
-  { key: "outreach", name: "Outreach", projectType: "outreach" },
   { key: "media", name: "Media", projectType: "other" },
-  { key: "training", name: "Training", projectType: "other" },
+  { key: "outreach", name: "Outreach", projectType: "outreach" },
   { key: "operations", name: "Operations", projectType: "operations" },
+  { key: "strategy", name: "Strategy", projectType: "other" },
+  { key: "training", name: "Training", projectType: "other" },
 ];
 
 function resolveTaskOwnershipForSubsystem(subsystemId: string) {
@@ -315,6 +345,7 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     partInstanceIds: [],
     targetEventId: null,
     ownerId: subsystem.responsibleEngineerId,
+    assigneeIds: uniqueIds([subsystem.responsibleEngineerId]),
     mentorId: subsystem.mentorIds[0] ?? null,
     startDate: new Date().toISOString().slice(0, 10),
     dueDate: new Date().toISOString().slice(0, 10),
@@ -367,6 +398,7 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     partInstanceIds: [],
     targetEventId: null,
     ownerId: parentSubsystem.responsibleEngineerId,
+    assigneeIds: uniqueIds([parentSubsystem.responsibleEngineerId]),
     mentorId: parentSubsystem.mentorIds[0] ?? null,
     startDate: new Date().toISOString().slice(0, 10),
     dueDate: new Date().toISOString().slice(0, 10),
@@ -449,8 +481,72 @@ export function getProjects() {
   return currentSnapshot.projects;
 }
 
+export function createProject(input: ProjectInput) {
+  const projectIds = new Set(currentSnapshot.projects.map((project) => project.id));
+  const season = currentSnapshot.seasons.find((candidate) => candidate.id === input.seasonId);
+  const project: Project = {
+    id: uniqueId(toSlug(`${input.seasonId}-${input.name}`) || "project", projectIds),
+    seasonId: input.seasonId,
+    name: input.name,
+    projectType: input.projectType,
+    description: input.description ?? `${input.name} scope${season ? ` for ${season.name}` : ""}.`,
+    status: input.status ?? "active",
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    projects: [...currentSnapshot.projects, project],
+  };
+
+  return project;
+}
+
+export function updateProject(
+  projectId: string,
+  input: Partial<Pick<ProjectInput, "description" | "name" | "status">>,
+) {
+  let updatedProject: Project | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    projects: currentSnapshot.projects.map((project) => {
+      if (project.id !== projectId) {
+        return project;
+      }
+
+      updatedProject = {
+        ...project,
+        ...input,
+      };
+
+      return updatedProject;
+    }),
+  };
+
+  return updatedProject;
+}
+
 export function getWorkstreams() {
   return currentSnapshot.workstreams;
+}
+
+export function createWorkstream(input: WorkstreamInput) {
+  const workstreamIds = new Set(
+    currentSnapshot.workstreams.map((workstream) => workstream.id),
+  );
+  const workstream: Workstream = {
+    id: uniqueId(toSlug(input.name) || "workstream", workstreamIds),
+    projectId: input.projectId,
+    name: input.name,
+    description: input.description,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    workstreams: [...currentSnapshot.workstreams, workstream],
+  };
+
+  return workstream;
 }
 
 export function getMembers() {
@@ -644,6 +740,7 @@ export function createSubsystem(input: SubsystemInput) {
     projectId: input.projectId,
     name: input.name,
     description: input.description,
+    iteration: normalizeIteration(input.iteration),
     isCore: false,
     parentSubsystemId: input.parentSubsystemId,
     responsibleEngineerId: input.responsibleEngineerId,
@@ -687,6 +784,10 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       updatedSubsystem = {
         ...subsystem,
         ...input,
+        iteration:
+          input.iteration === undefined
+            ? subsystem.iteration
+            : normalizeIteration(input.iteration),
         parentSubsystemId: nextParentSubsystemId,
       };
 
@@ -851,6 +952,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
     name: input.name,
     partNumber: input.partNumber,
     revision: input.revision,
+    iteration: normalizeIteration(input.iteration),
     type: input.type,
     source: input.source,
     materialId: input.materialId,
@@ -881,6 +983,10 @@ export function updatePartDefinition(
       updatedPartDefinition = {
         ...partDefinition,
         ...input,
+        iteration:
+          input.iteration === undefined
+            ? partDefinition.iteration
+            : normalizeIteration(input.iteration),
       };
 
       return updatedPartDefinition;
@@ -957,6 +1063,7 @@ export function createMechanism(input: MechanismInput) {
     subsystemId: input.subsystemId,
     name: input.name,
     description: input.description,
+    iteration: normalizeIteration(input.iteration),
   };
 
   const wiringTask = createMechanismWiringTask(mechanism);
@@ -1092,6 +1199,10 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       updatedMechanism = {
         ...mechanism,
         ...input,
+        iteration:
+          input.iteration === undefined
+            ? mechanism.iteration
+            : normalizeIteration(input.iteration),
       };
 
       return updatedMechanism;
@@ -1183,6 +1294,7 @@ export function createTask(input: TaskInput) {
     partInstanceIds: input.partInstanceIds,
     targetEventId: input.targetEventId,
     ownerId: input.ownerId,
+    assigneeIds: input.assigneeIds,
     mentorId: input.mentorId,
     startDate: input.startDate,
     dueDate: input.dueDate,
@@ -1218,6 +1330,7 @@ export function createEvent(input: EventInput) {
     endDateTime: input.endDateTime,
     isExternal: input.isExternal,
     description: input.description,
+    projectIds: input.projectIds,
     relatedSubsystemIds: input.relatedSubsystemIds,
   };
 
@@ -1614,6 +1727,9 @@ export function removeMember(memberId: string) {
     tasks: currentSnapshot.tasks.map((task) => ({
       ...task,
       ownerId: task.ownerId === memberId ? null : task.ownerId,
+      assigneeIds: (task.assigneeIds ?? []).filter(
+        (assigneeId) => assigneeId !== memberId,
+      ),
       mentorId: task.mentorId === memberId ? null : task.mentorId,
     })),
     workLogs: currentSnapshot.workLogs.map((workLog) => ({

@@ -68,6 +68,7 @@ export interface Subsystem {
   projectId: string;
   name: string;
   description: string;
+  iteration: number;
   isCore: boolean;
   parentSubsystemId: string | null;
   responsibleEngineerId: string | null;
@@ -86,6 +87,7 @@ export interface Mechanism {
   subsystemId: string;
   name: string;
   description: string;
+  iteration: number;
 }
 
 export interface PartDefinition {
@@ -93,6 +95,7 @@ export interface PartDefinition {
   name: string;
   partNumber: string;
   revision: string;
+  iteration: number;
   type: string;
   source: string;
   materialId: string | null;
@@ -150,6 +153,7 @@ export interface Task {
   partInstanceIds: string[];
   targetEventId: string | null;
   ownerId: string | null;
+  assigneeIds: string[];
   mentorId: string | null;
   startDate: string;
   dueDate: string;
@@ -192,6 +196,7 @@ export interface Event {
   endDateTime: string | null;
   isExternal: boolean;
   description: string;
+  projectIds: string[];
   relatedSubsystemIds: string[];
 }
 

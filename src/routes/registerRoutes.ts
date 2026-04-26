@@ -23,11 +23,13 @@ import {
   createMechanism,
   createPartDefinition,
   createPartInstance,
+  createProject,
   createSeason,
   createSubsystem,
   createPurchaseItem,
   createTask,
   createWorkLog,
+  createWorkstream,
   findDiscipline,
   findEvent,
   findArtifact,
@@ -77,6 +79,7 @@ import {
   updateEvent,
   updatePartDefinition,
   updatePartInstance,
+  updateProject,
   updateSubsystem,
   updatePurchaseItem,
   updateTask,
@@ -103,6 +106,18 @@ const seasonSchema = z.object({
   startDate: z.string().date().optional(),
   endDate: z.string().date().optional(),
 });
+const projectSchema = z.object({
+  seasonId: z.string().trim().min(1),
+  name: z.string().trim().min(2),
+  projectType: z.enum(["robot", "operations", "outreach", "other"]).default("robot"),
+  description: z.string().trim().default(""),
+  status: z.enum(["planned", "active", "paused", "complete"]).default("active"),
+});
+const projectPatchSchema = z.object({
+  name: z.string().trim().min(2).optional(),
+  description: z.string().trim().optional(),
+  status: z.enum(["planned", "active", "paused", "complete"]).optional(),
+});
 
 const taskSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
@@ -119,6 +134,7 @@ const taskSchema = z.object({
   partInstanceIds: z.array(z.string().trim().min(1)).optional(),
   targetEventId: z.string().trim().min(1).nullable(),
   ownerId: z.string().trim().min(1).nullable(),
+  assigneeIds: z.array(z.string().trim().min(1)).default([]),
   mentorId: z.string().trim().min(1).nullable(),
   startDate: z.string().date().optional(),
   dueDate: z.string().date(),
@@ -148,6 +164,7 @@ const eventSchema = z.object({
   endDateTime: z.string().trim().min(1).nullable(),
   isExternal: z.boolean().default(false),
   description: z.string().trim().default(""),
+  projectIds: z.array(z.string().trim().min(1)).default([]),
   relatedSubsystemIds: z.array(z.string().trim().min(1)).default([]),
 });
 const eventPatchSchema = z.object({
@@ -159,13 +176,21 @@ const eventPatchSchema = z.object({
   endDateTime: z.string().trim().min(1).nullable().optional(),
   isExternal: z.boolean().optional(),
   description: z.string().trim().optional(),
+  projectIds: z.array(z.string().trim().min(1)).optional(),
   relatedSubsystemIds: z.array(z.string().trim().min(1)).optional(),
 });
 const memberPatchSchema = memberSchema.partial();
+const iterationSchema = z.coerce.number().int().min(1).default(1);
+const workstreamSchema = z.object({
+  projectId: z.string().trim().min(1),
+  name: z.string().trim().min(2),
+  description: z.string().trim().min(3),
+});
 const subsystemSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
+  iteration: iterationSchema,
   parentSubsystemId: z.string().trim().min(1).nullable().optional(),
   responsibleEngineerId: z.string().trim().min(1).nullable(),
   mentorIds: z.array(z.string().trim().min(1)).default([]),
@@ -176,12 +201,14 @@ const mechanismSchema = z.object({
   subsystemId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
+  iteration: iterationSchema,
 });
 const mechanismPatchSchema = mechanismSchema.partial();
 const partDefinitionSchema = z.object({
   name: z.string().trim().min(2),
   partNumber: z.string().trim().min(1),
   revision: z.string().trim().min(1),
+  iteration: iterationSchema,
   type: z.string().trim().min(1),
   source: z.string().trim().min(1),
   materialId: z.string().trim().min(1).nullable().optional(),
@@ -333,7 +360,11 @@ function filterTasksForPerson(personId: string | null) {
   }
 
   return tasks.filter((task) => {
-    return task.ownerId === personId || task.mentorId === personId;
+    return (
+      task.ownerId === personId ||
+      (task.assigneeIds ?? []).includes(personId) ||
+      task.mentorId === personId
+    );
   });
 }
 
@@ -565,6 +596,7 @@ function validateTaskLinks(input: {
   partInstanceId?: string | null;
   partInstanceIds?: string[];
   targetEventId?: string | null;
+  assigneeIds?: string[];
 }) {
   const project = findProject(input.projectId);
   if (!project) {
@@ -649,6 +681,20 @@ function validateTaskLinks(input: {
     const event = getEvents().find((candidate) => candidate.id === input.targetEventId);
     if (!event) {
       return "The selected event does not exist.";
+    }
+  }
+
+  if (input.assigneeIds && input.assigneeIds.length > 0) {
+    const membersById = new Map(getMembers().map((member) => [member.id, member]));
+    for (const assigneeId of input.assigneeIds) {
+      const assignee = membersById.get(assigneeId);
+      if (!assignee) {
+        return "One or more assigned students do not exist.";
+      }
+
+      if (assignee.role !== "student" && assignee.role !== "lead") {
+        return "Assigned task members must be students or leads.";
+      }
     }
   }
 
@@ -838,6 +884,30 @@ function validateEventSubsystemLinks(relatedSubsystemIds: string[]) {
 
   if (unknownSubsystemId) {
     return "One or more related subsystems do not exist.";
+  }
+
+  return null;
+}
+
+function validateEventProjectLinks(projectIds: string[], relatedSubsystemIds: string[]) {
+  const unknownProjectId = projectIds.find((projectId) => !findProject(projectId));
+
+  if (unknownProjectId) {
+    return "One or more related projects do not exist.";
+  }
+
+  if (projectIds.length === 0) {
+    return null;
+  }
+
+  const selectedProjectIds = new Set(projectIds);
+  const mismatchedSubsystemId = relatedSubsystemIds.find((subsystemId) => {
+    const subsystem = findSubsystem(subsystemId);
+    return subsystem ? !selectedProjectIds.has(subsystem.projectId) : false;
+  });
+
+  if (mismatchedSubsystemId) {
+    return "Related subsystems must belong to the selected projects.";
   }
 
   return null;
@@ -1142,6 +1212,61 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
+  app.post<{ Body: unknown }>("/api/projects", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = projectSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Project payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    if (!getSeasons().some((season) => season.id === parsed.data.seasonId)) {
+      return reply.code(400).send({
+        message: "The selected season does not exist.",
+      });
+    }
+
+    const project = createProject(parsed.data);
+
+    return reply.code(201).send({
+      item: project,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { projectId: string } }>(
+    "/api/projects/:projectId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = projectPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Project update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      if (!findProject(request.params.projectId)) {
+        return reply.code(404).send({
+          message: "Project not found.",
+        });
+      }
+
+      const project = updateProject(request.params.projectId, parsed.data);
+
+      return {
+        item: project,
+      };
+    },
+  );
+
   app.get("/api/workstreams", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -1153,6 +1278,32 @@ export async function registerRoutes(app: FastifyInstance) {
       items: paginated.items,
       pagination: paginated.pagination,
     };
+  });
+
+  app.post<{ Body: unknown }>("/api/workstreams", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = workstreamSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Workstream payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    if (!findProject(parsed.data.projectId)) {
+      return reply.code(400).send({
+        message: "The selected project does not exist.",
+      });
+    }
+
+    const workstream = createWorkstream(parsed.data);
+
+    return reply.code(201).send({
+      item: workstream,
+    });
   });
 
   app.get("/api/qa-reports", async (request, reply) => {
@@ -1321,6 +1472,7 @@ export async function registerRoutes(app: FastifyInstance) {
       partInstanceIds: task.partInstanceIds,
       targetEventId: task.targetEventId,
       ownerId: task.ownerId,
+      assigneeIds: task.assigneeIds ?? [],
       mentorId: task.mentorId,
       startDate: task.startDate,
       dueDate: task.dueDate,
@@ -1371,7 +1523,11 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    const validationError = validateEventSubsystemLinks(parsed.data.relatedSubsystemIds);
+    const projectIds = Array.from(new Set(parsed.data.projectIds));
+    const relatedSubsystemIds = Array.from(new Set(parsed.data.relatedSubsystemIds));
+    const validationError =
+      validateEventSubsystemLinks(relatedSubsystemIds) ??
+      validateEventProjectLinks(projectIds, relatedSubsystemIds);
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
@@ -1382,7 +1538,8 @@ export async function registerRoutes(app: FastifyInstance) {
       ...parsed.data,
       endDateTime: parsed.data.endDateTime ?? null,
       description: parsed.data.description ?? "",
-      relatedSubsystemIds: Array.from(new Set(parsed.data.relatedSubsystemIds)),
+      projectIds,
+      relatedSubsystemIds,
     });
 
     return reply.code(201).send({
@@ -1416,8 +1573,14 @@ export async function registerRoutes(app: FastifyInstance) {
         parsed.data.relatedSubsystemIds === undefined
           ? currentEvent.relatedSubsystemIds
           : Array.from(new Set(parsed.data.relatedSubsystemIds));
+      const nextProjectIds =
+        parsed.data.projectIds === undefined
+          ? currentEvent.projectIds ?? []
+          : Array.from(new Set(parsed.data.projectIds));
 
-      const validationError = validateEventSubsystemLinks(nextRelatedSubsystemIds);
+      const validationError =
+        validateEventSubsystemLinks(nextRelatedSubsystemIds) ??
+        validateEventProjectLinks(nextProjectIds, nextRelatedSubsystemIds);
       if (validationError) {
         return reply.code(400).send({
           message: validationError,
@@ -1434,6 +1597,7 @@ export async function registerRoutes(app: FastifyInstance) {
           parsed.data.description === undefined
             ? currentEvent.description
             : parsed.data.description,
+        projectIds: nextProjectIds,
         relatedSubsystemIds: nextRelatedSubsystemIds,
       });
 
@@ -1707,6 +1871,7 @@ export async function registerRoutes(app: FastifyInstance) {
       ...targetIds,
       workstreamId: workstreamIds[0] ?? null,
       workstreamIds,
+      assigneeIds: uniqueIds(parsed.data.assigneeIds ?? []),
       startDate: parsed.data.startDate ?? parsed.data.dueDate,
       requiresDocumentation: parsed.data.requiresDocumentation ?? false,
       documentationLinked: parsed.data.documentationLinked ?? false,
@@ -1772,6 +1937,10 @@ export async function registerRoutes(app: FastifyInstance) {
         ...targetIds,
         workstreamId: workstreamIds[0] ?? null,
         workstreamIds,
+        assigneeIds:
+          parsed.data.assigneeIds === undefined
+            ? currentTask.assigneeIds ?? []
+            : uniqueIds(parsed.data.assigneeIds),
         disciplineId: parsed.data.disciplineId ?? currentTask.disciplineId,
         targetEventId:
           parsed.data.targetEventId === undefined
