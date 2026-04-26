@@ -194,15 +194,22 @@ If you only have a static IP, use a mapped HTTPS hostname (for example `178-104-
 
 If you add SMTP settings with `AUTH_EMAIL_SMTP_HOST` and `AUTH_EMAIL_FROM`, or set `RESEND_API_KEY` with `AUTH_EMAIL_FROM`, the server will also expose `POST /api/auth/email/start` and `POST /api/auth/email/verify`.
 
+Brevo SMTP settings:
+- `AUTH_EMAIL_SMTP_HOST=smtp-relay.brevo.com`
+- `AUTH_EMAIL_SMTP_PORT=587`
+- `AUTH_EMAIL_SMTP_USER`: Brevo SMTP login from the SMTP page
+- `AUTH_EMAIL_SMTP_PASS`: Brevo SMTP key
+- `AUTH_EMAIL_FROM`: verified Brevo sender, for example `"MECO Robotics <no-reply@mecorobotics.org>"`
+
 Resend-specific settings:
 - `RESEND_API_KEY`: set in GitHub Secrets as `RESEND_API_KEY` to keep this credential out of the `.env.production` secret blob
 - `AUTH_EMAIL_FROM="MECO Robotics <no-reply@mecorobotics.org>"`
 
-When `RESEND_API_KEY` is present, the server uses:
+When `RESEND_API_KEY` is present and no explicit `AUTH_EMAIL_SMTP_HOST` is configured, the server uses:
 - host: `smtp.resend.com`
 - user: `resend`
 - password: API key value
-- These values take precedence over `AUTH_EMAIL_SMTP_*` settings from `PRODUCTION_ENV_FILE`.
+- Explicit `AUTH_EMAIL_SMTP_*` settings from `PRODUCTION_ENV_FILE` take precedence over this fallback.
 - Your `AUTH_EMAIL_FROM` address must use a domain verified in your Resend account (for example, verify `mecorobotics.org` at resend.com/domains).
 
 - The address must end in `@mecorobotics.org` unless you change `GOOGLE_ALLOWED_HOSTED_DOMAIN`.

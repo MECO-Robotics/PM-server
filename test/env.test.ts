@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { test } from "node:test";
 
-function loadEnvModule(cacheBust: string) {
-  return import(new URL(`../src/config/env.ts?${cacheBust}`, import.meta.url).href);
+const require = createRequire(import.meta.url);
+
+async function loadEnvModule(_cacheBust: string) {
+  delete require.cache[require.resolve("../src/config/env.ts")];
+  return require("../src/config/env.ts");
 }
 
 function saveEnv(keys: string[]) {
@@ -80,6 +84,42 @@ test("production config loads when auth and explicit origins are configured", as
       "https://admin.example.com",
     ]);
     assert.equal(config.corsConfig.allowsAnyOrigin, false);
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
+test("explicit SMTP settings override Resend fallback", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "RESEND_API_KEY",
+    "AUTH_EMAIL_SMTP_HOST",
+    "AUTH_EMAIL_SMTP_PORT",
+    "AUTH_EMAIL_SMTP_USER",
+    "AUTH_EMAIL_SMTP_PASS",
+    "AUTH_EMAIL_FROM",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    process.env.RESEND_API_KEY = "resend-secret";
+    process.env.AUTH_EMAIL_SMTP_HOST = "smtp-relay.brevo.com";
+    process.env.AUTH_EMAIL_SMTP_PORT = "587";
+    process.env.AUTH_EMAIL_SMTP_USER = "brevo-login@example.com";
+    process.env.AUTH_EMAIL_SMTP_PASS = "brevo-secret";
+    process.env.AUTH_EMAIL_FROM = "MECO Robotics <no-reply@mecorobotics.org>";
+
+    const config = await loadEnvModule(`smtp-overrides-resend-${Date.now()}`);
+
+    assert.equal(config.emailSmtpConfig.host, "smtp-relay.brevo.com");
+    assert.equal(config.emailSmtpConfig.port, 587);
+    assert.equal(config.emailSmtpConfig.user, "brevo-login@example.com");
+    assert.equal(config.emailSmtpConfig.pass, "brevo-secret");
   } finally {
     restoreEnv(saved);
   }

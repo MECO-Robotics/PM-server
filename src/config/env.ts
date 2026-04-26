@@ -97,14 +97,16 @@ function parseCorsOrigins(value: string) {
 
 const googleClientIds = parseGoogleClientIds(env.GOOGLE_CLIENT_ID);
 const resolvedResendApiKey = pickFirstString(env.RESEND_API_KEY);
+const resolvedExplicitEmailSmtpHost = pickFirstString(
+  env.AUTH_EMAIL_SMTP_HOST,
+  env.SMTP_HOST,
+  env.EMAIL_SMTP_HOST,
+  env.MAIL_HOST,
+);
+const usesExplicitEmailSmtp = Boolean(resolvedExplicitEmailSmtpHost);
 const resolvedEmailSmtpHost = resolvedResendApiKey
-  ? "smtp.resend.com"
-  : pickFirstString(
-      env.AUTH_EMAIL_SMTP_HOST,
-      env.SMTP_HOST,
-      env.EMAIL_SMTP_HOST,
-      env.MAIL_HOST,
-    );
+  ? (resolvedExplicitEmailSmtpHost ?? "smtp.resend.com")
+  : resolvedExplicitEmailSmtpHost;
 const resolvedEmailSmtpPort =
   pickFirstNumber(
     env.AUTH_EMAIL_SMTP_PORT,
@@ -113,11 +115,11 @@ const resolvedEmailSmtpPort =
     env.MAIL_PORT,
   ) ?? 587;
 const resolvedEmailSmtpUser = pickFirstString(
-  resolvedResendApiKey ? "resend" : undefined,
-  env.AUTH_EMAIL_SMTP_USER,
-  env.SMTP_USER,
-  env.EMAIL_SMTP_USER,
-  env.MAIL_USER,
+  usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_USER : undefined,
+  usesExplicitEmailSmtp ? env.SMTP_USER : undefined,
+  usesExplicitEmailSmtp ? env.EMAIL_SMTP_USER : undefined,
+  usesExplicitEmailSmtp ? env.MAIL_USER : undefined,
+  resolvedResendApiKey && !usesExplicitEmailSmtp ? "resend" : undefined,
 );
 const resolvedEmailSmtpName = pickFirstString(
   env.AUTH_EMAIL_SMTP_NAME,
@@ -126,11 +128,13 @@ const resolvedEmailSmtpName = pickFirstString(
   env.MAIL_NAME,
 );
 const resolvedEmailSmtpPass = pickFirstString(
-  resolvedResendApiKey,
-  env.AUTH_EMAIL_SMTP_PASS,
-  env.SMTP_PASS,
-  env.EMAIL_SMTP_PASS,
-  env.MAIL_PASS,
+  usesExplicitEmailSmtp ? env.AUTH_EMAIL_SMTP_PASS : undefined,
+  usesExplicitEmailSmtp ? env.SMTP_PASS : undefined,
+  usesExplicitEmailSmtp ? env.EMAIL_SMTP_PASS : undefined,
+  usesExplicitEmailSmtp ? env.MAIL_PASS : undefined,
+  resolvedResendApiKey && !usesExplicitEmailSmtp
+    ? resolvedResendApiKey
+    : undefined,
 );
 const resolvedEmailFrom = pickFirstString(
   env.AUTH_EMAIL_FROM,
