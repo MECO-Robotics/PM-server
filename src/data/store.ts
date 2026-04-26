@@ -155,6 +155,7 @@ export interface ArtifactInput {
   summary: string;
   status: ArtifactStatus;
   link: string;
+  isArchived?: boolean;
   updatedAt: string;
 }
 
@@ -820,6 +821,7 @@ export function createArtifact(input: ArtifactInput) {
     summary: input.summary,
     status: input.status,
     link: input.link,
+    isArchived: input.isArchived ?? false,
     updatedAt: input.updatedAt,
   };
 

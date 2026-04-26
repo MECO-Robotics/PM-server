@@ -848,6 +848,7 @@ test("buildApp serves health and public auth config without auth enabled", async
     const createdArtifactBody = createArtifactResponse.json() as {
       item: {
         id: string;
+        isArchived: boolean;
         kind: string;
         projectId: string;
         status: string;
@@ -860,6 +861,7 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.equal(createdArtifactBody.item.workstreamId, "workstream-operations-comms");
     assert.equal(createdArtifactBody.item.kind, "nontechnical");
     assert.equal(createdArtifactBody.item.status, "draft");
+    assert.equal(createdArtifactBody.item.isArchived, false);
     assert.equal(
       Number.isNaN(Date.parse(createdArtifactBody.item.updatedAt)),
       false,
@@ -872,6 +874,7 @@ test("buildApp serves health and public auth config without auth enabled", async
       url: `/api/artifacts/${createdArtifactBody.item.id}`,
       payload: {
         kind: "document",
+        isArchived: true,
         status: "published",
         title: "Parent Night Summary Final",
       },
@@ -880,12 +883,14 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.equal(updateArtifactResponse.statusCode, 200);
     const updatedArtifactBody = updateArtifactResponse.json() as {
       item: {
+        isArchived: boolean;
         kind: string;
         status: string;
         title: string;
       };
     };
     assert.equal(updatedArtifactBody.item.kind, "document");
+    assert.equal(updatedArtifactBody.item.isArchived, true);
     assert.equal(updatedArtifactBody.item.status, "published");
     assert.equal(updatedArtifactBody.item.title, "Parent Night Summary Final");
 

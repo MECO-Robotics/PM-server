@@ -530,6 +530,7 @@ const snapshotSeed: Omit<
       summary: "Monthly sponsor-facing recap deck with team progress and outreach highlights.",
       status: "published",
       link: "https://example.org/meco/sponsor-recap-apr-2026",
+      isArchived: false,
       updatedAt: "2026-04-20T18:00:00-04:00",
     },
     {
@@ -541,6 +542,7 @@ const snapshotSeed: Omit<
       summary: "Operations checklist and volunteer assignments for outreach events.",
       status: "in-review",
       link: "https://example.org/meco/event-volunteer-guide",
+      isArchived: false,
       updatedAt: "2026-04-22T19:30:00-04:00",
     },
     {
@@ -552,6 +554,7 @@ const snapshotSeed: Omit<
       summary: "Revised pit setup, inspection prep, and emergency swap process checklist.",
       status: "published",
       link: "https://example.org/meco/pit-checklist-v3",
+      isArchived: false,
       updatedAt: "2026-04-24T20:15:00-04:00",
     },
     {
@@ -563,6 +566,7 @@ const snapshotSeed: Omit<
       summary: "Template pack for travel roster, tool manifest, and venue readiness documents.",
       status: "draft",
       link: "https://example.org/meco/travel-pack-template",
+      isArchived: false,
       updatedAt: "2026-04-25T18:10:00-04:00",
     },
     {
@@ -574,6 +578,7 @@ const snapshotSeed: Omit<
       summary: "Minute-by-minute plan for volunteer coverage and demo rotations.",
       status: "in-review",
       link: "https://example.org/meco/stem-night-run-of-show",
+      isArchived: false,
       updatedAt: "2026-04-26T21:00:00-04:00",
     },
     {
@@ -585,6 +590,7 @@ const snapshotSeed: Omit<
       summary: "Public-facing script for robot showcase with safety and sponsor callouts.",
       status: "published",
       link: "https://example.org/meco/demo-script-v2",
+      isArchived: false,
       updatedAt: "2026-04-26T19:20:00-04:00",
     },
     {
@@ -596,6 +602,7 @@ const snapshotSeed: Omit<
       summary: "Unified event rubric with examples to improve consistency across scouts.",
       status: "published",
       link: "https://example.org/meco/scouting-rubric",
+      isArchived: false,
       updatedAt: "2026-04-27T17:35:00-04:00",
     },
     {
@@ -607,6 +614,7 @@ const snapshotSeed: Omit<
       summary: "Known sync retry behavior and mitigation checklist for event Wi-Fi constraints.",
       status: "in-review",
       link: "https://example.org/meco/scouting-ingest-notes",
+      isArchived: false,
       updatedAt: "2026-04-27T20:45:00-04:00",
     },
   ],

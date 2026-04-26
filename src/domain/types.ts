@@ -137,6 +137,7 @@ export interface Artifact {
   summary: string;
   status: ArtifactStatus;
   link: string;
+  isArchived: boolean;
   updatedAt: string;
 }
 

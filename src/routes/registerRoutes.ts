@@ -272,6 +272,7 @@ const artifactSchema = z.object({
   summary: z.string().trim().default(""),
   status: z.enum(["draft", "in-review", "published"]).default("draft"),
   link: z.string().trim().default(""),
+  isArchived: z.boolean().default(false),
   updatedAt: z.string().trim().min(1).optional(),
 });
 const artifactPatchSchema = artifactSchema.partial();
@@ -1826,6 +1827,7 @@ export async function registerRoutes(app: FastifyInstance) {
       summary: parsed.data.summary ?? "",
       status: parsed.data.status ?? "draft",
       link: parsed.data.link ?? "",
+      isArchived: parsed.data.isArchived ?? false,
       updatedAt: parsed.data.updatedAt ?? new Date().toISOString(),
     });
 
