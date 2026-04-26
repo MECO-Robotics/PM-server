@@ -27,6 +27,8 @@ export interface TaskInput {
   mechanismIds: string[];
   partInstanceId: string | null;
   partInstanceIds: string[];
+  artifactId: string | null;
+  artifactIds: string[];
   targetEventId: string | null;
   ownerId: string | null;
   assigneeIds: string[];

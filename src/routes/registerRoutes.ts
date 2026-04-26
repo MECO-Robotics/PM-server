@@ -33,7 +33,9 @@ import {
   findArtifact,
   findMaterial,
   findProject,
+  getDesignIterations,
   getEvents,
+  getFindings,
   findMechanism,
   findPartDefinition,
   findPartInstance,
@@ -54,6 +56,7 @@ import {
   getSnapshot,
   getSeasons,
   getSubsystems,
+  getTaskTargets,
   getTasks,
   getTestResults,
   getWorkstreams,
@@ -746,6 +749,8 @@ export async function registerRoutes(app: FastifyInstance) {
       mechanismIds: task.mechanismIds,
       partInstanceId: task.partInstanceId,
       partInstanceIds: task.partInstanceIds,
+      artifactId: task.artifactId,
+      artifactIds: task.artifactIds,
       targetEventId: task.targetEventId,
       ownerId: task.ownerId,
       assigneeIds: task.assigneeIds ?? [],
@@ -766,6 +771,45 @@ export async function registerRoutes(app: FastifyInstance) {
       documentationLinked: task.documentationLinked,
     }));
     const paginated = paginateItems(items, request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.get("/api/iterations", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const paginated = paginateItems(getDesignIterations(), request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.get("/api/findings", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const paginated = paginateItems(getFindings(), request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.get("/api/task-targets", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const paginated = paginateItems(getTaskTargets(), request.query);
 
     return {
       items: paginated.items,
@@ -1243,6 +1287,8 @@ export async function registerRoutes(app: FastifyInstance) {
         mechanismIds: nextTaskShape.mechanismIds,
         partInstanceId: nextTaskShape.partInstanceId,
         partInstanceIds: nextTaskShape.partInstanceIds,
+        artifactId: nextTaskShape.artifactId,
+        artifactIds: nextTaskShape.artifactIds,
       });
       return {
         item: updatedTask,

@@ -53,6 +53,9 @@ export type ProjectStatus = "planned" | "active" | "paused" | "complete";
 export type TestResultStatus = "pass" | "fail" | "blocked";
 export type RiskSeverity = "high" | "medium" | "low";
 export type RiskAttachmentType = "project" | "workstream" | "mechanism" | "part-instance";
+export type FindingStatus = "open" | "in-progress" | "resolved";
+export type FindingSourceType = "qa" | "test";
+export type IterationStatus = "planned" | "in-progress" | "complete";
 
 export interface Member {
   id: string;
@@ -155,6 +158,8 @@ export interface Task {
   mechanismIds: string[];
   partInstanceId: string | null;
   partInstanceIds: string[];
+  artifactId: string | null;
+  artifactIds: string[];
   targetEventId: string | null;
   ownerId: string | null;
   assigneeIds: string[];
@@ -287,6 +292,60 @@ export interface TestResult {
   findings: string[];
 }
 
+export interface QaFinding {
+  id: string;
+  qaReportId: string | null;
+  taskId: string | null;
+  projectId: string;
+  workstreamId: string | null;
+  subsystemId: string | null;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactId: string | null;
+  title: string;
+  detail: string;
+  severity: RiskSeverity;
+  status: FindingStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TestFinding {
+  id: string;
+  testResultId: string | null;
+  eventId: string | null;
+  taskId: string | null;
+  projectId: string;
+  workstreamId: string | null;
+  subsystemId: string | null;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactId: string | null;
+  title: string;
+  detail: string;
+  severity: RiskSeverity;
+  status: FindingStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DesignIteration {
+  id: string;
+  sourceType: FindingSourceType;
+  findingId: string;
+  projectId: string;
+  workstreamId: string | null;
+  subsystemId: string | null;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactId: string | null;
+  taskId: string | null;
+  notes: string;
+  status: IterationStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Risk {
   id: string;
   title: string;
@@ -333,6 +392,9 @@ export interface PlatformSnapshot {
   events: Event[];
   qaReports: QaReport[];
   testResults: TestResult[];
+  qaFindings: QaFinding[];
+  testFindings: TestFinding[];
+  designIterations: DesignIteration[];
   risks: Risk[];
   workLogs: WorkLog[];
   meetings: Meeting[];

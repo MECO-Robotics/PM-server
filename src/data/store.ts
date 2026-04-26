@@ -1,6 +1,7 @@
 import { snapshot as initialSnapshot } from "./mockData";
 import type {
   Artifact,
+  DesignIteration,
   Discipline,
   Event,
   ManufacturingItem,
@@ -12,9 +13,11 @@ import type {
   PlatformSnapshot,
   Project,
   PurchaseItem,
+  QaFinding,
   Season,
   Subsystem,
   Task,
+  TestFinding,
   Workstream,
   WorkLog,
 } from "../domain/types";
@@ -111,6 +114,9 @@ function normalizeTaskTargets(task: Task): Task {
   const partInstanceIds = uniqueIds(
     task.partInstanceIds.length > 0 ? task.partInstanceIds : [task.partInstanceId],
   );
+  const artifactIds = uniqueIds(
+    task.artifactIds.length > 0 ? task.artifactIds : [task.artifactId],
+  );
   const taskAssigneeIds = Array.isArray(task.assigneeIds) ? task.assigneeIds : [];
   const assigneeIds = uniqueIds(
     taskAssigneeIds.length > 0 ? taskAssigneeIds : [task.ownerId],
@@ -126,8 +132,138 @@ function normalizeTaskTargets(task: Task): Task {
     mechanismIds,
     partInstanceId: partInstanceIds[0] ?? null,
     partInstanceIds,
+    artifactId: artifactIds[0] ?? null,
+    artifactIds,
     assigneeIds,
   };
+}
+
+export interface FindingListItem {
+  id: string;
+  sourceType: "qa" | "test";
+  sourceId: string | null;
+  title: string;
+  detail: string;
+  severity: QaFinding["severity"] | TestFinding["severity"];
+  status: QaFinding["status"] | TestFinding["status"];
+  projectId: string;
+  workstreamId: string | null;
+  subsystemId: string | null;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactId: string | null;
+  taskId: string | null;
+  eventId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TaskTargetType =
+  | "workstream"
+  | "subsystem"
+  | "mechanism"
+  | "part-instance"
+  | "artifact"
+  | "event";
+
+export interface TaskTargetLink {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  projectId: string;
+  workstreamId: string | null;
+  subsystemId: string;
+  targetType: TaskTargetType;
+  targetId: string;
+}
+
+function flattenTaskTargets(task: Task): TaskTargetLink[] {
+  const links: TaskTargetLink[] = [];
+
+  const workstreamIds = uniqueIds([...task.workstreamIds, task.workstreamId]);
+  for (const workstreamId of workstreamIds) {
+    links.push({
+      id: `${task.id}:workstream:${workstreamId}`,
+      taskId: task.id,
+      taskTitle: task.title,
+      projectId: task.projectId,
+      workstreamId: task.workstreamId,
+      subsystemId: task.subsystemId,
+      targetType: "workstream",
+      targetId: workstreamId,
+    });
+  }
+
+  const subsystemIds = uniqueIds([...task.subsystemIds, task.subsystemId]);
+  for (const subsystemId of subsystemIds) {
+    links.push({
+      id: `${task.id}:subsystem:${subsystemId}`,
+      taskId: task.id,
+      taskTitle: task.title,
+      projectId: task.projectId,
+      workstreamId: task.workstreamId,
+      subsystemId: task.subsystemId,
+      targetType: "subsystem",
+      targetId: subsystemId,
+    });
+  }
+
+  const mechanismIds = uniqueIds([...task.mechanismIds, task.mechanismId]);
+  for (const mechanismId of mechanismIds) {
+    links.push({
+      id: `${task.id}:mechanism:${mechanismId}`,
+      taskId: task.id,
+      taskTitle: task.title,
+      projectId: task.projectId,
+      workstreamId: task.workstreamId,
+      subsystemId: task.subsystemId,
+      targetType: "mechanism",
+      targetId: mechanismId,
+    });
+  }
+
+  const partInstanceIds = uniqueIds([...task.partInstanceIds, task.partInstanceId]);
+  for (const partInstanceId of partInstanceIds) {
+    links.push({
+      id: `${task.id}:part-instance:${partInstanceId}`,
+      taskId: task.id,
+      taskTitle: task.title,
+      projectId: task.projectId,
+      workstreamId: task.workstreamId,
+      subsystemId: task.subsystemId,
+      targetType: "part-instance",
+      targetId: partInstanceId,
+    });
+  }
+
+  const artifactIds = uniqueIds([...task.artifactIds, task.artifactId]);
+  for (const artifactId of artifactIds) {
+    links.push({
+      id: `${task.id}:artifact:${artifactId}`,
+      taskId: task.id,
+      taskTitle: task.title,
+      projectId: task.projectId,
+      workstreamId: task.workstreamId,
+      subsystemId: task.subsystemId,
+      targetType: "artifact",
+      targetId: artifactId,
+    });
+  }
+
+  if (task.targetEventId) {
+    links.push({
+      id: `${task.id}:event:${task.targetEventId}`,
+      taskId: task.id,
+      taskTitle: task.title,
+      projectId: task.projectId,
+      workstreamId: task.workstreamId,
+      subsystemId: task.subsystemId,
+      targetType: "event",
+      targetId: task.targetEventId,
+    });
+  }
+
+  return links;
 }
 
 const DEFAULT_SEASON_PROJECTS: Array<{
@@ -284,6 +420,8 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     mechanismIds: [mechanism.id],
     partInstanceId: null,
     partInstanceIds: [],
+    artifactId: null,
+    artifactIds: [],
     targetEventId: null,
     ownerId: subsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([subsystem.responsibleEngineerId]),
@@ -337,6 +475,8 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     mechanismIds: [],
     partInstanceId: null,
     partInstanceIds: [],
+    artifactId: null,
+    artifactIds: [],
     targetEventId: null,
     ownerId: parentSubsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([parentSubsystem.responsibleEngineerId]),
@@ -587,6 +727,66 @@ export function getTestResults() {
   return currentSnapshot.testResults;
 }
 
+export function getQaFindings() {
+  return currentSnapshot.qaFindings;
+}
+
+export function getTestFindings() {
+  return currentSnapshot.testFindings;
+}
+
+export function getDesignIterations(): DesignIteration[] {
+  return currentSnapshot.designIterations;
+}
+
+export function getFindings(): FindingListItem[] {
+  const qaItems: FindingListItem[] = currentSnapshot.qaFindings.map((finding) => ({
+    id: finding.id,
+    sourceType: "qa",
+    sourceId: finding.qaReportId,
+    title: finding.title,
+    detail: finding.detail,
+    severity: finding.severity,
+    status: finding.status,
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    mechanismId: finding.mechanismId,
+    partInstanceId: finding.partInstanceId,
+    artifactId: finding.artifactId,
+    taskId: finding.taskId,
+    eventId: null,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  }));
+
+  const testItems: FindingListItem[] = currentSnapshot.testFindings.map((finding) => ({
+    id: finding.id,
+    sourceType: "test",
+    sourceId: finding.testResultId,
+    title: finding.title,
+    detail: finding.detail,
+    severity: finding.severity,
+    status: finding.status,
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    mechanismId: finding.mechanismId,
+    partInstanceId: finding.partInstanceId,
+    artifactId: finding.artifactId,
+    taskId: finding.taskId,
+    eventId: finding.eventId,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  }));
+
+  return [...qaItems, ...testItems];
+}
+
+export function getTaskTargets() {
+  return currentSnapshot.tasks.flatMap((task) => flattenTaskTargets(task));
+}
+
 export function getRisks() {
   return currentSnapshot.risks;
 }
@@ -718,6 +918,28 @@ export function removeArtifact(artifactId: string) {
     ...currentSnapshot,
     artifacts: currentSnapshot.artifacts.filter(
       (candidate) => candidate.id !== artifactId,
+    ),
+    tasks: currentSnapshot.tasks.map((task) => {
+      if (task.artifactId !== artifactId && !task.artifactIds.includes(artifactId)) {
+        return task;
+      }
+
+      const artifactIds = task.artifactIds.filter(
+        (candidateArtifactId) => candidateArtifactId !== artifactId,
+      );
+      return normalizeTaskTargets({
+        ...task,
+        artifactId: artifactIds[0] ?? null,
+        artifactIds,
+      });
+    }),
+    designIterations: currentSnapshot.designIterations.map((iteration) =>
+      iteration.artifactId === artifactId
+        ? {
+            ...iteration,
+            artifactId: null,
+          }
+        : iteration,
     ),
   };
 
@@ -1286,6 +1508,8 @@ export function createTask(input: TaskInput) {
     mechanismIds: input.mechanismIds,
     partInstanceId: input.partInstanceId,
     partInstanceIds: input.partInstanceIds,
+    artifactId: input.artifactId,
+    artifactIds: input.artifactIds,
     targetEventId: input.targetEventId,
     ownerId: input.ownerId,
     assigneeIds: input.assigneeIds,
@@ -1460,6 +1684,9 @@ export function updateTask(taskId: string, input: Partial<TaskInput>) {
       }
       if (input.partInstanceId !== undefined && input.partInstanceIds === undefined) {
         scalarTargetUpdates.partInstanceIds = uniqueIds([input.partInstanceId]);
+      }
+      if (input.artifactId !== undefined && input.artifactIds === undefined) {
+        scalarTargetUpdates.artifactIds = uniqueIds([input.artifactId]);
       }
 
       updatedTask = normalizeTaskTargets({

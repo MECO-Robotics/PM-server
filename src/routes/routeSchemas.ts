@@ -44,6 +44,8 @@ export const taskSchema = z.object({
   mechanismIds: z.array(z.string().trim().min(1)).optional(),
   partInstanceId: z.string().trim().min(1).nullable().optional(),
   partInstanceIds: z.array(z.string().trim().min(1)).optional(),
+  artifactId: z.string().trim().min(1).nullable().optional(),
+  artifactIds: z.array(z.string().trim().min(1)).optional(),
   targetEventId: z.string().trim().min(1).nullable(),
   ownerId: z.string().trim().min(1).nullable(),
   assigneeIds: z.array(z.string().trim().min(1)).default([]),

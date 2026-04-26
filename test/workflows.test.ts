@@ -34,6 +34,8 @@ function makeTask(overrides: Partial<Task> = {}) {
     mechanismIds: [],
     partInstanceId: null,
     partInstanceIds: [],
+    artifactId: null,
+    artifactIds: [],
     targetEventId: null,
     ownerId: "ava",
     assigneeIds: ["ava"],

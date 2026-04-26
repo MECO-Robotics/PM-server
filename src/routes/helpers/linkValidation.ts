@@ -1,4 +1,5 @@
 import {
+  findArtifact,
   findDiscipline,
   findMaterial,
   findMechanism,
@@ -44,6 +45,8 @@ export function validateTaskLinks(input: {
   mechanismIds?: string[];
   partInstanceId?: string | null;
   partInstanceIds?: string[];
+  artifactId?: string | null;
+  artifactIds?: string[];
   targetEventId?: string | null;
   assigneeIds?: string[];
 }) {
@@ -123,6 +126,21 @@ export function validateTaskLinks(input: {
 
     if (!mechanismIds.includes(partInstance.mechanismId)) {
       return "One or more selected part instances do not belong to a selected mechanism.";
+    }
+  }
+
+  const artifactIds = uniqueIds([
+    ...(input.artifactIds ?? []),
+    input.artifactId,
+  ]);
+  for (const artifactId of artifactIds) {
+    const artifact = findArtifact(artifactId);
+    if (!artifact) {
+      return "The selected artifact does not exist.";
+    }
+
+    if (artifact.projectId !== project.id) {
+      return "The selected artifact does not belong to the selected project.";
     }
   }
 

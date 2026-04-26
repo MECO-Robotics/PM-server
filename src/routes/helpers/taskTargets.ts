@@ -88,6 +88,8 @@ export function normalizeTaskTargets(
     mechanismIds?: string[];
     partInstanceId?: string | null;
     partInstanceIds?: string[];
+    artifactId?: string | null;
+    artifactIds?: string[];
   },
   fallback?: {
     workstreamId: string | null;
@@ -98,6 +100,8 @@ export function normalizeTaskTargets(
     mechanismIds: string[];
     partInstanceId: string | null;
     partInstanceIds: string[];
+    artifactId: string | null;
+    artifactIds: string[];
   },
 ) {
   const partInstanceIds = readTargetIds({
@@ -143,6 +147,12 @@ export function normalizeTaskTargets(
     fallbackId: fallback?.workstreamId,
     fallbackIds: fallback?.workstreamIds,
   });
+  const artifactIds = readTargetIds({
+    id: input.artifactId,
+    ids: input.artifactIds,
+    fallbackId: fallback?.artifactId,
+    fallbackIds: fallback?.artifactIds,
+  });
 
   return {
     workstreamId: workstreamIds[0] ?? null,
@@ -153,5 +163,7 @@ export function normalizeTaskTargets(
     mechanismIds,
     partInstanceId: partInstanceIds[0] ?? null,
     partInstanceIds,
+    artifactId: artifactIds[0] ?? null,
+    artifactIds,
   };
 }

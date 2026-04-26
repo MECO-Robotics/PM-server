@@ -20,10 +20,25 @@ type SeedWorkstream = Omit<Workstream, "isArchived"> & Partial<Pick<Workstream, 
 
 type SeedTask = Omit<
   Task,
-  "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds" | "assigneeIds"
+  | "workstreamIds"
+  | "subsystemIds"
+  | "mechanismIds"
+  | "partInstanceIds"
+  | "artifactId"
+  | "artifactIds"
+  | "assigneeIds"
 > &
   Partial<
-    Pick<Task, "workstreamIds" | "subsystemIds" | "mechanismIds" | "partInstanceIds" | "assigneeIds">
+    Pick<
+      Task,
+      | "workstreamIds"
+      | "subsystemIds"
+      | "mechanismIds"
+      | "partInstanceIds"
+      | "artifactId"
+      | "artifactIds"
+      | "assigneeIds"
+    >
   >;
 
 function uniqueIds(values: Array<string | null | undefined>) {
@@ -63,6 +78,8 @@ function normalizeTaskTargets(task: SeedTask): Task {
     subsystemIds: task.subsystemIds ?? uniqueIds([task.subsystemId]),
     mechanismIds: task.mechanismIds ?? uniqueIds([task.mechanismId]),
     partInstanceIds: task.partInstanceIds ?? uniqueIds([task.partInstanceId]),
+    artifactId: task.artifactId ?? null,
+    artifactIds: task.artifactIds ?? uniqueIds([task.artifactId]),
     assigneeIds: task.assigneeIds ?? uniqueIds([task.ownerId]),
   };
 }
@@ -1554,6 +1571,134 @@ const snapshotSeed: Omit<
       findings: [
         "Demo flow and volunteer rotation completed without safety escalations.",
       ],
+    },
+  ],
+  qaFindings: [
+    {
+      id: "qafinding-intake-guard-cut-quality",
+      qaReportId: "qareport-intake-guard",
+      taskId: "intake-guard",
+      projectId: "project-robot-2026",
+      workstreamId: "workstream-manipulator",
+      subsystemId: "manipulator",
+      mechanismId: "intake-roller",
+      partInstanceId: "pi-intake-guard-set",
+      artifactId: null,
+      title: "Intake guard cut quality below tolerance",
+      detail:
+        "Latest CNC pass still has edge chatter at mounting slots and should be recut before closeout.",
+      severity: "high",
+      status: "open",
+      createdAt: "2026-04-21T17:30:00-04:00",
+      updatedAt: "2026-04-21T17:30:00-04:00",
+    },
+    {
+      id: "qafinding-outreach-signage-density",
+      qaReportId: "qareport-kiosk-assembly",
+      taskId: "outreach-kiosk-assembly",
+      projectId: "project-outreach-2026",
+      workstreamId: "workstream-outreach-events",
+      subsystemId: "outreach",
+      mechanismId: "demo-kiosk",
+      partInstanceId: "pi-demo-kiosk-signage-kit",
+      artifactId: "artifact-stem-night-run-of-show",
+      title: "Outreach kiosk signage copy is too dense",
+      detail:
+        "Queue signage contains too much text and slows attendee onboarding at the kiosk entry.",
+      severity: "medium",
+      status: "in-progress",
+      createdAt: "2026-05-01T10:20:00-04:00",
+      updatedAt: "2026-05-02T09:00:00-04:00",
+    },
+  ],
+  testFindings: [
+    {
+      id: "testfinding-vision-corner-confidence",
+      testResultId: "test-robot-readiness-may-02",
+      eventId: "robot-readiness-may-02",
+      taskId: "vision-calibration-sweep",
+      projectId: "project-robot-2026",
+      workstreamId: "workstream-controls",
+      subsystemId: "vision",
+      mechanismId: "limelight-mount",
+      partInstanceId: "pi-limelight-mount-plate",
+      artifactId: null,
+      title: "Vision confidence drop near field corners",
+      detail:
+        "Localization confidence dips during high-speed corner turns and needs additional tuning evidence.",
+      severity: "medium",
+      status: "open",
+      createdAt: "2026-05-02T12:05:00-04:00",
+      updatedAt: "2026-05-02T12:05:00-04:00",
+    },
+    {
+      id: "testfinding-scouting-wifi-retries",
+      testResultId: "test-week-zero-may-09",
+      eventId: "week-zero-may-09",
+      taskId: "scouting-tablet-refresh",
+      projectId: "project-training-2026",
+      workstreamId: "workstream-scouting-data",
+      subsystemId: "scouting",
+      mechanismId: "tablet-sync",
+      partInstanceId: "pi-tablet-mount-brackets",
+      artifactId: "artifact-scouting-ingest-notes",
+      title: "Tablet sync retry rate above target",
+      detail:
+        "Crowded network simulation still exceeds retry budget and requires additional reconnect hardening.",
+      severity: "high",
+      status: "in-progress",
+      createdAt: "2026-05-09T18:45:00-04:00",
+      updatedAt: "2026-05-10T09:10:00-04:00",
+    },
+  ],
+  designIterations: [
+    {
+      id: "iteration-intake-guard-recut",
+      sourceType: "qa",
+      findingId: "qafinding-intake-guard-cut-quality",
+      projectId: "project-robot-2026",
+      workstreamId: "workstream-manipulator",
+      subsystemId: "manipulator",
+      mechanismId: "intake-roller",
+      partInstanceId: "pi-intake-guard-set",
+      artifactId: null,
+      taskId: "intake-guard",
+      notes: "Adjust cutter feed and rerun Batch B-17 guard plate profile pass.",
+      status: "in-progress",
+      createdAt: "2026-04-22T08:00:00-04:00",
+      updatedAt: "2026-04-23T15:20:00-04:00",
+    },
+    {
+      id: "iteration-kiosk-signage-rewrite",
+      sourceType: "qa",
+      findingId: "qafinding-outreach-signage-density",
+      projectId: "project-outreach-2026",
+      workstreamId: "workstream-outreach-events",
+      subsystemId: "outreach",
+      mechanismId: "demo-kiosk",
+      partInstanceId: "pi-demo-kiosk-signage-kit",
+      artifactId: "artifact-stem-night-run-of-show",
+      taskId: "outreach-script-rehearsal",
+      notes: "Simplify entrance signage and align copy with run-of-show callouts.",
+      status: "planned",
+      createdAt: "2026-05-02T09:30:00-04:00",
+      updatedAt: "2026-05-02T09:30:00-04:00",
+    },
+    {
+      id: "iteration-scouting-reconnect-hardening",
+      sourceType: "test",
+      findingId: "testfinding-scouting-wifi-retries",
+      projectId: "project-training-2026",
+      workstreamId: "workstream-scouting-data",
+      subsystemId: "scouting",
+      mechanismId: "tablet-sync",
+      partInstanceId: "pi-tablet-mount-brackets",
+      artifactId: "artifact-scouting-ingest-notes",
+      taskId: "scouting-tablet-refresh",
+      notes: "Document and implement reconnect fallback behavior for congested venue Wi-Fi.",
+      status: "in-progress",
+      createdAt: "2026-05-10T10:00:00-04:00",
+      updatedAt: "2026-05-10T10:00:00-04:00",
     },
   ],
   risks: [
