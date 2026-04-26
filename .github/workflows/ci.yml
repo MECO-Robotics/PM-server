@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - ".editorconfig"
       - ".github/workflows/ci.yml"
+      - ".gitignore"
       - "package.json"
       - "package-lock.json"
       - "prisma/**"
@@ -16,7 +18,9 @@ on:
     branches-ignore:
       - main
     paths:
+      - ".editorconfig"
       - ".github/workflows/ci.yml"
+      - ".gitignore"
       - "package.json"
       - "package-lock.json"
       - "prisma/**"
@@ -29,7 +33,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: meco-platform-ci
+  group: meco-platform-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -53,14 +57,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Run tests
-        run: npm test
-
-      - name: Build
-        run: npm run build
+      - name: Run verification suite
+        run: npm run verify
 
       - name: Validate Prisma schema
         run: npx prisma validate

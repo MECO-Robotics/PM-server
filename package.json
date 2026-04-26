@@ -10,6 +10,7 @@
     "test": "node --import tsx --test ./test/app.test.ts ./test/authRosterAccess.test.ts ./test/devAuthBypass.test.ts ./test/emailAuth.test.ts ./test/env.test.ts ./test/requestLimits.test.ts ./test/store.test.ts ./test/workflows.test.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm run test && npm run build",
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma db push --skip-generate"
   },
