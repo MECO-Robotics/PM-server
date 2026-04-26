@@ -97,16 +97,37 @@ jobs:
       - name: Upload production env file
         shell: bash
         env:
-          # Keep SMTP credentials in GitHub Secrets; inject RESEND only at deploy time.
+          # Keep SMTP credentials in GitHub Secrets; inject provider-specific
+          # values at deploy time so stale VPS env entries do not win.
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          AUTH_EMAIL_SMTP_HOST: ${{ secrets.AUTH_EMAIL_SMTP_HOST }}
+          AUTH_EMAIL_SMTP_PORT: ${{ secrets.AUTH_EMAIL_SMTP_PORT }}
+          AUTH_EMAIL_SMTP_USER: ${{ secrets.AUTH_EMAIL_SMTP_USER }}
+          AUTH_EMAIL_SMTP_PASS: ${{ secrets.AUTH_EMAIL_SMTP_PASS }}
+          AUTH_EMAIL_SMTP_FROM: ${{ secrets.AUTH_EMAIL_SMTP_FROM }}
+          AUTH_EMAIL_FROM: ${{ secrets.AUTH_EMAIL_FROM }}
         run: |
           umask 077
+          append_secret_env() {
+            local key="$1"
+            local value="${!key:-}"
+            if [[ -n "${value}" ]]; then
+              printf '\n%s=%s' "${key}" "${value}"
+            fi
+          }
+
           {
             printf '%s' "$PRODUCTION_ENV_FILE"
             if [[ -n "${RESEND_API_KEY}" ]]; then
               printf '\nRESEND_API_KEY=%s' "$RESEND_API_KEY"
             fi
+            append_secret_env AUTH_EMAIL_SMTP_HOST
+            append_secret_env AUTH_EMAIL_SMTP_PORT
+            append_secret_env AUTH_EMAIL_SMTP_USER
+            append_secret_env AUTH_EMAIL_SMTP_PASS
+            append_secret_env AUTH_EMAIL_SMTP_FROM
+            append_secret_env AUTH_EMAIL_FROM
           } > .env.production.partial
           scp .env.production.partial "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${REMOTE_PATH}/.env.production.partial"
 
