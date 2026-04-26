@@ -62,6 +62,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
 }
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
+let interactiveTutorialSnapshot: PlatformSnapshot | null = null;
 
 function isElevatedMemberRole(role: Member["role"]): boolean {
   return role === "lead" || role === "admin";
@@ -517,6 +518,21 @@ export function getSnapshot() {
 
 export function resetStore() {
   currentSnapshot = cloneSnapshot(initialSnapshot);
+  interactiveTutorialSnapshot = null;
+}
+
+export function startInteractiveTutorialSession() {
+  interactiveTutorialSnapshot = cloneSnapshot(currentSnapshot);
+}
+
+export function resetInteractiveTutorialSession() {
+  if (!interactiveTutorialSnapshot) {
+    return false;
+  }
+
+  currentSnapshot = cloneSnapshot(interactiveTutorialSnapshot);
+  interactiveTutorialSnapshot = null;
+  return true;
 }
 
 export function getSeasons() {

@@ -72,6 +72,7 @@ import {
   removeSubsystem,
   removeTask,
   removeWorkLog,
+  resetInteractiveTutorialSession,
   updateManufacturingItem,
   updateArtifact,
   updateMaterial,
@@ -83,6 +84,7 @@ import {
   updateProject,
   updateSubsystem,
   updatePurchaseItem,
+  startInteractiveTutorialSession,
   updateTask,
   updateWorkLog,
   updateWorkstream,
@@ -387,6 +389,27 @@ export async function registerRoutes(app: FastifyInstance) {
         filterManufacturingItemsForPerson(personId),
         snapshot,
       ),
+    };
+  });
+
+  app.post("/api/tutorial/session/start", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    startInteractiveTutorialSession();
+    return {
+      ok: true,
+    };
+  });
+
+  app.post("/api/tutorial/session/reset", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      ok: resetInteractiveTutorialSession(),
     };
   });
 
