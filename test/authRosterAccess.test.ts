@@ -35,7 +35,11 @@ test("external roster role whitelists non-team email for email sign-in", async (
     process.env.AUTH_EMAIL_FROM = "MECO Robotics <no-reply@mecorobotics.org>";
 
     const { createMember, resetStore } = await import("../src/data/store");
-    const { AuthError, verifyEmailSignInCode } = await import("../src/auth/authService");
+    const {
+      AuthError,
+      requestEmailSignInCode,
+      verifyEmailSignInCode,
+    } = await import("../src/auth/authService");
 
     resetStore();
     createMember({
@@ -44,6 +48,29 @@ test("external roster role whitelists non-team email for email sign-in", async (
       role: "external",
       seasonId: "default-season",
     });
+    createMember({
+      name: "Sponsor Invitee",
+      email: "invitee@sponsor.example",
+      role: "external",
+      seasonId: "default-season",
+    });
+
+    try {
+      await requestEmailSignInCode(" INVITEE@SPONSOR.EXAMPLE ");
+    } catch (error) {
+      assert.ok(error instanceof AuthError);
+      assert.notEqual(error.statusCode, 403);
+    }
+
+    await assert.rejects(
+      () => requestEmailSignInCode("unlisted@sponsor.example"),
+      (error) => {
+        assert.ok(error instanceof AuthError);
+        assert.equal(error.statusCode, 403);
+        assert.match(error.message, /mecorobotics\.org/i);
+        return true;
+      },
+    );
 
     assert.throws(
       () => verifyEmailSignInCode("VIEWER@sponsor.example", "123456"),

@@ -119,10 +119,12 @@ test("buildApp serves health and public auth config without auth enabled", async
       item: {
         description: string;
         id: string;
+        isArchived: boolean;
         iteration: number;
         materialId: string | null;
       };
     };
+    assert.equal(partDefinitionBody.item.isArchived, false);
     assert.equal(partDefinitionBody.item.iteration, 4);
     assert.equal(partDefinitionBody.item.materialId, "mat-onyx-filament");
     assert.equal(partDefinitionBody.item.description, "Created from the app test suite.");
@@ -134,11 +136,13 @@ test("buildApp serves health and public auth config without auth enabled", async
       url: `/api/part-definitions/${partDefinitionBody.item.id}`,
       payload: {
         iteration: 5,
+        isArchived: true,
       },
     });
 
     assert.equal(partDefinitionIterationUpdateResponse.statusCode, 200);
     assert.equal(partDefinitionIterationUpdateResponse.json().item.iteration, 5);
+    assert.equal(partDefinitionIterationUpdateResponse.json().item.isArchived, true);
 
     resetRequestLimits();
 
@@ -211,9 +215,11 @@ test("buildApp serves health and public auth config without auth enabled", async
     const childSubsystemBody = childSubsystemResponse.json() as {
       item: {
         id: string;
+        isArchived: boolean;
         iteration: number;
       };
     };
+    assert.equal(childSubsystemBody.item.isArchived, false);
     assert.equal(childSubsystemBody.item.iteration, 2);
 
     resetRequestLimits();
@@ -223,11 +229,13 @@ test("buildApp serves health and public auth config without auth enabled", async
       url: `/api/subsystems/${childSubsystemBody.item.id}`,
       payload: {
         iteration: 3,
+        isArchived: true,
       },
     });
 
     assert.equal(childSubsystemIterationUpdateResponse.statusCode, 200);
     assert.equal(childSubsystemIterationUpdateResponse.json().item.iteration, 3);
+    assert.equal(childSubsystemIterationUpdateResponse.json().item.isArchived, true);
 
     resetRequestLimits();
 
@@ -246,9 +254,11 @@ test("buildApp serves health and public auth config without auth enabled", async
     const mechanismBody = mechanismResponse.json() as {
       item: {
         id: string;
+        isArchived: boolean;
         iteration: number;
       };
     };
+    assert.equal(mechanismBody.item.isArchived, false);
     assert.equal(mechanismBody.item.iteration, 2);
 
     resetRequestLimits();
@@ -258,11 +268,13 @@ test("buildApp serves health and public auth config without auth enabled", async
       url: `/api/mechanisms/${mechanismBody.item.id}`,
       payload: {
         iteration: 3,
+        isArchived: true,
       },
     });
 
     assert.equal(mechanismIterationUpdateResponse.statusCode, 200);
     assert.equal(mechanismIterationUpdateResponse.json().item.iteration, 3);
+    assert.equal(mechanismIterationUpdateResponse.json().item.isArchived, true);
 
     resetRequestLimits();
 
@@ -410,12 +422,27 @@ test("buildApp serves health and public auth config without auth enabled", async
     const createWorkstreamBody = createWorkstreamResponse.json() as {
       item: {
         id: string;
+        isArchived: boolean;
         projectId: string;
         name: string;
       };
     };
     assert.equal(createWorkstreamBody.item.id, "awards");
+    assert.equal(createWorkstreamBody.item.isArchived, false);
     assert.equal(createWorkstreamBody.item.projectId, "project-operations-2026");
+
+    resetRequestLimits();
+
+    const updateWorkstreamResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/workstreams/${createWorkstreamBody.item.id}`,
+      payload: {
+        isArchived: true,
+      },
+    });
+
+    assert.equal(updateWorkstreamResponse.statusCode, 200);
+    assert.equal(updateWorkstreamResponse.json().item.isArchived, true);
 
     resetRequestLimits();
 

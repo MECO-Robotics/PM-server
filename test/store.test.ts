@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  createProject,
   createSeason,
   createManufacturingItem,
   createMechanism,
@@ -53,6 +54,66 @@ test("seed and created seasons only use the canonical non-robot projects", () =>
     "Operations",
     "Strategy",
     "Training",
+  ]);
+});
+
+test("createSeason seeds drivetrain defaults for the robot project", () => {
+  const season = createSeason({
+    name: "2028 Season",
+    type: "season",
+    startDate: "2028-01-01",
+    endDate: "2028-04-30",
+  });
+  const snapshot = getSnapshot();
+  const robotProject = snapshot.projects.find(
+    (project) => project.seasonId === season.id && project.projectType === "robot",
+  );
+
+  assert.ok(robotProject);
+
+  const drivetrain = snapshot.subsystems.find(
+    (subsystem) =>
+      subsystem.projectId === robotProject.id && subsystem.name === "Drivetrain",
+  );
+  assert.ok(drivetrain);
+
+  const mechanismNames = snapshot.mechanisms
+    .filter((mechanism) => mechanism.subsystemId === drivetrain.id)
+    .map((mechanism) => mechanism.name);
+
+  assert.deepEqual(mechanismNames, [
+    "Left Front Module",
+    "Right Front Module",
+    "Left Back Module",
+    "Right Back Module",
+    "Chassis",
+  ]);
+});
+
+test("createProject seeds drivetrain defaults for robot projects", () => {
+  const project = createProject({
+    seasonId: "default-season",
+    name: "Practice Bot",
+    projectType: "robot",
+  });
+  const snapshot = getSnapshot();
+  const drivetrain = snapshot.subsystems.find(
+    (subsystem) =>
+      subsystem.projectId === project.id && subsystem.name === "Drivetrain",
+  );
+
+  assert.ok(drivetrain);
+
+  const mechanismNames = snapshot.mechanisms
+    .filter((mechanism) => mechanism.subsystemId === drivetrain.id)
+    .map((mechanism) => mechanism.name);
+
+  assert.deepEqual(mechanismNames, [
+    "Left Front Module",
+    "Right Front Module",
+    "Left Back Module",
+    "Right Back Module",
+    "Chassis",
   ]);
 });
 
@@ -138,6 +199,7 @@ test("createWorkstream adds a project-scoped workflow", () => {
   });
 
   assert.equal(workstream.id, "awards");
+  assert.equal(workstream.isArchived, false);
   assert.equal(workstream.projectId, "project-operations-2026");
   assert.equal(
     getSnapshot().workstreams.some((candidate) => candidate.id === workstream.id),
@@ -151,6 +213,8 @@ test("createMechanism auto-generates a wiring task for the new mechanism", () =>
     name: "Test Mechanism",
     description: "Temporary mechanism for coverage.",
   });
+
+  assert.equal(mechanism.isArchived, false);
 
   const wiringTask = getSnapshot().tasks.find(
     (task) => task.mechanismId === mechanism.id && task.title === "Wire Test Mechanism",
@@ -321,6 +385,7 @@ test("removePartDefinition clears linked part instances and task references", ()
     materialId: "mat-onyx-filament",
     description: "Temporary fixture for store coverage.",
   });
+  assert.equal(createdPartDefinition.isArchived, false);
   const createdPartInstance = createPartInstance({
     subsystemId: "drive",
     mechanismId: "swerve-module",
