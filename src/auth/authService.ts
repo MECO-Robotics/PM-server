@@ -189,6 +189,8 @@ function buildEmailVerificationMessage(code: string) {
   return [
     `Your MECO Robotics sign-in code is ${code}.`,
     "",
+    "Heads up: email sign-in is temporarily using a manually verified MECO sender while we finish cleaning up domain authentication. If the sender looks a little sketchy, this code is still legitimate when you requested it from the MECO PM app.",
+    "",
     `This code expires in ${authConfig.emailCodeTtlMinutes} minutes.`,
     "If you did not request this code, you can ignore this email.",
   ].join("\n");
@@ -200,6 +202,7 @@ function buildEmailVerificationHtml(code: string) {
       <h2 style="margin: 0 0 12px">Your MECO Robotics sign-in code</h2>
       <p style="margin: 0 0 16px">Use this code to finish signing in with your MECO email address.</p>
       <p style="margin: 0 0 16px; font-size: 28px; letter-spacing: 0.24em; font-weight: 700">${code}</p>
+      <p style="margin: 0 0 16px">Heads up: email sign-in is temporarily using a manually verified MECO sender while we finish cleaning up domain authentication. If the sender looks a little sketchy, this code is still legitimate when you requested it from the MECO PM app.</p>
       <p style="margin: 0 0 8px">It expires in ${authConfig.emailCodeTtlMinutes} minutes.</p>
       <p style="margin: 0">If you did not request this code, you can safely ignore this message.</p>
     </div>
