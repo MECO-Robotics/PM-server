@@ -162,6 +162,7 @@ export interface WorkstreamInput {
   projectId: string;
   name: string;
   description: string;
+  isArchived?: boolean;
 }
 
 export interface SubsystemInput {
@@ -169,6 +170,7 @@ export interface SubsystemInput {
   name: string;
   description: string;
   iteration?: number;
+  isArchived?: boolean;
   parentSubsystemId: string | null;
   responsibleEngineerId: string | null;
   mentorIds: string[];
@@ -180,6 +182,7 @@ export interface MechanismInput {
   name: string;
   description: string;
   iteration?: number;
+  isArchived?: boolean;
 }
 
 export interface PartDefinitionInput {
@@ -187,6 +190,7 @@ export interface PartDefinitionInput {
   partNumber: string;
   revision: string;
   iteration?: number;
+  isArchived?: boolean;
   type: string;
   source: string;
   materialId: string | null;
@@ -286,6 +290,88 @@ const DEFAULT_SEASON_PROJECTS: Array<{
   { key: "strategy", name: "Strategy", projectType: "other" },
   { key: "training", name: "Training", projectType: "other" },
 ];
+
+const ROBOT_DEFAULT_MECHANISM_TEMPLATES: Array<{
+  key: string;
+  name: string;
+  description: string;
+}> = [
+  {
+    key: "left-front-module",
+    name: "Left Front Module",
+    description: "Swerve drive and steering assembly for the front-left corner.",
+  },
+  {
+    key: "right-front-module",
+    name: "Right Front Module",
+    description: "Swerve drive and steering assembly for the front-right corner.",
+  },
+  {
+    key: "left-back-module",
+    name: "Left Back Module",
+    description: "Swerve drive and steering assembly for the rear-left corner.",
+  },
+  {
+    key: "right-back-module",
+    name: "Right Back Module",
+    description: "Swerve drive and steering assembly for the rear-right corner.",
+  },
+  {
+    key: "chassis",
+    name: "Chassis",
+    description: "Primary frame rails and structural mounting interfaces.",
+  },
+];
+
+function buildRobotProjectDefaults(
+  projectId: string,
+  subsystemIds: Set<string>,
+  mechanismIds: Set<string>,
+) {
+  const subsystemId =
+    uniqueId(toSlug(`${projectId}-drivetrain`) || "drivetrain", subsystemIds);
+  subsystemIds.add(subsystemId);
+
+  const subsystem: Subsystem = {
+    id: subsystemId,
+    projectId,
+    name: "Drivetrain",
+    description:
+      "Core drivetrain with four swerve modules and chassis integration.",
+    iteration: 1,
+    isArchived: false,
+    isCore: true,
+    parentSubsystemId: null,
+    responsibleEngineerId: null,
+    mentorIds: [],
+    risks: [],
+  };
+
+  const mechanisms: Mechanism[] = ROBOT_DEFAULT_MECHANISM_TEMPLATES.map(
+    (template) => {
+      const mechanismId =
+        uniqueId(
+          toSlug(`${projectId}-${template.key}`) || template.key,
+          mechanismIds,
+        );
+      mechanismIds.add(mechanismId);
+
+      return {
+        id: mechanismId,
+        subsystemId,
+        name: template.name,
+        description: template.description,
+        iteration: 1,
+        isArchived: false,
+      };
+    },
+  );
+
+  return {
+    subsystems: [subsystem],
+    mechanisms,
+  };
+}
 
 function resolveTaskOwnershipForSubsystem(subsystemId: string) {
   const subsystem = currentSnapshot.subsystems.find(
@@ -471,10 +557,27 @@ export function createSeason(input: SeasonInput) {
     };
   });
 
+  const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
+  const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
+  const subsystems: Subsystem[] = [];
+  const mechanisms: Mechanism[] = [];
+
+  projects.forEach((project) => {
+    if (project.projectType !== "robot") {
+      return;
+    }
+
+    const defaults = buildRobotProjectDefaults(project.id, subsystemIds, mechanismIds);
+    subsystems.push(...defaults.subsystems);
+    mechanisms.push(...defaults.mechanisms);
+  });
+
   currentSnapshot = {
     ...currentSnapshot,
     seasons: [...currentSnapshot.seasons, season],
     projects: [...currentSnapshot.projects, ...projects],
+    subsystems: [...currentSnapshot.subsystems, ...subsystems],
+    mechanisms: [...currentSnapshot.mechanisms, ...mechanisms],
   };
 
   return season;
@@ -496,9 +599,18 @@ export function createProject(input: ProjectInput) {
     status: input.status ?? "active",
   };
 
+  const subsystemIds = new Set(currentSnapshot.subsystems.map((subsystem) => subsystem.id));
+  const mechanismIds = new Set(currentSnapshot.mechanisms.map((mechanism) => mechanism.id));
+  const defaults =
+    project.projectType === "robot"
+      ? buildRobotProjectDefaults(project.id, subsystemIds, mechanismIds)
+      : { subsystems: [] as Subsystem[], mechanisms: [] as Mechanism[] };
+
   currentSnapshot = {
     ...currentSnapshot,
     projects: [...currentSnapshot.projects, project],
+    subsystems: [...currentSnapshot.subsystems, ...defaults.subsystems],
+    mechanisms: [...currentSnapshot.mechanisms, ...defaults.mechanisms],
   };
 
   return project;
@@ -542,6 +654,7 @@ export function createWorkstream(input: WorkstreamInput) {
     projectId: input.projectId,
     name: input.name,
     description: input.description,
+    isArchived: input.isArchived ?? false,
   };
 
   currentSnapshot = {
@@ -550,6 +663,28 @@ export function createWorkstream(input: WorkstreamInput) {
   };
 
   return workstream;
+}
+
+export function updateWorkstream(workstreamId: string, input: Partial<WorkstreamInput>) {
+  let updatedWorkstream: Workstream | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    workstreams: currentSnapshot.workstreams.map((workstream) => {
+      if (workstream.id !== workstreamId) {
+        return workstream;
+      }
+
+      updatedWorkstream = {
+        ...workstream,
+        ...input,
+      };
+
+      return updatedWorkstream;
+    }),
+  };
+
+  return updatedWorkstream;
 }
 
 export function getMembers() {
@@ -744,6 +879,7 @@ export function createSubsystem(input: SubsystemInput) {
     name: input.name,
     description: input.description,
     iteration: normalizeIteration(input.iteration),
+    isArchived: input.isArchived ?? false,
     isCore: false,
     parentSubsystemId: input.parentSubsystemId,
     responsibleEngineerId: input.responsibleEngineerId,
@@ -956,6 +1092,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
     partNumber: input.partNumber,
     revision: input.revision,
     iteration: normalizeIteration(input.iteration),
+    isArchived: input.isArchived ?? false,
     type: input.type,
     source: input.source,
     materialId: input.materialId,
@@ -1067,6 +1204,7 @@ export function createMechanism(input: MechanismInput) {
     name: input.name,
     description: input.description,
     iteration: normalizeIteration(input.iteration),
+    isArchived: input.isArchived ?? false,
   };
 
   const wiringTask = createMechanismWiringTask(mechanism);

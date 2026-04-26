@@ -84,6 +84,7 @@ import {
   updatePurchaseItem,
   updateTask,
   updateWorkLog,
+  updateWorkstream,
 } from "../data/store";
 import {
   buildDashboard,
@@ -185,12 +186,15 @@ const workstreamSchema = z.object({
   projectId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
+  isArchived: z.boolean().default(false),
 });
+const workstreamPatchSchema = workstreamSchema.partial();
 const subsystemSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
   iteration: iterationSchema,
+  isArchived: z.boolean().default(false),
   parentSubsystemId: z.string().trim().min(1).nullable().optional(),
   responsibleEngineerId: z.string().trim().min(1).nullable(),
   mentorIds: z.array(z.string().trim().min(1)).default([]),
@@ -202,6 +206,7 @@ const mechanismSchema = z.object({
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
   iteration: iterationSchema,
+  isArchived: z.boolean().default(false),
 });
 const mechanismPatchSchema = mechanismSchema.partial();
 const partDefinitionSchema = z.object({
@@ -209,6 +214,7 @@ const partDefinitionSchema = z.object({
   partNumber: z.string().trim().min(1),
   revision: z.string().trim().min(1),
   iteration: iterationSchema,
+  isArchived: z.boolean().default(false),
   type: z.string().trim().min(1),
   source: z.string().trim().min(1),
   materialId: z.string().trim().min(1).nullable().optional(),
@@ -1331,6 +1337,46 @@ export async function registerRoutes(app: FastifyInstance) {
       item: workstream,
     });
   });
+
+  app.patch<{ Body: unknown; Params: { workstreamId: string } }>(
+    "/api/workstreams/:workstreamId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = workstreamPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Workstream update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentWorkstream = findWorkstream(request.params.workstreamId);
+      if (!currentWorkstream) {
+        return reply.code(404).send({
+          message: "Workstream not found.",
+        });
+      }
+
+      const nextProjectId = parsed.data.projectId ?? currentWorkstream.projectId;
+      if (!findProject(nextProjectId)) {
+        return reply.code(400).send({
+          message: "The selected project does not exist.",
+        });
+      }
+
+      const workstream = updateWorkstream(request.params.workstreamId, {
+        ...parsed.data,
+        projectId: nextProjectId,
+      });
+
+      return {
+        item: workstream,
+      };
+    },
+  );
 
   app.get("/api/qa-reports", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {

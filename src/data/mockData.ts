@@ -4,14 +4,19 @@ import type {
   PlatformSnapshot,
   Subsystem,
   Task,
+  Workstream,
 } from "../domain/types";
 
-type IteratedSeed<T extends { iteration: number }> = Omit<T, "iteration"> &
-  Partial<Pick<T, "iteration">>;
+type IteratedSeed<T extends { iteration: number; isArchived: boolean }> = Omit<
+  T,
+  "iteration" | "isArchived"
+> &
+  Partial<Pick<T, "iteration" | "isArchived">>;
 
 type SeedSubsystem = IteratedSeed<Subsystem>;
 type SeedMechanism = IteratedSeed<Mechanism>;
 type SeedPartDefinition = IteratedSeed<PartDefinition>;
+type SeedWorkstream = Omit<Workstream, "isArchived"> & Partial<Pick<Workstream, "isArchived">>;
 
 type SeedTask = Omit<
   Task,
@@ -42,6 +47,15 @@ function withIteration<T extends { iteration?: number }>(
   };
 }
 
+function withArchiveState<T extends { isArchived?: boolean }>(
+  item: T,
+): Omit<T, "isArchived"> & { isArchived: boolean } {
+  return {
+    ...item,
+    isArchived: item.isArchived ?? false,
+  };
+}
+
 function normalizeTaskTargets(task: SeedTask): Task {
   return {
     ...task,
@@ -55,8 +69,9 @@ function normalizeTaskTargets(task: SeedTask): Task {
 
 const snapshotSeed: Omit<
   PlatformSnapshot,
-  "subsystems" | "mechanisms" | "partDefinitions" | "tasks"
+  "workstreams" | "subsystems" | "mechanisms" | "partDefinitions" | "tasks"
 > & {
+  workstreams: SeedWorkstream[];
   subsystems: SeedSubsystem[];
   mechanisms: SeedMechanism[];
   partDefinitions: SeedPartDefinition[];
@@ -308,6 +323,36 @@ const snapshotSeed: Omit<
     { id: "qa-test", code: "qa-test", name: "QA / Test" },
   ],
   mechanisms: [
+    {
+      id: "left-front-module",
+      subsystemId: "drive",
+      name: "Left Front Module",
+      description: "Swerve drive and steering assembly for the front-left corner.",
+    },
+    {
+      id: "right-front-module",
+      subsystemId: "drive",
+      name: "Right Front Module",
+      description: "Swerve drive and steering assembly for the front-right corner.",
+    },
+    {
+      id: "left-back-module",
+      subsystemId: "drive",
+      name: "Left Back Module",
+      description: "Swerve drive and steering assembly for the rear-left corner.",
+    },
+    {
+      id: "right-back-module",
+      subsystemId: "drive",
+      name: "Right Back Module",
+      description: "Swerve drive and steering assembly for the rear-right corner.",
+    },
+    {
+      id: "chassis",
+      subsystemId: "drive",
+      name: "Chassis",
+      description: "Primary frame rails and structural mounting interfaces.",
+    },
     {
       id: "swerve-module",
       subsystemId: "drive",
@@ -2165,8 +2210,9 @@ const snapshotSeed: Omit<
 
 export const snapshot: PlatformSnapshot = {
   ...snapshotSeed,
-  subsystems: snapshotSeed.subsystems.map(withIteration),
-  mechanisms: snapshotSeed.mechanisms.map(withIteration),
-  partDefinitions: snapshotSeed.partDefinitions.map(withIteration),
+  workstreams: snapshotSeed.workstreams.map(withArchiveState),
+  subsystems: snapshotSeed.subsystems.map(withIteration).map(withArchiveState),
+  mechanisms: snapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
+  partDefinitions: snapshotSeed.partDefinitions.map(withIteration).map(withArchiveState),
   tasks: snapshotSeed.tasks.map(normalizeTaskTargets),
 };

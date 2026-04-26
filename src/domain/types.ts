@@ -69,6 +69,7 @@ export interface Subsystem {
   name: string;
   description: string;
   iteration: number;
+  isArchived: boolean;
   isCore: boolean;
   parentSubsystemId: string | null;
   responsibleEngineerId: string | null;
@@ -88,6 +89,7 @@ export interface Mechanism {
   name: string;
   description: string;
   iteration: number;
+  isArchived: boolean;
 }
 
 export interface PartDefinition {
@@ -96,6 +98,7 @@ export interface PartDefinition {
   partNumber: string;
   revision: string;
   iteration: number;
+  isArchived: boolean;
   type: string;
   source: string;
   materialId: string | null;
@@ -262,6 +265,7 @@ export interface Workstream {
   projectId: string;
   name: string;
   description: string;
+  isArchived: boolean;
 }
 
 export interface QaReport {
