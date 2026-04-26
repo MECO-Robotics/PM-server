@@ -106,6 +106,7 @@ test("buildApp serves health and public auth config without auth enabled", async
         name: "Route Test Part",
         partNumber: "TST-900",
         revision: "A",
+        iteration: 4,
         type: "custom",
         source: "Onshape",
         materialId: "mat-onyx-filament",
@@ -118,11 +119,26 @@ test("buildApp serves health and public auth config without auth enabled", async
       item: {
         description: string;
         id: string;
+        iteration: number;
         materialId: string | null;
       };
     };
+    assert.equal(partDefinitionBody.item.iteration, 4);
     assert.equal(partDefinitionBody.item.materialId, "mat-onyx-filament");
     assert.equal(partDefinitionBody.item.description, "Created from the app test suite.");
+
+    resetRequestLimits();
+
+    const partDefinitionIterationUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/part-definitions/${partDefinitionBody.item.id}`,
+      payload: {
+        iteration: 5,
+      },
+    });
+
+    assert.equal(partDefinitionIterationUpdateResponse.statusCode, 200);
+    assert.equal(partDefinitionIterationUpdateResponse.json().item.iteration, 5);
 
     resetRequestLimits();
 
@@ -183,6 +199,7 @@ test("buildApp serves health and public auth config without auth enabled", async
         projectId: "project-robot-2026",
         name: "Route Test Intake",
         description: "Temporary child subsystem for route edge-case coverage.",
+        iteration: 2,
         parentSubsystemId: "manipulator",
         responsibleEngineerId: "lucas",
         mentorIds: ["riley"],
@@ -194,8 +211,58 @@ test("buildApp serves health and public auth config without auth enabled", async
     const childSubsystemBody = childSubsystemResponse.json() as {
       item: {
         id: string;
+        iteration: number;
       };
     };
+    assert.equal(childSubsystemBody.item.iteration, 2);
+
+    resetRequestLimits();
+
+    const childSubsystemIterationUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/subsystems/${childSubsystemBody.item.id}`,
+      payload: {
+        iteration: 3,
+      },
+    });
+
+    assert.equal(childSubsystemIterationUpdateResponse.statusCode, 200);
+    assert.equal(childSubsystemIterationUpdateResponse.json().item.iteration, 3);
+
+    resetRequestLimits();
+
+    const mechanismResponse = await app.inject({
+      method: "POST",
+      url: "/api/mechanisms",
+      payload: {
+        subsystemId: childSubsystemBody.item.id,
+        name: "Route Test Roller",
+        description: "Temporary mechanism for route iteration coverage.",
+        iteration: 2,
+      },
+    });
+
+    assert.equal(mechanismResponse.statusCode, 201);
+    const mechanismBody = mechanismResponse.json() as {
+      item: {
+        id: string;
+        iteration: number;
+      };
+    };
+    assert.equal(mechanismBody.item.iteration, 2);
+
+    resetRequestLimits();
+
+    const mechanismIterationUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/mechanisms/${mechanismBody.item.id}`,
+      payload: {
+        iteration: 3,
+      },
+    });
+
+    assert.equal(mechanismIterationUpdateResponse.statusCode, 200);
+    assert.equal(mechanismIterationUpdateResponse.json().item.iteration, 3);
 
     resetRequestLimits();
 
@@ -329,6 +396,88 @@ test("buildApp serves health and public auth config without auth enabled", async
 
     resetRequestLimits();
 
+    const createWorkstreamResponse = await app.inject({
+      method: "POST",
+      url: "/api/workstreams",
+      payload: {
+        projectId: "project-operations-2026",
+        name: "Awards",
+        description: "Awards submission workflow.",
+      },
+    });
+
+    assert.equal(createWorkstreamResponse.statusCode, 201);
+    const createWorkstreamBody = createWorkstreamResponse.json() as {
+      item: {
+        id: string;
+        projectId: string;
+        name: string;
+      };
+    };
+    assert.equal(createWorkstreamBody.item.id, "awards");
+    assert.equal(createWorkstreamBody.item.projectId, "project-operations-2026");
+
+    resetRequestLimits();
+
+    const workstreamsResponse = await app.inject({
+      method: "GET",
+      url: "/api/workstreams?pageSize=60",
+    });
+
+    assert.equal(workstreamsResponse.statusCode, 200);
+    const workstreamsBody = workstreamsResponse.json() as {
+      items: Array<{
+        id: string;
+      }>;
+    };
+    assert.ok(
+      workstreamsBody.items.some(
+        (workstream) => workstream.id === createWorkstreamBody.item.id,
+      ),
+    );
+
+    resetRequestLimits();
+
+    const createRobotProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        seasonId: "default-season",
+        name: "Practice Bot",
+        projectType: "robot",
+      },
+    });
+
+    assert.equal(createRobotProjectResponse.statusCode, 201);
+    const createRobotProjectBody = createRobotProjectResponse.json() as {
+      item: {
+        id: string;
+        name: string;
+        projectType: string;
+        seasonId: string;
+        status: string;
+      };
+    };
+    assert.equal(createRobotProjectBody.item.name, "Practice Bot");
+    assert.equal(createRobotProjectBody.item.projectType, "robot");
+    assert.equal(createRobotProjectBody.item.seasonId, "default-season");
+    assert.equal(createRobotProjectBody.item.status, "active");
+
+    resetRequestLimits();
+
+    const updateRobotProjectResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/projects/${createRobotProjectBody.item.id}`,
+      payload: {
+        name: "Practice Bot V2",
+      },
+    });
+
+    assert.equal(updateRobotProjectResponse.statusCode, 200);
+    assert.equal(updateRobotProjectResponse.json().item.name, "Practice Bot V2");
+
+    resetRequestLimits();
+
     const mobileMemberCreateResponse = await app.inject({
       method: "POST",
       url: "/api/members",
@@ -390,6 +539,7 @@ test("buildApp serves health and public auth config without auth enabled", async
         partInstanceId: null,
         targetEventId: null,
         ownerId: mobileMemberCreatedBody.item.id,
+        assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
         mentorId: "riley",
         dueDate: "2026-05-06",
         priority: "medium",
@@ -408,11 +558,16 @@ test("buildApp serves health and public auth config without auth enabled", async
       item: {
         id: string;
         projectId: string;
+        assigneeIds: string[];
         startDate: string;
         workstreamId: string | null;
       };
     };
     assert.equal(mobileTaskCreatedBody.item.projectId, "project-robot-2026");
+    assert.deepEqual(mobileTaskCreatedBody.item.assigneeIds, [
+      mobileMemberCreatedBody.item.id,
+      "ava",
+    ]);
     assert.equal(mobileTaskCreatedBody.item.startDate, "2026-05-06");
     assert.equal(
       typeof mobileTaskCreatedBody.item.workstreamId === "string" ||
@@ -646,6 +801,96 @@ test("buildApp serves health and public auth config without auth enabled", async
     assert.equal(updatedArtifactBody.item.kind, "document");
     assert.equal(updatedArtifactBody.item.status, "published");
     assert.equal(updatedArtifactBody.item.title, "Parent Night Summary Final");
+
+    resetRequestLimits();
+
+    const createEventResponse = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: {
+        title: "Cross Project Demo",
+        type: "demo",
+        startDateTime: "2026-05-14T18:00:00-04:00",
+        endDateTime: null,
+        isExternal: true,
+        description: "Milestone shared across robot and operations work.",
+        projectIds: ["project-robot-2026", "project-operations-2026"],
+        relatedSubsystemIds: ["drive", "operations"],
+      },
+    });
+
+    assert.equal(createEventResponse.statusCode, 201);
+    const createdEventBody = createEventResponse.json() as {
+      item: {
+        id: string;
+        projectIds: string[];
+        relatedSubsystemIds: string[];
+      };
+    };
+    assert.deepEqual(createdEventBody.item.projectIds, [
+      "project-robot-2026",
+      "project-operations-2026",
+    ]);
+    assert.deepEqual(createdEventBody.item.relatedSubsystemIds, ["drive", "operations"]);
+
+    resetRequestLimits();
+
+    const updateEventResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/events/${createdEventBody.item.id}`,
+      payload: {
+        projectIds: ["project-outreach-2026"],
+        relatedSubsystemIds: ["outreach"],
+      },
+    });
+
+    assert.equal(updateEventResponse.statusCode, 200);
+    const updatedEventBody = updateEventResponse.json() as {
+      item: {
+        projectIds: string[];
+        relatedSubsystemIds: string[];
+      };
+    };
+    assert.deepEqual(updatedEventBody.item.projectIds, ["project-outreach-2026"]);
+    assert.deepEqual(updatedEventBody.item.relatedSubsystemIds, ["outreach"]);
+
+    resetRequestLimits();
+
+    const unknownProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: {
+        title: "Unknown Project Demo",
+        type: "demo",
+        startDateTime: "2026-05-15T18:00:00-04:00",
+        endDateTime: null,
+        isExternal: true,
+        description: "",
+        projectIds: ["missing-project"],
+        relatedSubsystemIds: [],
+      },
+    });
+
+    assert.equal(unknownProjectResponse.statusCode, 400);
+
+    resetRequestLimits();
+
+    const mismatchedSubsystemResponse = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: {
+        title: "Mismatched Subsystem Demo",
+        type: "demo",
+        startDateTime: "2026-05-16T18:00:00-04:00",
+        endDateTime: null,
+        isExternal: true,
+        description: "",
+        projectIds: ["project-outreach-2026"],
+        relatedSubsystemIds: ["drive"],
+      },
+    });
+
+    assert.equal(mismatchedSubsystemResponse.statusCode, 400);
 
     resetRequestLimits();
 

@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  createSeason,
   createManufacturingItem,
   createMechanism,
   createSubsystem,
+  createWorkstream,
   createPartDefinition,
   createPartInstance,
   createMember,
@@ -19,6 +21,87 @@ import {
 
 beforeEach(() => {
   resetStore();
+});
+
+function nonRobotProjectNamesForSeason(seasonId: string) {
+  return getSnapshot()
+    .projects.filter(
+      (project) => project.seasonId === seasonId && project.projectType !== "robot",
+    )
+    .map((project) => project.name);
+}
+
+test("seed and created seasons only use the canonical non-robot projects", () => {
+  assert.deepEqual(nonRobotProjectNamesForSeason("default-season"), [
+    "Media",
+    "Outreach",
+    "Operations",
+    "Strategy",
+    "Training",
+  ]);
+
+  const season = createSeason({
+    name: "2027 Season",
+    type: "season",
+    startDate: "2027-01-01",
+    endDate: "2027-04-30",
+  });
+
+  assert.deepEqual(nonRobotProjectNamesForSeason(season.id), [
+    "Media",
+    "Outreach",
+    "Operations",
+    "Strategy",
+    "Training",
+  ]);
+});
+
+test("seeded training records belong to the Training project", () => {
+  const snapshot = getSnapshot();
+  const trainingProject = snapshot.projects.find(
+    (project) => project.id === "project-training-2026",
+  );
+
+  assert.ok(trainingProject);
+  assert.equal(trainingProject.name, "Training");
+  assert.equal(
+    snapshot.workstreams.find((workstream) => workstream.id === "workstream-scouting-training")
+      ?.projectId,
+    trainingProject.id,
+  );
+  assert.equal(
+    snapshot.workstreams.find((workstream) => workstream.id === "workstream-scouting-data")
+      ?.projectId,
+    trainingProject.id,
+  );
+  assert.equal(
+    snapshot.subsystems.find((subsystem) => subsystem.id === "scouting")?.projectId,
+    trainingProject.id,
+  );
+  assert.equal(
+    snapshot.artifacts.find((artifact) => artifact.id === "artifact-scouting-rubric")
+      ?.projectId,
+    trainingProject.id,
+  );
+  assert.equal(
+    snapshot.artifacts.find((artifact) => artifact.id === "artifact-scouting-ingest-notes")
+      ?.projectId,
+    trainingProject.id,
+  );
+  assert.equal(
+    snapshot.tasks.find((task) => task.id === "scouting-rubric-training")?.projectId,
+    trainingProject.id,
+  );
+  assert.equal(
+    snapshot.tasks.find((task) => task.id === "scouting-tablet-refresh")?.projectId,
+    trainingProject.id,
+  );
+  assert.deepEqual(
+    snapshot.workstreams
+      .filter((workstream) => workstream.projectId === "project-strategy-2026")
+      .map((workstream) => workstream.id),
+    [],
+  );
 });
 
 test("seed data includes an Outreach milestone linked to the outreach subsystem", () => {
@@ -45,6 +128,21 @@ test("createMember generates unique slugs for repeated names", () => {
   assert.equal(first.id, "ava-chen");
   assert.equal(second.id, "ava-chen-2");
   assert.equal(getSnapshot().members.slice(-2).map((member) => member.id).join(","), "ava-chen,ava-chen-2");
+});
+
+test("createWorkstream adds a project-scoped workflow", () => {
+  const workstream = createWorkstream({
+    projectId: "project-operations-2026",
+    name: "Awards",
+    description: "Awards submission workflow.",
+  });
+
+  assert.equal(workstream.id, "awards");
+  assert.equal(workstream.projectId, "project-operations-2026");
+  assert.equal(
+    getSnapshot().workstreams.some((candidate) => candidate.id === workstream.id),
+    true,
+  );
 });
 
 test("createMechanism auto-generates a wiring task for the new mechanism", () => {
@@ -90,11 +188,13 @@ test("updateTask patches an existing task in place", () => {
   const updated = updateTask("intake-guard", {
     status: "complete",
     actualHours: 8,
+    assigneeIds: ["ava", "ethan"],
   });
 
   assert.ok(updated);
   assert.equal(updated?.status, "complete");
   assert.equal(updated?.actualHours, 8);
+  assert.deepEqual(updated?.assigneeIds, ["ava", "ethan"]);
   assert.equal(
     getSnapshot().tasks.find((task) => task.id === "intake-guard")?.status,
     "complete",
@@ -197,6 +297,10 @@ test("removePartDefinition clears linked part instances and task references", ()
 });
 
 test("removeMember clears linked references across the snapshot", () => {
+  updateTask("swerve-sensor-bundle", {
+    assigneeIds: ["ava", "jordan"],
+  });
+
   const removed = removeMember("jordan");
   const snapshot = getSnapshot();
 
@@ -221,6 +325,10 @@ test("removeMember clears linked references across the snapshot", () => {
   assert.equal(
     snapshot.tasks.find((task) => task.id === "pit-checklist")?.mentorId,
     null,
+  );
+  assert.deepEqual(
+    snapshot.tasks.find((task) => task.id === "swerve-sensor-bundle")?.assigneeIds,
+    ["ava"],
   );
   assert.deepEqual(
     snapshot.workLogs.find((workLog) => workLog.id === "log-1")?.participantIds,

@@ -31,6 +31,7 @@ function makeTask(overrides: Partial<Task> = {}) {
     partInstanceId: null,
     targetEventId: null,
     ownerId: "ava",
+    assigneeIds: ["ava"],
     mentorId: "jordan",
     startDate: "2026-04-01",
     dueDate: "2026-04-05",
