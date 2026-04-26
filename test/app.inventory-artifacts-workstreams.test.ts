@@ -1,0 +1,282 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("artifact and workstream endpoints preserve seeded, paginated, and CRUD contracts", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const bootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(bootstrapResponse.statusCode, 200);
+    const bootstrapBody = bootstrapResponse.json() as {
+      artifacts: Array<{
+        id: string;
+        kind: string;
+        projectId: string;
+      }>;
+      attendanceRecords: Array<{
+        id: string;
+      }>;
+      escalations: Array<{
+        title: string;
+      }>;
+      manufacturingItems: Array<{
+        batchLabel?: string;
+        id: string;
+        partDefinitionId: string | null;
+        process: string;
+        qaReviewCount: number;
+      }>;
+      meetings: Array<{
+        id: string;
+      }>;
+      qaReviews: Array<{
+        id: string;
+      }>;
+      workLogs: Array<{
+        id: string;
+      }>;
+    };
+
+    const seededFabricationItem = bootstrapBody.manufacturingItems.find(
+      (item) => item.id === "frame-weldment",
+    );
+    assert.ok(seededFabricationItem);
+    assert.equal(seededFabricationItem?.process, "fabrication");
+    assert.equal(seededFabricationItem?.partDefinitionId, null);
+    assert.equal(seededFabricationItem?.batchLabel, "FAB-03");
+
+    const seededManufacturingQaItem = bootstrapBody.manufacturingItems.find(
+      (item) => item.id === "sensor-bracket",
+    );
+    assert.equal(seededManufacturingQaItem?.qaReviewCount, 1);
+    assert.ok(bootstrapBody.meetings.some((meeting) => meeting.id === "design-review"));
+    assert.ok(bootstrapBody.attendanceRecords.some((record) => record.id === "att-1"));
+    assert.ok(bootstrapBody.qaReviews.some((review) => review.id === "qa-1"));
+    assert.ok(bootstrapBody.escalations.length > 0);
+
+    const seededOperationsArtifact = bootstrapBody.artifacts.find(
+      (artifact) => artifact.id === "artifact-sponsor-recap-apr",
+    );
+    assert.ok(seededOperationsArtifact);
+    assert.equal(seededOperationsArtifact?.projectId, "project-operations-2026");
+    assert.equal(seededOperationsArtifact?.kind, "nontechnical");
+    assert.ok(bootstrapBody.workLogs.some((workLog) => workLog.id === "log-1"));
+
+    resetLimits();
+
+    const artifactsResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts",
+    });
+
+    assert.equal(artifactsResponse.statusCode, 200);
+    const artifactsBody = artifactsResponse.json() as {
+      items: Array<{
+        id: string;
+        kind: string;
+        projectId: string;
+      }>;
+    };
+    assert.ok(
+      artifactsBody.items.some(
+        (artifact) =>
+          artifact.id === "artifact-event-volunteer-guide" &&
+          artifact.projectId === "project-operations-2026" &&
+          artifact.kind === "document",
+      ),
+    );
+
+    resetLimits();
+
+    const createWorkstreamResponse = await app.inject({
+      method: "POST",
+      url: "/api/workstreams",
+      payload: {
+        projectId: "project-operations-2026",
+        name: "Awards",
+        description: "Awards submission workflow.",
+      },
+    });
+
+    assert.equal(createWorkstreamResponse.statusCode, 201);
+    const createWorkstreamBody = createWorkstreamResponse.json() as {
+      item: {
+        id: string;
+        isArchived: boolean;
+        projectId: string;
+      };
+    };
+    assert.equal(createWorkstreamBody.item.id, "awards");
+    assert.equal(createWorkstreamBody.item.isArchived, false);
+    assert.equal(createWorkstreamBody.item.projectId, "project-operations-2026");
+
+    resetLimits();
+
+    const updateWorkstreamResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/workstreams/${createWorkstreamBody.item.id}`,
+      payload: {
+        isArchived: true,
+      },
+    });
+
+    assert.equal(updateWorkstreamResponse.statusCode, 200);
+    assert.equal(updateWorkstreamResponse.json().item.isArchived, true);
+
+    resetLimits();
+
+    const workstreamsResponse = await app.inject({
+      method: "GET",
+      url: "/api/workstreams?pageSize=60",
+    });
+
+    assert.equal(workstreamsResponse.statusCode, 200);
+    const workstreamsBody = workstreamsResponse.json() as {
+      items: Array<{
+        id: string;
+      }>;
+    };
+    assert.ok(
+      workstreamsBody.items.some(
+        (workstream) => workstream.id === createWorkstreamBody.item.id,
+      ),
+    );
+
+    resetLimits();
+
+    const paginatedArtifactsResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts?page=2&pageSize=30",
+    });
+
+    assert.equal(paginatedArtifactsResponse.statusCode, 200);
+    const paginatedArtifactsBody = paginatedArtifactsResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: {
+        hasNextPage: boolean;
+        hasPreviousPage: boolean;
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+      };
+    };
+    assert.equal(paginatedArtifactsBody.pagination.pageSize, 30);
+    assert.equal(paginatedArtifactsBody.pagination.page, 1);
+    assert.equal(paginatedArtifactsBody.pagination.totalPages >= 1, true);
+    assert.equal(
+      paginatedArtifactsBody.pagination.totalItems >= paginatedArtifactsBody.items.length,
+      true,
+    );
+    assert.equal(paginatedArtifactsBody.pagination.hasPreviousPage, false);
+
+    resetLimits();
+
+    const invalidPageSizeArtifactsResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts?pageSize=99",
+    });
+
+    assert.equal(invalidPageSizeArtifactsResponse.statusCode, 200);
+    const invalidPageSizeArtifactsBody = invalidPageSizeArtifactsResponse.json() as {
+      pagination: {
+        pageSize: number;
+      };
+    };
+    assert.equal(invalidPageSizeArtifactsBody.pagination.pageSize, 15);
+
+    resetLimits();
+
+    const createArtifactResponse = await app.inject({
+      method: "POST",
+      url: "/api/artifacts",
+      payload: {
+        projectId: "project-operations-2026",
+        workstreamId: "workstream-operations-comms",
+        kind: "nontechnical",
+        title: "Parent Night Summary",
+        summary: "Highlights from mentor and parent orientation night.",
+        status: "draft",
+        link: "https://example.org/meco/parent-night-summary",
+      },
+    });
+
+    assert.equal(createArtifactResponse.statusCode, 201);
+    const createdArtifactBody = createArtifactResponse.json() as {
+      item: {
+        id: string;
+        isArchived: boolean;
+        kind: string;
+        projectId: string;
+        status: string;
+        title: string;
+        updatedAt: string;
+        workstreamId: string | null;
+      };
+    };
+    assert.equal(createdArtifactBody.item.projectId, "project-operations-2026");
+    assert.equal(createdArtifactBody.item.workstreamId, "workstream-operations-comms");
+    assert.equal(createdArtifactBody.item.kind, "nontechnical");
+    assert.equal(createdArtifactBody.item.status, "draft");
+    assert.equal(createdArtifactBody.item.isArchived, false);
+    assert.equal(Number.isNaN(Date.parse(createdArtifactBody.item.updatedAt)), false);
+
+    resetLimits();
+
+    const updateArtifactResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/artifacts/${createdArtifactBody.item.id}`,
+      payload: {
+        kind: "document",
+        isArchived: true,
+        status: "published",
+        title: "Parent Night Summary Final",
+      },
+    });
+
+    assert.equal(updateArtifactResponse.statusCode, 200);
+    const updatedArtifactBody = updateArtifactResponse.json() as {
+      item: {
+        isArchived: boolean;
+        kind: string;
+        status: string;
+        title: string;
+      };
+    };
+    assert.equal(updatedArtifactBody.item.kind, "document");
+    assert.equal(updatedArtifactBody.item.isArchived, true);
+    assert.equal(updatedArtifactBody.item.status, "published");
+    assert.equal(updatedArtifactBody.item.title, "Parent Night Summary Final");
+
+    resetLimits();
+
+    const deleteArtifactResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/artifacts/${createdArtifactBody.item.id}`,
+    });
+
+    assert.equal(deleteArtifactResponse.statusCode, 200);
+
+    resetLimits();
+
+    const artifactsAfterDeleteResponse = await app.inject({
+      method: "GET",
+      url: "/api/artifacts",
+    });
+
+    assert.equal(artifactsAfterDeleteResponse.statusCode, 200);
+    const artifactsAfterDeleteBody = artifactsAfterDeleteResponse.json() as {
+      items: Array<{ id: string }>;
+    };
+    assert.equal(
+      artifactsAfterDeleteBody.items.some(
+        (artifact) => artifact.id === createdArtifactBody.item.id,
+      ),
+      false,
+    );
+  });
+});

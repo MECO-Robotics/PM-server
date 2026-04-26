@@ -1,0 +1,280 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("task and event endpoints support mobile and multi-target payloads", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const mobileMemberCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: {
+        name: "Mobile Test Student",
+        role: "student",
+      },
+    });
+
+    assert.equal(mobileMemberCreateResponse.statusCode, 201);
+    const mobileMemberCreatedBody = mobileMemberCreateResponse.json() as {
+      item: {
+        email: string;
+        elevated: boolean;
+        id: string;
+        seasonId: string;
+      };
+    };
+    assert.equal(mobileMemberCreatedBody.item.email, "");
+    assert.equal(mobileMemberCreatedBody.item.elevated, false);
+    assert.equal(mobileMemberCreatedBody.item.seasonId, "default-season");
+
+    resetLimits();
+
+    const mobileSubsystemCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        name: "Mobile Test Intake",
+        description: "Subsystem created with the mobile app payload shape.",
+        parentSubsystemId: "manipulator",
+        responsibleEngineerId: mobileMemberCreatedBody.item.id,
+        mentorIds: ["riley"],
+        risks: [],
+      },
+    });
+
+    assert.equal(mobileSubsystemCreateResponse.statusCode, 201);
+    const mobileSubsystemCreatedBody = mobileSubsystemCreateResponse.json() as {
+      item: {
+        id: string;
+        projectId: string;
+      };
+    };
+    assert.equal(mobileSubsystemCreatedBody.item.projectId, "project-robot-2026");
+
+    resetLimits();
+
+    const mobileTaskCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Mobile task payload",
+        summary: "Created from the mobile app's compact task draft.",
+        subsystemId: mobileSubsystemCreatedBody.item.id,
+        disciplineId: "mechanical",
+        requirementId: null,
+        mechanismId: null,
+        partInstanceId: null,
+        targetEventId: null,
+        ownerId: mobileMemberCreatedBody.item.id,
+        assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
+        mentorId: "riley",
+        dueDate: "2026-05-06",
+        priority: "medium",
+        status: "not-started",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 0,
+        actualHours: 0,
+      },
+    });
+
+    assert.equal(mobileTaskCreateResponse.statusCode, 201);
+    const mobileTaskCreatedBody = mobileTaskCreateResponse.json() as {
+      item: {
+        id: string;
+        projectId: string;
+        assigneeIds: string[];
+        startDate: string;
+        workstreamId: string | null;
+      };
+    };
+    assert.equal(mobileTaskCreatedBody.item.projectId, "project-robot-2026");
+    assert.deepEqual(mobileTaskCreatedBody.item.assigneeIds, [
+      mobileMemberCreatedBody.item.id,
+      "ava",
+    ]);
+    assert.equal(mobileTaskCreatedBody.item.startDate, "2026-05-06");
+    assert.equal(
+      typeof mobileTaskCreatedBody.item.workstreamId === "string" ||
+        mobileTaskCreatedBody.item.workstreamId === null,
+      true,
+    );
+
+    resetLimits();
+
+    const multiTargetTaskCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        projectId: "project-robot-2026",
+        workstreamIds: ["workstream-drive", "workstream-controls"],
+        title: "Multi-target task payload",
+        summary: "Created with multiple linked workstreams, subsystems, mechanisms, and parts.",
+        subsystemIds: ["drive", "controls"],
+        disciplineId: "mechanical",
+        mechanismIds: ["swerve-module", "auto-safety"],
+        partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
+        targetEventId: null,
+        ownerId: mobileMemberCreatedBody.item.id,
+        mentorId: "riley",
+        dueDate: "2026-05-08",
+        priority: "high",
+        status: "not-started",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 2,
+        actualHours: 0,
+      },
+    });
+
+    assert.equal(multiTargetTaskCreateResponse.statusCode, 201);
+    const multiTargetTaskCreatedBody = multiTargetTaskCreateResponse.json() as {
+      item: {
+        workstreamId: string | null;
+        workstreamIds: string[];
+        subsystemId: string;
+        subsystemIds: string[];
+        mechanismId: string | null;
+        mechanismIds: string[];
+        partInstanceId: string | null;
+        partInstanceIds: string[];
+      };
+    };
+    assert.equal(multiTargetTaskCreatedBody.item.workstreamId, "workstream-drive");
+    assert.deepEqual(multiTargetTaskCreatedBody.item.workstreamIds, [
+      "workstream-drive",
+      "workstream-controls",
+    ]);
+    assert.equal(multiTargetTaskCreatedBody.item.subsystemId, "drive");
+    assert.deepEqual(multiTargetTaskCreatedBody.item.subsystemIds, ["drive", "controls"]);
+    assert.equal(multiTargetTaskCreatedBody.item.mechanismId, "swerve-module");
+    assert.deepEqual(multiTargetTaskCreatedBody.item.mechanismIds, [
+      "swerve-module",
+      "auto-safety",
+    ]);
+    assert.equal(
+      multiTargetTaskCreatedBody.item.partInstanceId,
+      "pi-swerve-encoder-bracket-front-left",
+    );
+    assert.deepEqual(multiTargetTaskCreatedBody.item.partInstanceIds, [
+      "pi-swerve-encoder-bracket-front-left",
+    ]);
+
+    resetLimits();
+
+    const createEventResponse = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: {
+        title: "Cross Project Demo",
+        type: "demo",
+        startDateTime: "2026-05-14T18:00:00-04:00",
+        endDateTime: null,
+        isExternal: true,
+        description: "Milestone shared across robot and operations work.",
+        projectIds: ["project-robot-2026", "project-operations-2026"],
+        relatedSubsystemIds: ["drive", "operations"],
+      },
+    });
+
+    assert.equal(createEventResponse.statusCode, 201);
+    const createdEventBody = createEventResponse.json() as {
+      item: {
+        id: string;
+        projectIds: string[];
+        relatedSubsystemIds: string[];
+      };
+    };
+    assert.deepEqual(createdEventBody.item.projectIds, [
+      "project-robot-2026",
+      "project-operations-2026",
+    ]);
+    assert.deepEqual(createdEventBody.item.relatedSubsystemIds, ["drive", "operations"]);
+
+    resetLimits();
+
+    const updateEventResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/events/${createdEventBody.item.id}`,
+      payload: {
+        projectIds: ["project-outreach-2026"],
+        relatedSubsystemIds: ["outreach"],
+      },
+    });
+
+    assert.equal(updateEventResponse.statusCode, 200);
+    const updatedEventBody = updateEventResponse.json() as {
+      item: {
+        projectIds: string[];
+        relatedSubsystemIds: string[];
+      };
+    };
+    assert.deepEqual(updatedEventBody.item.projectIds, ["project-outreach-2026"]);
+    assert.deepEqual(updatedEventBody.item.relatedSubsystemIds, ["outreach"]);
+
+    resetLimits();
+
+    const unknownProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: {
+        title: "Unknown Project Demo",
+        type: "demo",
+        startDateTime: "2026-05-15T18:00:00-04:00",
+        endDateTime: null,
+        isExternal: true,
+        description: "",
+        projectIds: ["missing-project"],
+        relatedSubsystemIds: [],
+      },
+    });
+
+    assert.equal(unknownProjectResponse.statusCode, 400);
+
+    resetLimits();
+
+    const mismatchedSubsystemResponse = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: {
+        title: "Mismatched Subsystem Demo",
+        type: "demo",
+        startDateTime: "2026-05-16T18:00:00-04:00",
+        endDateTime: null,
+        isExternal: true,
+        description: "",
+        projectIds: ["project-outreach-2026"],
+        relatedSubsystemIds: ["drive"],
+      },
+    });
+
+    assert.equal(mismatchedSubsystemResponse.statusCode, 400);
+
+    resetLimits();
+
+    const mobileTaskDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${mobileTaskCreatedBody.item.id}`,
+    });
+
+    assert.equal(mobileTaskDeleteResponse.statusCode, 200);
+    assert.equal(mobileTaskDeleteResponse.json().item.id, mobileTaskCreatedBody.item.id);
+
+    resetLimits();
+
+    const mobileSubsystemDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/subsystems/${mobileSubsystemCreatedBody.item.id}`,
+    });
+
+    assert.equal(mobileSubsystemDeleteResponse.statusCode, 200);
+    assert.equal(
+      mobileSubsystemDeleteResponse.json().item.id,
+      mobileSubsystemCreatedBody.item.id,
+    );
+  });
+});

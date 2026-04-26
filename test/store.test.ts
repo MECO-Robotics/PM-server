@@ -227,6 +227,7 @@ test("createMechanism auto-generates a wiring task for the new mechanism", () =>
 
 test("createSubsystem auto-generates an integration task for its parent subsystem", () => {
   const subsystem = createSubsystem({
+    projectId: "default-season-robot",
     name: "Test Subsystem",
     description: "Temporary subsystem for coverage.",
     parentSubsystemId: "drive",
@@ -249,30 +250,30 @@ test("createSubsystem auto-generates an integration task for its parent subsyste
 });
 
 test("updateTask patches an existing task in place", () => {
-  const updated = updateTask("intake-guard", {
+  updateTask("intake-guard", {
     status: "complete",
     actualHours: 8,
     assigneeIds: ["ava", "ethan"],
   });
 
-  assert.ok(updated);
-  assert.equal(updated?.status, "complete");
-  assert.equal(updated?.actualHours, 8);
-  assert.deepEqual(updated?.assigneeIds, ["ava", "ethan"]);
-  assert.equal(
-    getSnapshot().tasks.find((task) => task.id === "intake-guard")?.status,
-    "complete",
-  );
+  const updatedTask = getSnapshot().tasks.find((task) => task.id === "intake-guard");
+  assert.ok(updatedTask);
+  assert.equal(updatedTask.status, "complete");
+  assert.equal(updatedTask.actualHours, 8);
+  assert.deepEqual(updatedTask.assigneeIds, ["ava", "ethan"]);
 });
 
 test("updatePartInstance keeps the subsystem aligned with the selected mechanism", () => {
-  const updated = updatePartInstance("pi-swerve-encoder-bracket-front-left", {
+  updatePartInstance("pi-swerve-encoder-bracket-front-left", {
     mechanismId: "intake-roller",
   });
 
-  assert.ok(updated);
-  assert.equal(updated?.mechanismId, "intake-roller");
-  assert.equal(updated?.subsystemId, "manipulator");
+  const updatedPartInstance = getSnapshot().partInstances.find(
+    (item) => item.id === "pi-swerve-encoder-bracket-front-left",
+  );
+  assert.ok(updatedPartInstance);
+  assert.equal(updatedPartInstance.mechanismId, "intake-roller");
+  assert.equal(updatedPartInstance.subsystemId, "manipulator");
 });
 
 test("fabrication manufacturing items stay seeded and update cleanly", () => {
@@ -302,20 +303,18 @@ test("fabrication manufacturing items stay seeded and update cleanly", () => {
   assert.equal(createdFabricationItem.partDefinitionId, null);
   assert.equal(createdFabricationItem.batchLabel, "FAB-99");
 
-  const updatedFabricationItem = updateManufacturingItem(createdFabricationItem.id, {
+  updateManufacturingItem(createdFabricationItem.id, {
     title: "Temporary Weldment Rev B",
     status: "approved",
   });
 
-  assert.ok(updatedFabricationItem);
-  assert.equal(updatedFabricationItem?.process, "fabrication");
-  assert.equal(updatedFabricationItem?.title, "Temporary Weldment Rev B");
-  assert.equal(updatedFabricationItem?.status, "approved");
-  assert.equal(
-    getSnapshot().manufacturingItems.find((item) => item.id === createdFabricationItem.id)
-      ?.title,
-    "Temporary Weldment Rev B",
+  const updatedFabricationItem = getSnapshot().manufacturingItems.find(
+    (item) => item.id === createdFabricationItem.id,
   );
+  assert.ok(updatedFabricationItem);
+  assert.equal(updatedFabricationItem.process, "fabrication");
+  assert.equal(updatedFabricationItem.title, "Temporary Weldment Rev B");
+  assert.equal(updatedFabricationItem.status, "approved");
 });
 
 test("cnc manufacturing items keep the in-house flag through create and update", () => {
@@ -336,11 +335,15 @@ test("cnc manufacturing items keep the in-house flag through create and update",
 
   assert.equal(createdCncItem.inHouse, false);
 
-  const updatedCncItem = updateManufacturingItem(createdCncItem.id, {
+  updateManufacturingItem(createdCncItem.id, {
     inHouse: true,
   });
 
-  assert.equal(updatedCncItem?.inHouse, true);
+  const updatedCncItem = getSnapshot().manufacturingItems.find(
+    (item) => item.id === createdCncItem.id,
+  );
+  assert.ok(updatedCncItem);
+  assert.equal(updatedCncItem.inHouse, true);
 });
 
 test("manufacturing items keep linked part instances through create and update", () => {
@@ -364,15 +367,19 @@ test("manufacturing items keep linked part instances through create and update",
   assert.equal(createdCncItem.partInstanceId, "pi-swerve-encoder-bracket-front-left");
   assert.deepEqual(createdCncItem.partInstanceIds, ["pi-swerve-encoder-bracket-front-left"]);
 
-  const updatedCncItem = updateManufacturingItem(createdCncItem.id, {
+  updateManufacturingItem(createdCncItem.id, {
     subsystemId: "manipulator",
     partDefinitionId: "pd-intake-guard",
     partInstanceId: "pi-intake-guard-set",
     partInstanceIds: ["pi-intake-guard-set"],
   });
 
-  assert.equal(updatedCncItem?.partInstanceId, "pi-intake-guard-set");
-  assert.deepEqual(updatedCncItem?.partInstanceIds, ["pi-intake-guard-set"]);
+  const updatedCncItem = getSnapshot().manufacturingItems.find(
+    (item) => item.id === createdCncItem.id,
+  );
+  assert.ok(updatedCncItem);
+  assert.equal(updatedCncItem.partInstanceId, "pi-intake-guard-set");
+  assert.deepEqual(updatedCncItem.partInstanceIds, ["pi-intake-guard-set"]);
 });
 
 test("removePartDefinition clears linked part instances and task references", () => {

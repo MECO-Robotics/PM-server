@@ -20,15 +20,20 @@ import type {
 } from "../src/domain/types";
 
 function makeTask(overrides: Partial<Task> = {}) {
-  return {
+  const baseTask: Task = {
     id: "task-a",
+    projectId: "default-season-robot",
+    workstreamId: null,
+    workstreamIds: [],
     title: "Drive calibration",
     summary: "Validate encoder calibration before practice.",
     subsystemId: "drive",
+    subsystemIds: ["drive"],
     disciplineId: "mechanical",
-    requirementId: null,
     mechanismId: null,
+    mechanismIds: [],
     partInstanceId: null,
+    partInstanceIds: [],
     targetEventId: null,
     ownerId: "ava",
     assigneeIds: ["ava"],
@@ -45,8 +50,26 @@ function makeTask(overrides: Partial<Task> = {}) {
     actualHours: 1,
     requiresDocumentation: false,
     documentationLinked: false,
+  };
+
+  const mergedTask = {
+    ...baseTask,
     ...overrides,
-  } satisfies Task;
+  } as Task;
+
+  return {
+    ...mergedTask,
+    workstreamIds:
+      overrides.workstreamIds ??
+      (mergedTask.workstreamId ? [mergedTask.workstreamId] : []),
+    subsystemIds: overrides.subsystemIds ?? [mergedTask.subsystemId],
+    mechanismIds:
+      overrides.mechanismIds ??
+      (mergedTask.mechanismId ? [mergedTask.mechanismId] : []),
+    partInstanceIds:
+      overrides.partInstanceIds ??
+      (mergedTask.partInstanceId ? [mergedTask.partInstanceId] : []),
+  };
 }
 
 function makeWorkflowSnapshot() {
@@ -168,6 +191,7 @@ function makeWorkflowSnapshot() {
       title: "Polycarbonate sheet",
       subsystemId: "manipulator",
       requestedById: "lucas",
+      partDefinitionId: null,
       quantity: 2,
       vendor: "McMaster",
       linkLabel: "mcmaster.com/8560K239",
@@ -180,6 +204,7 @@ function makeWorkflowSnapshot() {
       title: "Ferrule refill kit",
       subsystemId: "drive",
       requestedById: "priya",
+      partDefinitionId: null,
       quantity: 1,
       vendor: "AutomationDirect",
       linkLabel: "automationdirect.com/ferrules",

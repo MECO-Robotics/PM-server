@@ -1,0 +1,83 @@
+import type { FastifyInstance } from "fastify";
+
+import { resetStore } from "../../src/data/store";
+import { resetRequestLimits } from "../../src/security/requestLimits";
+
+const APP_ENV_KEYS = [
+  "NODE_ENV",
+  "DATABASE_URL",
+  "AUTH_JWT_SECRET",
+  "GOOGLE_CLIENT_ID",
+  "AUTH_EMAIL_SMTP_HOST",
+  "AUTH_EMAIL_FROM",
+  "CORS_ORIGIN",
+  "API_RATE_LIMIT_MAX_REQUESTS",
+  "API_RATE_LIMIT_WINDOW_SECONDS",
+  "AUTH_RATE_LIMIT_MAX_REQUESTS",
+  "AUTH_RATE_LIMIT_WINDOW_SECONDS",
+  "AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS",
+  "AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS",
+] as const;
+
+type AppEnvKey = (typeof APP_ENV_KEYS)[number];
+type AppEnvSnapshot = Map<AppEnvKey, string | undefined>;
+
+function saveEnv(): AppEnvSnapshot {
+  return new Map(
+    APP_ENV_KEYS.map((key) => [key, process.env[key]] as const),
+  );
+}
+
+function restoreEnv(snapshot: AppEnvSnapshot) {
+  for (const [key, value] of snapshot) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function configureEnv() {
+  process.env.NODE_ENV = "development";
+  process.env.DATABASE_URL =
+    "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+  delete process.env.CORS_ORIGIN;
+  delete process.env.AUTH_JWT_SECRET;
+  delete process.env.GOOGLE_CLIENT_ID;
+  delete process.env.AUTH_EMAIL_SMTP_HOST;
+  delete process.env.AUTH_EMAIL_FROM;
+  process.env.API_RATE_LIMIT_MAX_REQUESTS = "1";
+  process.env.API_RATE_LIMIT_WINDOW_SECONDS = "60";
+  process.env.AUTH_RATE_LIMIT_MAX_REQUESTS = "1";
+  process.env.AUTH_RATE_LIMIT_WINDOW_SECONDS = "60";
+  process.env.AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS = "1";
+  process.env.AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS = "60";
+}
+
+export async function withIntegrationApp(
+  run: (context: {
+    app: FastifyInstance;
+    resetLimits: typeof resetRequestLimits;
+  }) => Promise<void>,
+) {
+  const envSnapshot = saveEnv();
+
+  try {
+    configureEnv();
+    resetStore();
+
+    const { buildApp } = await import("../../src/app");
+    const app = await buildApp();
+
+    try {
+      resetRequestLimits();
+      await run({ app, resetLimits: resetRequestLimits });
+    } finally {
+      await app.close();
+      resetRequestLimits();
+    }
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+}
