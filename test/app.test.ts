@@ -653,6 +653,7 @@ test("buildApp serves health and public auth config without auth enabled", async
         quantity: 1,
         status: "requested",
         mentorReviewed: false,
+        inHouse: false,
         qaReviewCount: 0,
       },
     });
@@ -662,12 +663,71 @@ test("buildApp serves health and public auth config without auth enabled", async
       mobileManufacturingCreateResponse.json() as {
         item: {
           id: string;
+          inHouse: boolean;
           partDefinitionId: string | null;
           title: string;
         };
       };
+    assert.equal(mobileManufacturingCreatedBody.item.inHouse, false);
     assert.equal(mobileManufacturingCreatedBody.item.partDefinitionId, null);
     assert.equal(mobileManufacturingCreatedBody.item.title, "Mobile CNC Item");
+
+    resetRequestLimits();
+
+    const mobileManufacturingUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/manufacturing/${mobileManufacturingCreatedBody.item.id}`,
+      payload: {
+        inHouse: true,
+      },
+    });
+
+    assert.equal(mobileManufacturingUpdateResponse.statusCode, 200);
+    const mobileManufacturingUpdatedBody =
+      mobileManufacturingUpdateResponse.json() as {
+        item: {
+          inHouse: boolean;
+        };
+      };
+    assert.equal(mobileManufacturingUpdatedBody.item.inHouse, true);
+
+    resetRequestLimits();
+
+    const targetedManufacturingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/manufacturing",
+      payload: {
+        title: "Targeted CNC Item",
+        subsystemId: "drive",
+        requestedById: "ava",
+        process: "cnc",
+        dueDate: "2026-05-08",
+        material: "Aluminum plate",
+        partDefinitionId: "pd-swerve-encoder-bracket",
+        partInstanceId: "pi-swerve-encoder-bracket-front-left",
+        partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
+        quantity: 1,
+        status: "requested",
+        mentorReviewed: false,
+        inHouse: true,
+      },
+    });
+
+    assert.equal(targetedManufacturingCreateResponse.statusCode, 201);
+    const targetedManufacturingCreatedBody =
+      targetedManufacturingCreateResponse.json() as {
+        item: {
+          partInstanceId: string | null;
+          partInstanceIds: string[];
+        };
+      };
+    assert.equal(
+      targetedManufacturingCreatedBody.item.partInstanceId,
+      "pi-swerve-encoder-bracket-front-left",
+    );
+    assert.deepEqual(targetedManufacturingCreatedBody.item.partInstanceIds, [
+      "pi-swerve-encoder-bracket-front-left",
+    ]);
 
     resetRequestLimits();
 

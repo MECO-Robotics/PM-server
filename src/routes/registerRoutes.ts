@@ -95,7 +95,7 @@ import {
 const memberSchema = z.object({
   name: z.string().trim().min(2),
   email: z.union([z.literal(""), z.string().trim().email()]).default(""),
-  role: z.enum(["student", "lead", "mentor", "admin"]),
+  role: z.enum(["student", "lead", "mentor", "admin", "external"]),
   elevated: z.boolean().default(false),
   seasonId: z.string().trim().min(1).optional(),
 });
@@ -277,9 +277,12 @@ const manufacturingItemSchema = z.object({
   dueDate: z.string().date(),
   material: z.string().trim().min(2),
   partDefinitionId: z.string().trim().min(1).nullable().optional(),
+  partInstanceId: z.string().trim().min(1).nullable().optional(),
+  partInstanceIds: z.array(z.string().trim().min(1)).optional(),
   quantity: z.coerce.number().min(1),
   status: z.enum(["requested", "approved", "in-progress", "qa", "complete"]),
   mentorReviewed: z.boolean().default(false),
+  inHouse: z.boolean().default(true),
   batchLabel: z.string().trim().min(1).optional(),
 });
 const manufacturingItemPatchSchema = manufacturingItemSchema.partial();
@@ -790,16 +793,39 @@ function validateManufacturingItemLinks(input: {
   subsystemId: string;
   process: string;
   partDefinitionId?: string | null | undefined;
+  partInstanceId?: string | null | undefined;
+  partInstanceIds?: string[];
 }) {
   if (!findSubsystem(input.subsystemId)) {
     return "The selected subsystem does not exist.";
   }
 
-  if (!input.partDefinitionId) {
-    return null;
+  if (input.partDefinitionId) {
+    const partDefinitionError = validatePartDefinitionLink(input.partDefinitionId);
+    if (partDefinitionError) {
+      return partDefinitionError;
+    }
   }
 
-  return validatePartDefinitionLink(input.partDefinitionId);
+  const partInstanceIds = uniqueIds([
+    ...(input.partInstanceIds ?? []),
+    input.partInstanceId,
+  ]);
+  for (const partInstanceId of partInstanceIds) {
+    const partInstance = findPartInstance(partInstanceId);
+    if (!partInstance) {
+      return "The selected part instance does not exist.";
+    }
+
+    if (
+      input.partDefinitionId &&
+      partInstance.partDefinitionId !== input.partDefinitionId
+    ) {
+      return "The selected part instance does not match the selected part definition.";
+    }
+  }
+
+  return null;
 }
 
 function validateSubsystemPeople(input: {
@@ -2639,9 +2665,15 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    const partInstanceIds = uniqueIds([
+      ...(parsed.data.partInstanceIds ?? []),
+      parsed.data.partInstanceId,
+    ]);
     const item = createManufacturingItem({
       ...parsed.data,
       partDefinitionId: parsed.data.partDefinitionId ?? null,
+      partInstanceId: partInstanceIds[0] ?? null,
+      partInstanceIds,
       title:
         parsed.data.process === "fabrication" || !partDefinition
           ? parsed.data.title
@@ -2681,6 +2713,18 @@ export async function registerRoutes(app: FastifyInstance) {
           parsed.data.partDefinitionId === undefined
             ? currentItem.partDefinitionId
             : parsed.data.partDefinitionId,
+        partInstanceId:
+          parsed.data.partInstanceId === undefined
+            ? currentItem.partInstanceId
+            : parsed.data.partInstanceId,
+        partInstanceIds:
+          parsed.data.partInstanceIds === undefined &&
+          parsed.data.partInstanceId === undefined
+            ? currentItem.partInstanceIds ?? uniqueIds([currentItem.partInstanceId])
+            : uniqueIds([
+                ...(parsed.data.partInstanceIds ?? []),
+                parsed.data.partInstanceId,
+              ]),
       };
 
       const validationError = validateManufacturingItemLinks(nextItemShape);
@@ -2702,6 +2746,8 @@ export async function registerRoutes(app: FastifyInstance) {
       const item = updateManufacturingItem(request.params.itemId, {
         ...parsed.data,
         partDefinitionId: nextItemShape.partDefinitionId ?? null,
+        partInstanceId: nextItemShape.partInstanceIds[0] ?? null,
+        partInstanceIds: nextItemShape.partInstanceIds,
         title:
           nextItemShape.process === "fabrication" || !partDefinition
             ? parsed.data.title ?? currentItem.title

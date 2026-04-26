@@ -1,4 +1,4 @@
-export type MemberRole = "student" | "lead" | "mentor" | "admin";
+export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external";
 export type EventType =
   | "drive-practice"
   | "competition"
@@ -216,9 +216,12 @@ export interface ManufacturingItem {
   dueDate: string;
   material: string;
   partDefinitionId: string | null;
+  partInstanceId: string | null;
+  partInstanceIds: string[];
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
+  inHouse: boolean;
   batchLabel?: string;
 }
 

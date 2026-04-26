@@ -127,9 +127,12 @@ export interface ManufacturingItemInput {
   dueDate: string;
   material: string;
   partDefinitionId: string | null;
+  partInstanceId?: string | null;
+  partInstanceIds?: string[];
   quantity: number;
   status: ManufacturingStatus;
   mentorReviewed: boolean;
+  inHouse?: boolean;
   batchLabel?: string;
 }
 
@@ -1584,6 +1587,10 @@ export function removePurchaseItem(itemId: string) {
 
 export function createManufacturingItem(input: ManufacturingItemInput) {
   const itemIds = new Set(currentSnapshot.manufacturingItems.map((item) => item.id));
+  const partInstanceIds = uniqueIds([
+    ...(input.partInstanceIds ?? []),
+    input.partInstanceId,
+  ]);
   const item: ManufacturingItem = {
     id: uniqueId(toSlug(input.title) || "manufacturing-item", itemIds),
     title: input.title,
@@ -1593,9 +1600,12 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     dueDate: input.dueDate,
     material: input.material,
     partDefinitionId: input.partDefinitionId,
+    partInstanceId: partInstanceIds[0] ?? null,
+    partInstanceIds,
     quantity: input.quantity,
     status: input.status,
     mentorReviewed: input.mentorReviewed,
+    inHouse: input.process === "cnc" ? input.inHouse ?? true : true,
     batchLabel: input.batchLabel,
   };
 
@@ -1620,9 +1630,21 @@ export function updateManufacturingItem(
         return item;
       }
 
+      const receivedPartInstanceUpdate =
+        input.partInstanceIds !== undefined || input.partInstanceId !== undefined;
+      const partInstanceIds = receivedPartInstanceUpdate
+        ? uniqueIds([...(input.partInstanceIds ?? []), input.partInstanceId])
+        : item.partInstanceIds ?? uniqueIds([item.partInstanceId]);
+
       updatedItem = {
         ...item,
         ...input,
+        partInstanceId: partInstanceIds[0] ?? null,
+        partInstanceIds,
+        inHouse:
+          (input.process ?? item.process) === "cnc"
+            ? input.inHouse ?? item.inHouse ?? true
+            : true,
       };
 
       return updatedItem;

@@ -254,6 +254,63 @@ test("fabrication manufacturing items stay seeded and update cleanly", () => {
   );
 });
 
+test("cnc manufacturing items keep the in-house flag through create and update", () => {
+  const createdCncItem = createManufacturingItem({
+    title: "Temporary CNC Plate",
+    subsystemId: "drive",
+    requestedById: "ava",
+    process: "cnc",
+    dueDate: "2026-05-01",
+    material: "6061 aluminum",
+    partDefinitionId: "pd-swerve-encoder-bracket",
+    quantity: 2,
+    status: "requested",
+    mentorReviewed: false,
+    batchLabel: "CNC-99",
+    inHouse: false,
+  });
+
+  assert.equal(createdCncItem.inHouse, false);
+
+  const updatedCncItem = updateManufacturingItem(createdCncItem.id, {
+    inHouse: true,
+  });
+
+  assert.equal(updatedCncItem?.inHouse, true);
+});
+
+test("manufacturing items keep linked part instances through create and update", () => {
+  const createdCncItem = createManufacturingItem({
+    title: "Temporary Encoder Bracket",
+    subsystemId: "drive",
+    requestedById: "ava",
+    process: "cnc",
+    dueDate: "2026-05-01",
+    material: "6061 aluminum",
+    partDefinitionId: "pd-swerve-encoder-bracket",
+    partInstanceId: "pi-swerve-encoder-bracket-front-left",
+    partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
+    quantity: 2,
+    status: "requested",
+    mentorReviewed: false,
+    batchLabel: "CNC-100",
+    inHouse: true,
+  });
+
+  assert.equal(createdCncItem.partInstanceId, "pi-swerve-encoder-bracket-front-left");
+  assert.deepEqual(createdCncItem.partInstanceIds, ["pi-swerve-encoder-bracket-front-left"]);
+
+  const updatedCncItem = updateManufacturingItem(createdCncItem.id, {
+    subsystemId: "manipulator",
+    partDefinitionId: "pd-intake-guard",
+    partInstanceId: "pi-intake-guard-set",
+    partInstanceIds: ["pi-intake-guard-set"],
+  });
+
+  assert.equal(updatedCncItem?.partInstanceId, "pi-intake-guard-set");
+  assert.deepEqual(updatedCncItem?.partInstanceIds, ["pi-intake-guard-set"]);
+});
+
 test("removePartDefinition clears linked part instances and task references", () => {
   const createdPartDefinition = createPartDefinition({
     name: "Temporary Test Part",

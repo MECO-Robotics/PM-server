@@ -382,6 +382,7 @@ model ManufacturingItem {
   partDefinitionId  String?
   quantity          Int                   @default(1)
   mentorReviewed    Boolean               @default(false)
+  inHouse           Boolean               @default(true)
   process           ManufacturingProcess
   status            ManufacturingStatus   @default(REQUESTED)
   subsystemId       String

@@ -5,6 +5,7 @@ import { OAuth2Client, type TokenPayload } from "google-auth-library";
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 
 import { authConfig, emailSmtpConfig, env } from "../config/env";
+import { getMembers } from "../data/store";
 
 const SESSION_ISSUER = "meco-platform";
 const SESSION_AUDIENCE = "meco-apps";
@@ -138,6 +139,24 @@ function isAllowedHostedDomain(email: string) {
   return domain === authConfig.hostedDomain;
 }
 
+function isExternalRosterEmailAllowed(email: string) {
+  return getMembers().some((member) => {
+    return (
+      member.role === "external" &&
+      member.email.length > 0 &&
+      normalizeEmailAddress(member.email) === email
+    );
+  });
+}
+
+function isAllowedSignInEmail(email: string) {
+  return isAllowedHostedDomain(email) || isExternalRosterEmailAllowed(email);
+}
+
+function buildSignInAccessMessage() {
+  return `Use your ${authConfig.hostedDomain} email address or an external access email from the roster to continue.`;
+}
+
 function formatEmailLocalPart(localPart: string) {
   if (localPart.length <= 1) {
     return "*";
@@ -266,21 +285,19 @@ function mapGooglePayload(payload: TokenPayload | undefined): SessionUser {
     throw new AuthError("Your Google account email must be verified.", 403);
   }
 
+  const email = normalizeEmailAddress(payload.email);
   const hostedDomain = payload.hd?.toLowerCase();
-  if (hostedDomain !== authConfig.hostedDomain) {
-    throw new AuthError(
-      `Sign in with a ${authConfig.hostedDomain} Google account to continue.`,
-      403,
-    );
+  if (!isAllowedSignInEmail(email)) {
+    throw new AuthError(buildSignInAccessMessage(), 403);
   }
 
   return {
     accountId: payload.sub,
     authProvider: "google",
-    email: payload.email.toLowerCase(),
+    email,
     name: payload.name ?? payload.email,
     picture: payload.picture ?? null,
-    hostedDomain,
+    hostedDomain: hostedDomain === authConfig.hostedDomain ? hostedDomain : authConfig.hostedDomain,
   };
 }
 
@@ -305,11 +322,8 @@ export async function requestEmailSignInCode(emailInput: string): Promise<EmailC
   const email = normalizeEmailAddress(emailInput);
   cleanupExpiredPendingEmailCodes();
 
-  if (!isAllowedHostedDomain(email)) {
-    throw new AuthError(
-      `Use your ${authConfig.hostedDomain} email address to continue.`,
-      403,
-    );
+  if (!isAllowedSignInEmail(email)) {
+    throw new AuthError(buildSignInAccessMessage(), 403);
   }
 
   const now = Date.now();
@@ -359,11 +373,8 @@ export function verifyEmailSignInCode(emailInput: string, codeInput: string) {
   cleanupExpiredPendingEmailCodes();
 
   const email = normalizeEmailAddress(emailInput);
-  if (!isAllowedHostedDomain(email)) {
-    throw new AuthError(
-      `Use your ${authConfig.hostedDomain} email address to continue.`,
-      403,
-    );
+  if (!isAllowedSignInEmail(email)) {
+    throw new AuthError(buildSignInAccessMessage(), 403);
   }
 
   const code = codeInput.trim();
@@ -498,17 +509,15 @@ export function verifySessionToken(token: string): SessionUser {
     throw new AuthError("The session token uses an unknown sign-in provider.", 401);
   }
 
-  if (payload.hd.toLowerCase() !== authConfig.hostedDomain) {
-    throw new AuthError(
-      `Sign in with a ${authConfig.hostedDomain} account to continue.`,
-      403,
-    );
+  const email = normalizeEmailAddress(payload.email);
+  if (!isAllowedSignInEmail(email)) {
+    throw new AuthError(buildSignInAccessMessage(), 403);
   }
 
   return {
     accountId: payload.sub,
     authProvider: payload.provider ?? "google",
-    email: payload.email.toLowerCase(),
+    email,
     name: payload.name,
     picture: typeof payload.picture === "string" ? payload.picture : null,
     hostedDomain: payload.hd.toLowerCase(),
@@ -545,7 +554,7 @@ export function requireSession(request: FastifyRequest, reply: FastifyReply) {
   const session = getSessionFromRequest(request);
   if (!session) {
     reply.code(401).send({
-      message: `Sign in with your ${authConfig.hostedDomain} account to continue.`,
+      message: buildSignInAccessMessage(),
     });
     return null;
   }
