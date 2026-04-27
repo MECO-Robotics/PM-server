@@ -66,8 +66,28 @@ export type {
   WorkstreamInput,
 } from "./storeTypes";
 
+function normalizeMemberSeasonMembership(
+  member: Member,
+  fallbackSeasonId: string,
+): Member {
+  const seasonId = member.seasonId || fallbackSeasonId;
+  const activeSeasonIds = uniqueIds([...(member.activeSeasonIds ?? []), seasonId]);
+  return {
+    ...member,
+    seasonId,
+    activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
+  };
+}
+
 function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
-  return structuredClone(snapshot);
+  const clonedSnapshot = structuredClone(snapshot);
+  const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
+  return {
+    ...clonedSnapshot,
+    members: clonedSnapshot.members.map((member) =>
+      normalizeMemberSeasonMembership(member, fallbackSeasonId),
+    ),
+  };
 }
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
@@ -2095,13 +2115,16 @@ export function removeManufacturingItem(itemId: string) {
 export function createMember(input: MemberInput) {
   const memberIds = new Set(currentSnapshot.members.map((member) => member.id));
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const seasonId = input.seasonId ?? fallbackSeasonId;
+  const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
   const member: Member = {
     id: uniqueId(toSlug(input.name) || "member", memberIds),
     name: input.name,
     email: (input.email ?? "").trim(),
     role: input.role,
     elevated: isElevatedMemberRole(input.role),
-    seasonId: input.seasonId ?? fallbackSeasonId,
+    seasonId,
+    activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
   };
 
   currentSnapshot = {
@@ -2124,11 +2147,19 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
 
       const nextRole = input.role ?? member.role;
       const nextEmail = input.email === undefined ? member.email : input.email.trim();
+      const nextSeasonId = input.seasonId ?? member.seasonId;
+      const nextActiveSeasonIds = uniqueIds([
+        ...(input.activeSeasonIds ?? member.activeSeasonIds ?? [member.seasonId]),
+        nextSeasonId,
+      ]);
       updatedMember = {
         ...member,
         ...input,
         role: nextRole,
         email: nextEmail,
+        seasonId: nextSeasonId,
+        activeSeasonIds:
+          nextActiveSeasonIds.length > 0 ? nextActiveSeasonIds : [nextSeasonId],
         elevated: isElevatedMemberRole(nextRole),
       };
 

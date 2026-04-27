@@ -8,6 +8,7 @@ export const memberSchema = z.object({
   role: z.enum(["student", "lead", "mentor", "admin", "external"]),
   elevated: z.boolean().default(false),
   seasonId: z.string().trim().min(1).optional(),
+  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
 });
 
 export const seasonSchema = z.object({

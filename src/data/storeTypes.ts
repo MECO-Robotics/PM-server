@@ -65,6 +65,7 @@ export interface MemberInput {
   role: Member["role"];
   elevated?: boolean;
   seasonId?: string;
+  activeSeasonIds?: string[];
 }
 
 export interface SeasonInput {

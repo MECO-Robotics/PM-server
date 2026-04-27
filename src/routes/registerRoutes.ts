@@ -1616,6 +1616,16 @@ export async function registerRoutes(app: FastifyInstance) {
         message: "Roster payload references an unknown season.",
       });
     }
+    if (
+      parsed.data.activeSeasonIds !== undefined &&
+      parsed.data.activeSeasonIds.some(
+        (seasonId) => !getSeasons().some((season) => season.id === seasonId),
+      )
+    ) {
+      return reply.code(400).send({
+        message: "Roster payload references an unknown active season.",
+      });
+    }
 
     const member = createMember(parsed.data);
     return reply.code(201).send({
@@ -1643,6 +1653,16 @@ export async function registerRoutes(app: FastifyInstance) {
       ) {
         return reply.code(400).send({
           message: "Roster update payload references an unknown season.",
+        });
+      }
+      if (
+        parsed.data.activeSeasonIds !== undefined &&
+        parsed.data.activeSeasonIds.some(
+          (seasonId) => !getSeasons().some((season) => season.id === seasonId),
+        )
+      ) {
+        return reply.code(400).send({
+          message: "Roster update payload references an unknown active season.",
         });
       }
 

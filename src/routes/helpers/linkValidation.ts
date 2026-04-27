@@ -17,6 +17,13 @@ import {
 } from "../../data/store";
 import { uniqueIds } from "./taskTargets";
 
+function memberIsActiveInSeason(
+  member: { seasonId: string; activeSeasonIds?: string[] },
+  seasonId: string,
+) {
+  return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
+}
+
 export function validateWorkLogLinks(input: {
   taskId: string;
   participantIds: string[];
@@ -397,7 +404,7 @@ export function validateSubsystemPeople(input: {
     !members.some(
       (member) =>
         member.id === input.responsibleEngineerId &&
-        member.seasonId === seasonId,
+        memberIsActiveInSeason(member, seasonId),
     )
   ) {
     return "The responsible engineer must belong to the project's season.";
@@ -416,7 +423,8 @@ export function validateSubsystemPeople(input: {
       input.mentorIds.some(
         (mentorId) =>
           !members.some(
-            (member) => member.id === mentorId && member.seasonId === seasonId,
+            (member) =>
+              member.id === mentorId && memberIsActiveInSeason(member, seasonId),
           ),
       )
     ) {

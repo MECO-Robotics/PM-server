@@ -16,6 +16,7 @@ import {
   removePartDefinition,
   resetStore,
   updateManufacturingItem,
+  updateMember,
   updatePartInstance,
   updateTask,
 } from "../src/data/store";
@@ -187,8 +188,31 @@ test("createMember generates unique slugs for repeated names", () => {
   });
 
   assert.equal(first.id, "ava-chen");
+  assert.deepEqual(first.activeSeasonIds, [first.seasonId]);
   assert.equal(second.id, "ava-chen-2");
+  assert.deepEqual(second.activeSeasonIds, [second.seasonId]);
   assert.equal(getSnapshot().members.slice(-2).map((member) => member.id).join(","), "ava-chen,ava-chen-2");
+});
+
+test("updateMember can reactivate an existing person for another season", () => {
+  const season = createSeason({
+    name: "2027 Offseason",
+    type: "offseason",
+    startDate: "2027-05-01",
+    endDate: "2027-08-31",
+  });
+  const member = createMember({
+    name: "Season Hopper",
+    role: "student",
+    seasonId: "default-season",
+  });
+
+  const updated = updateMember(member.id, {
+    activeSeasonIds: [...(member.activeSeasonIds ?? []), season.id],
+  });
+
+  assert.ok(updated);
+  assert.deepEqual(updated?.activeSeasonIds?.sort(), ["default-season", season.id].sort());
 });
 
 test("createWorkstream adds a project-scoped workflow", () => {

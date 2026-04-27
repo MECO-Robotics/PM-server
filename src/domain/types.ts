@@ -64,6 +64,7 @@ export interface Member {
   role: MemberRole;
   elevated: boolean;
   seasonId: string;
+  activeSeasonIds?: string[];
 }
 
 export interface Subsystem {
