@@ -8,10 +8,14 @@ import type {
   Member,
   PartInstance,
   Project,
+  QaResult,
+  RiskAttachmentType,
+  RiskSeverity,
   PurchaseStatus,
   Season,
   TaskPriority,
   TaskStatus,
+  TestResultStatus,
 } from "../domain/types";
 
 export interface TaskInput {
@@ -190,4 +194,31 @@ export interface EventInput {
   description: string;
   projectIds: string[];
   relatedSubsystemIds: string[];
+}
+
+export interface QaReportInput {
+  taskId: string;
+  participantIds: string[];
+  result: QaResult;
+  mentorApproved: boolean;
+  notes: string;
+  reviewedAt: string;
+}
+
+export interface TestResultInput {
+  eventId: string;
+  title: string;
+  status: TestResultStatus;
+  findings: string[];
+}
+
+export interface RiskInput {
+  title: string;
+  detail: string;
+  severity: RiskSeverity;
+  sourceType: "qa-report" | "test-result";
+  sourceId: string;
+  attachmentType: RiskAttachmentType;
+  attachmentId: string;
+  mitigationTaskId: string | null;
 }

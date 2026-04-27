@@ -19,13 +19,16 @@ import {
   createMaterial,
   createMember,
   createMechanism,
+  createQaReport,
   createPartDefinition,
   createPartInstance,
   createProject,
   createSeason,
   createSubsystem,
   createPurchaseItem,
+  createRisk,
   createTask,
+  createTestResult,
   createWorkLog,
   createWorkstream,
   findDiscipline,
@@ -39,6 +42,7 @@ import {
   findMechanism,
   findPartDefinition,
   findPartInstance,
+  findRisk,
   findSubsystem,
   findWorkstream,
   getDisciplines,
@@ -59,6 +63,8 @@ import {
   getTaskTargets,
   getTasks,
   getTestResults,
+  getTutorialBaselineState,
+  type TutorialBaselineState,
   getWorkstreams,
   removeEvent,
   removeArtifact,
@@ -69,10 +75,12 @@ import {
   removePartDefinition,
   removePartInstance,
   removePurchaseItem,
+  removeRisk,
   removeSubsystem,
   removeTask,
   removeWorkLog,
   resetInteractiveTutorialSession,
+  resetTutorialBaseline,
   updateManufacturingItem,
   updateArtifact,
   updateMaterial,
@@ -84,6 +92,7 @@ import {
   updateProject,
   updateSubsystem,
   updatePurchaseItem,
+  updateRisk,
   startInteractiveTutorialSession,
   updateTask,
   updateWorkLog,
@@ -114,8 +123,11 @@ import {
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
+  validateQaReportLinks,
+  validateRiskLinks,
   validateSubsystemPeople,
   validateTaskLinks,
+  validateTestResultLinks,
   validateWorkLogLinks,
   withManufacturingQaReviewCounts,
   wouldCreateSubsystemCycle,
@@ -141,6 +153,9 @@ import {
   partInstanceSchema,
   projectPatchSchema,
   projectSchema,
+  qaReportSchema,
+  riskPatchSchema,
+  riskSchema,
   purchaseItemPatchSchema,
   purchaseItemSchema,
   seasonSchema,
@@ -148,6 +163,8 @@ import {
   subsystemSchema,
   taskPatchSchema,
   taskSchema,
+  testResultSchema,
+  tutorialSessionResetSchema,
   workLogPatchSchema,
   workLogSchema,
   workstreamPatchSchema,
@@ -166,6 +183,13 @@ const allowAuthEmailRouteRequest = createRequestLimitGuard({
   scope: "auth-email",
   ...requestLimitConfig.authEmail,
 });
+
+interface TutorialResetResponse {
+  ok: boolean;
+  mode: "session" | "baseline";
+  restored: boolean;
+  tutorial: TutorialBaselineState;
+}
 
 export async function registerRoutes(app: FastifyInstance) {
   const requireApiSessionIfEnabled = (
@@ -400,17 +424,59 @@ export async function registerRoutes(app: FastifyInstance) {
     startInteractiveTutorialSession();
     return {
       ok: true,
+      mode: "session" as const,
+      tutorial: getTutorialBaselineState(),
     };
   });
 
-  app.post("/api/tutorial/session/reset", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/tutorial/session/reset", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    return {
-      ok: resetInteractiveTutorialSession(),
+    const parsed = tutorialSessionResetSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Tutorial reset payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    if (parsed.data.mode === "baseline") {
+      const tutorial = resetTutorialBaseline();
+      const baselineReady =
+        tutorial.seasonId !== null && tutorial.missingProjectNames.length === 0;
+
+      if (!baselineReady) {
+        const response: TutorialResetResponse & { message: string } = {
+          ok: false,
+          mode: "baseline",
+          restored: true,
+          tutorial,
+          message:
+            "Tutorial baseline is missing required season or project records.",
+        };
+        return reply.code(500).send(response);
+      }
+
+      const response: TutorialResetResponse = {
+        ok: true,
+        mode: "baseline",
+        restored: true,
+        tutorial,
+      };
+      return response;
+    }
+
+    const restored = resetInteractiveTutorialSession();
+
+    const response: TutorialResetResponse = {
+      ok: restored,
+      mode: "session",
+      restored,
+      tutorial: getTutorialBaselineState(),
     };
+    return response;
   });
 
   app.get("/api/seasons", async (request, reply) => {
@@ -621,6 +687,37 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
+  app.post<{ Body: unknown }>("/api/qa-reports", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = qaReportSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "QA report payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateQaReportLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const report = createQaReport({
+      ...parsed.data,
+      participantIds: Array.from(new Set(parsed.data.participantIds)),
+      notes: parsed.data.notes.trim(),
+    });
+
+    return reply.code(201).send({
+      item: report,
+    });
+  });
+
   app.get("/api/test-results", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -632,6 +729,38 @@ export async function registerRoutes(app: FastifyInstance) {
       items: paginated.items,
       pagination: paginated.pagination,
     };
+  });
+
+  app.post<{ Body: unknown }>("/api/test-results", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = testResultSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Test result payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateTestResultLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const testResult = createTestResult({
+      ...parsed.data,
+      findings: Array.from(new Set(parsed.data.findings.map((finding) => finding.trim()))).filter(
+        (finding) => finding.length > 0,
+      ),
+    });
+
+    return reply.code(201).send({
+      item: testResult,
+    });
   });
 
   app.get("/api/risks", async (request, reply) => {
@@ -646,6 +775,121 @@ export async function registerRoutes(app: FastifyInstance) {
       pagination: paginated.pagination,
     };
   });
+
+  app.post<{ Body: unknown }>("/api/risks", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = riskSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Risk payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateRiskLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const risk = createRisk({
+      ...parsed.data,
+      title: parsed.data.title.trim(),
+      detail: parsed.data.detail.trim(),
+      sourceId: parsed.data.sourceId.trim(),
+      attachmentId: parsed.data.attachmentId.trim(),
+      mitigationTaskId: parsed.data.mitigationTaskId ?? null,
+    });
+
+    return reply.code(201).send({
+      item: risk,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { riskId: string } }>(
+    "/api/risks/:riskId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = riskPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Risk update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentRisk = findRisk(request.params.riskId);
+      if (!currentRisk) {
+        return reply.code(404).send({
+          message: "Risk not found.",
+        });
+      }
+
+      const nextRiskShape = {
+        sourceType: parsed.data.sourceType ?? currentRisk.sourceType,
+        sourceId: parsed.data.sourceId ?? currentRisk.sourceId,
+        attachmentType: parsed.data.attachmentType ?? currentRisk.attachmentType,
+        attachmentId: parsed.data.attachmentId ?? currentRisk.attachmentId,
+        mitigationTaskId:
+          parsed.data.mitigationTaskId === undefined
+            ? currentRisk.mitigationTaskId
+            : parsed.data.mitigationTaskId,
+      };
+
+      const validationError = validateRiskLinks(nextRiskShape);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const risk = updateRisk(request.params.riskId, {
+        ...parsed.data,
+        title: parsed.data.title === undefined ? undefined : parsed.data.title.trim(),
+        detail: parsed.data.detail === undefined ? undefined : parsed.data.detail.trim(),
+        sourceId: parsed.data.sourceId === undefined ? undefined : parsed.data.sourceId.trim(),
+        attachmentId:
+          parsed.data.attachmentId === undefined
+            ? undefined
+            : parsed.data.attachmentId.trim(),
+        mitigationTaskId:
+          parsed.data.mitigationTaskId === undefined
+            ? undefined
+            : parsed.data.mitigationTaskId,
+      });
+
+      return {
+        item: risk,
+      };
+    },
+  );
+
+  app.delete<{ Params: { riskId: string } }>(
+    "/api/risks/:riskId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const risk = removeRisk(request.params.riskId);
+      if (!risk) {
+        return reply.code(404).send({
+          message: "Risk not found.",
+        });
+      }
+
+      return {
+        item: risk,
+      };
+    },
+  );
 
   app.post<{ Body: unknown }>("/api/work-logs", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {

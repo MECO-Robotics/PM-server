@@ -97,7 +97,7 @@ const snapshotSeed: Omit<
   seasons: [
     {
       id: "default-season",
-      name: "Default Season",
+      name: "Tutorial season",
       type: "season",
       startDate: "2026-01-06",
       endDate: "2026-04-30",
@@ -107,9 +107,9 @@ const snapshotSeed: Omit<
     {
       id: "project-robot-2026",
       seasonId: "default-season",
-      name: "Competition Robot 2026",
+      name: "Tutorial Robot 2026",
       projectType: "robot",
-      description: "Primary robot delivery effort for the 2026 season.",
+      description: "Sandbox robot workspace used for guided onboarding and practice flows.",
       status: "active",
     },
     {

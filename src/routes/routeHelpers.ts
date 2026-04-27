@@ -24,8 +24,11 @@ export {
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
+  validateQaReportLinks,
+  validateRiskLinks,
   validateSubsystemPeople,
   validateTaskLinks,
+  validateTestResultLinks,
   validateWorkLogLinks,
   wouldCreateSubsystemCycle,
 } from "./helpers/linkValidation";

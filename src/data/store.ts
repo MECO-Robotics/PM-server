@@ -13,10 +13,13 @@ import type {
   PlatformSnapshot,
   Project,
   PurchaseItem,
+  Risk,
+  QaReport,
   QaFinding,
   Season,
   Subsystem,
   Task,
+  TestResult,
   TestFinding,
   Workstream,
   WorkLog,
@@ -31,10 +34,13 @@ import type {
   PartDefinitionInput,
   PartInstanceInput,
   ProjectInput,
+  QaReportInput,
+  RiskInput,
   PurchaseItemInput,
   SeasonInput,
   SubsystemInput,
   TaskInput,
+  TestResultInput,
   WorkLogInput,
   WorkstreamInput,
 } from "./storeTypes";
@@ -49,10 +55,13 @@ export type {
   PartDefinitionInput,
   PartInstanceInput,
   ProjectInput,
+  QaReportInput,
+  RiskInput,
   PurchaseItemInput,
   SeasonInput,
   SubsystemInput,
   TaskInput,
+  TestResultInput,
   WorkLogInput,
   WorkstreamInput,
 } from "./storeTypes";
@@ -279,6 +288,17 @@ const DEFAULT_SEASON_PROJECTS: Array<{
   { key: "strategy", name: "Strategy", projectType: "other" },
   { key: "training", name: "Training", projectType: "other" },
 ];
+
+const TUTORIAL_SEASON_ID = "default-season";
+const TUTORIAL_SEASON_NAME = "Tutorial season";
+const EXPECTED_TUTORIAL_PROJECT_NAMES = [
+  "Tutorial Robot 2026",
+  "Media",
+  "Outreach",
+  "Operations",
+  "Strategy",
+  "Training",
+] as const;
 
 const ROBOT_DEFAULT_MECHANISM_TEMPLATES: Array<{
   key: string;
@@ -516,9 +536,64 @@ export function getSnapshot() {
   return currentSnapshot;
 }
 
+export interface TutorialBaselineState {
+  seasonId: string | null;
+  seasonName: string | null;
+  expectedProjectNames: string[];
+  projectIdsByName: Record<string, string>;
+  missingProjectNames: string[];
+}
+
+function buildTutorialBaselineState(snapshot: PlatformSnapshot): TutorialBaselineState {
+  const tutorialSeason =
+    snapshot.seasons.find((season) => season.id === TUTORIAL_SEASON_ID) ??
+    snapshot.seasons.find((season) => season.name === TUTORIAL_SEASON_NAME) ??
+    null;
+  const tutorialSeasonId = tutorialSeason?.id ?? null;
+  const tutorialSeasonName = tutorialSeason?.name ?? null;
+  const seasonProjects =
+    tutorialSeasonId === null
+      ? []
+      : snapshot.projects.filter((project) => project.seasonId === tutorialSeasonId);
+  const projectIdsByName: Record<string, string> = {};
+
+  for (const expectedProjectName of EXPECTED_TUTORIAL_PROJECT_NAMES) {
+    const project = seasonProjects.find(
+      (candidate) => candidate.name === expectedProjectName,
+    );
+
+    if (project) {
+      projectIdsByName[expectedProjectName] = project.id;
+    }
+  }
+
+  const missingProjectNames = EXPECTED_TUTORIAL_PROJECT_NAMES.filter(
+    (name) => projectIdsByName[name] === undefined,
+  );
+
+  return {
+    seasonId: tutorialSeasonId,
+    seasonName: tutorialSeasonName,
+    expectedProjectNames: [...EXPECTED_TUTORIAL_PROJECT_NAMES],
+    projectIdsByName,
+    missingProjectNames,
+  };
+}
+
+export function getTutorialBaselineState() {
+  return buildTutorialBaselineState(currentSnapshot);
+}
+
 export function resetStore() {
   currentSnapshot = cloneSnapshot(initialSnapshot);
   interactiveTutorialSnapshot = null;
+}
+
+export function resetTutorialBaseline() {
+  const tutorialSnapshot = interactiveTutorialSnapshot;
+  currentSnapshot = cloneSnapshot(initialSnapshot);
+  interactiveTutorialSnapshot = tutorialSnapshot;
+  return getTutorialBaselineState();
 }
 
 export function startInteractiveTutorialSession() {
@@ -805,6 +880,68 @@ export function getTaskTargets() {
 
 export function getRisks() {
   return currentSnapshot.risks;
+}
+
+export function createRisk(input: RiskInput) {
+  const riskIds = new Set(currentSnapshot.risks.map((risk) => risk.id));
+  const risk: Risk = {
+    id: uniqueId(toSlug(input.title) || "risk", riskIds),
+    title: input.title,
+    detail: input.detail,
+    severity: input.severity,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    attachmentType: input.attachmentType,
+    attachmentId: input.attachmentId,
+    mitigationTaskId: input.mitigationTaskId,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    risks: [...currentSnapshot.risks, risk],
+  };
+
+  return risk;
+}
+
+export function updateRisk(riskId: string, input: Partial<RiskInput>) {
+  let updatedRisk: Risk | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    risks: currentSnapshot.risks.map((risk) => {
+      if (risk.id !== riskId) {
+        return risk;
+      }
+
+      updatedRisk = {
+        ...risk,
+        ...input,
+        mitigationTaskId:
+          input.mitigationTaskId === undefined
+            ? risk.mitigationTaskId
+            : input.mitigationTaskId,
+      };
+
+      return updatedRisk;
+    }),
+  };
+
+  return updatedRisk;
+}
+
+export function removeRisk(riskId: string) {
+  const risk = currentSnapshot.risks.find((candidate) => candidate.id === riskId);
+  if (!risk) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    risks: currentSnapshot.risks.filter((candidate) => candidate.id !== riskId),
+  };
+
+  return risk;
 }
 
 export function getPurchaseItems() {
@@ -1576,6 +1713,44 @@ export function createEvent(input: EventInput) {
   return event;
 }
 
+export function createQaReport(input: QaReportInput) {
+  const reportIds = new Set(currentSnapshot.qaReports.map((report) => report.id));
+  const report: QaReport = {
+    id: uniqueId(toSlug(`${input.taskId} qa`) || "qa-report", reportIds),
+    taskId: input.taskId,
+    participantIds: input.participantIds,
+    result: input.result,
+    mentorApproved: input.mentorApproved,
+    notes: input.notes,
+    reviewedAt: input.reviewedAt,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    qaReports: [...currentSnapshot.qaReports, report],
+  };
+
+  return report;
+}
+
+export function createTestResult(input: TestResultInput) {
+  const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
+  const testResult: TestResult = {
+    id: uniqueId(toSlug(`${input.title} ${input.eventId}`) || "test-result", resultIds),
+    eventId: input.eventId,
+    title: input.title,
+    status: input.status,
+    findings: input.findings,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    testResults: [...currentSnapshot.testResults, testResult],
+  };
+
+  return testResult;
+}
+
 export function updateEvent(eventId: string, input: Partial<EventInput>) {
   let updatedEvent: Event | null = null;
 
@@ -1607,6 +1782,7 @@ export function removeEvent(eventId: string) {
   currentSnapshot = {
     ...currentSnapshot,
     events: currentSnapshot.events.filter((candidate) => candidate.id !== eventId),
+    testResults: currentSnapshot.testResults.filter((result) => result.eventId !== eventId),
     tasks: currentSnapshot.tasks.map((task) =>
       task.targetEventId === eventId
         ? {
@@ -2054,4 +2230,8 @@ export function findMaterial(materialId: string): Material | undefined {
 
 export function findArtifact(artifactId: string): Artifact | undefined {
   return currentSnapshot.artifacts.find((artifact) => artifact.id === artifactId);
+}
+
+export function findRisk(riskId: string): Risk | undefined {
+  return currentSnapshot.risks.find((risk) => risk.id === riskId);
 }

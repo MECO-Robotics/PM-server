@@ -1,6 +1,7 @@
 import {
   findArtifact,
   findDiscipline,
+  findEvent,
   findMaterial,
   findMechanism,
   findPartDefinition,
@@ -10,7 +11,9 @@ import {
   findWorkstream,
   getEvents,
   getMembers,
+  getQaReports,
   getTasks,
+  getTestResults,
 } from "../../data/store";
 import { uniqueIds } from "./taskTargets";
 
@@ -29,6 +32,87 @@ export function validateWorkLogLinks(input: {
   );
   if (missingParticipant) {
     return "One or more selected participants do not exist.";
+  }
+
+  return null;
+}
+
+export function validateQaReportLinks(input: {
+  taskId: string;
+  participantIds: string[];
+}) {
+  const taskExists = getTasks().some((task) => task.id === input.taskId);
+  if (!taskExists) {
+    return "The selected task does not exist.";
+  }
+
+  const memberIds = new Set(getMembers().map((member) => member.id));
+  const missingParticipant = input.participantIds.find(
+    (participantId) => !memberIds.has(participantId),
+  );
+  if (missingParticipant) {
+    return "One or more selected participants do not exist.";
+  }
+
+  return null;
+}
+
+export function validateTestResultLinks(input: { eventId: string }) {
+  if (!findEvent(input.eventId)) {
+    return "The selected event does not exist.";
+  }
+
+  return null;
+}
+
+export function validateRiskLinks(input: {
+  sourceType: "qa-report" | "test-result";
+  sourceId: string;
+  attachmentType: "project" | "workstream" | "mechanism" | "part-instance";
+  attachmentId: string;
+  mitigationTaskId?: string | null;
+}) {
+  if (input.sourceType === "qa-report") {
+    const qaReportExists = getQaReports().some((report) => report.id === input.sourceId);
+    if (!qaReportExists) {
+      return "The selected QA report does not exist.";
+    }
+  } else {
+    const testResultExists = getTestResults().some(
+      (testResult) => testResult.id === input.sourceId,
+    );
+    if (!testResultExists) {
+      return "The selected test result does not exist.";
+    }
+  }
+
+  switch (input.attachmentType) {
+    case "project":
+      if (!findProject(input.attachmentId)) {
+        return "The selected project does not exist.";
+      }
+      break;
+    case "workstream":
+      if (!findWorkstream(input.attachmentId)) {
+        return "The selected workstream does not exist.";
+      }
+      break;
+    case "mechanism":
+      if (!findMechanism(input.attachmentId)) {
+        return "The selected mechanism does not exist.";
+      }
+      break;
+    case "part-instance":
+      if (!findPartInstance(input.attachmentId)) {
+        return "The selected part instance does not exist.";
+      }
+      break;
+    default:
+      return "The selected attachment type is invalid.";
+  }
+
+  if (input.mitigationTaskId && !getTasks().some((task) => task.id === input.mitigationTaskId)) {
+    return "The selected mitigation task does not exist.";
   }
 
   return null;

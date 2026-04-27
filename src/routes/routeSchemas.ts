@@ -96,6 +96,35 @@ export const eventPatchSchema = z.object({
   relatedSubsystemIds: z.array(z.string().trim().min(1)).optional(),
 });
 
+export const qaReportSchema = z.object({
+  taskId: z.string().trim().min(1),
+  participantIds: z.array(z.string().trim().min(1)).min(1),
+  result: z.enum(["pass", "minor-fix", "iteration-worthy"]),
+  mentorApproved: z.boolean().default(false),
+  notes: z.string().trim().default(""),
+  reviewedAt: z.string().date(),
+});
+
+export const testResultSchema = z.object({
+  eventId: z.string().trim().min(1),
+  title: z.string().trim().min(2),
+  status: z.enum(["pass", "fail", "blocked"]),
+  findings: z.array(z.string().trim().min(1)).default([]),
+});
+
+export const riskSchema = z.object({
+  title: z.string().trim().min(2),
+  detail: z.string().trim().min(2),
+  severity: z.enum(["high", "medium", "low"]),
+  sourceType: z.enum(["qa-report", "test-result"]),
+  sourceId: z.string().trim().min(1),
+  attachmentType: z.enum(["project", "workstream", "mechanism", "part-instance"]),
+  attachmentId: z.string().trim().min(1),
+  mitigationTaskId: z.string().trim().min(1).nullable().optional(),
+});
+
+export const riskPatchSchema = riskSchema.partial();
+
 export const memberPatchSchema = memberSchema.partial();
 export const iterationSchema = z.coerce.number().int().min(1).default(1);
 
@@ -247,6 +276,10 @@ export const emailSignInRequestSchema = z.object({
 export const emailSignInVerifySchema = z.object({
   email: z.string().trim().email(),
   code: z.string().trim().length(emailCodeLength),
+});
+
+export const tutorialSessionResetSchema = z.object({
+  mode: z.enum(["session", "baseline"]).default("session"),
 });
 
 export const paginatedQuerySchema = z.object({
