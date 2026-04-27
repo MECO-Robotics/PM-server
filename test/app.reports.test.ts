@@ -5,16 +5,53 @@ import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 test("qa report and event report endpoints support create flows with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
+    const bootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(bootstrapResponse.statusCode, 200);
+    const bootstrapBody = bootstrapResponse.json() as {
+      tasks: Array<{
+        id: string;
+        projectId: string;
+        workstreamId: string | null;
+      }>;
+      events: Array<{
+        id: string;
+        projectIds: string[];
+      }>;
+      projects: Array<{
+        id: string;
+      }>;
+    };
+    const qaTask = bootstrapBody.tasks.find((task) => task.id === "swerve-sensor-bundle") ?? null;
+    const eventRecord = bootstrapBody.events.find(
+      (event) => event.id === "outreach-milestone-may-05",
+    ) ?? null;
+
+    resetLimits();
+
     const qaReportCreateResponse = await app.inject({
       method: "POST",
-      url: "/api/qa-reports",
+      url: "/api/reports",
       payload: {
+        reportType: "QA",
+        projectId: qaTask?.projectId ?? bootstrapBody.projects[0]?.id ?? "",
         taskId: "swerve-sensor-bundle",
-        participantIds: ["priya", "lucas", "priya"],
+        eventId: null,
+        workstreamId: qaTask?.workstreamId ?? null,
+        createdByMemberId: null,
         result: "minor-fix",
+        summary: "QA report from web form",
+        participantIds: ["priya", "lucas", "priya"],
         mentorApproved: false,
         notes: "  QA report from web form  ",
+        createdAt: "2026-04-25",
         reviewedAt: "2026-04-25",
+        title: "",
+        status: "pass",
+        findings: [],
       },
     });
 
@@ -41,14 +78,24 @@ test("qa report and event report endpoints support create flows with link valida
 
     const qaReportInvalidTaskResponse = await app.inject({
       method: "POST",
-      url: "/api/qa-reports",
+      url: "/api/reports",
       payload: {
+        reportType: "QA",
+        projectId: qaTask?.projectId ?? bootstrapBody.projects[0]?.id ?? "",
         taskId: "missing-task",
-        participantIds: ["priya"],
+        eventId: null,
+        workstreamId: null,
+        createdByMemberId: null,
         result: "pass",
+        summary: "Invalid task linkage",
+        participantIds: ["priya"],
         mentorApproved: true,
         notes: "Invalid task linkage",
+        createdAt: "2026-04-25",
         reviewedAt: "2026-04-25",
+        title: "",
+        status: "pass",
+        findings: [],
       },
     });
 
@@ -62,12 +109,24 @@ test("qa report and event report endpoints support create flows with link valida
 
     const eventReportCreateResponse = await app.inject({
       method: "POST",
-      url: "/api/test-results",
+      url: "/api/reports",
       payload: {
+        reportType: "EventTest",
+        projectId: eventRecord?.projectIds[0] ?? bootstrapBody.projects[0]?.id ?? "",
+        taskId: null,
         eventId: "outreach-milestone-may-05",
+        workstreamId: null,
+        createdByMemberId: null,
+        result: "pass",
+        summary: "Event report route test",
         title: "Event report route test",
         status: "pass",
         findings: ["Drive team aligned", "Drive team aligned", "Checklist complete"],
+        notes: "Drive team aligned\nChecklist complete",
+        createdAt: "2026-04-25",
+        reviewedAt: "2026-04-25",
+        participantIds: [],
+        mentorApproved: false,
       },
     });
 
@@ -93,12 +152,24 @@ test("qa report and event report endpoints support create flows with link valida
 
     const eventReportInvalidEventResponse = await app.inject({
       method: "POST",
-      url: "/api/test-results",
+      url: "/api/reports",
       payload: {
+        reportType: "EventTest",
+        projectId: bootstrapBody.projects[0]?.id ?? "",
+        taskId: null,
         eventId: "missing-event",
+        workstreamId: null,
+        createdByMemberId: null,
+        result: "blocked",
+        summary: "Invalid event linkage",
         title: "Invalid event linkage",
         status: "blocked",
         findings: ["No event match"],
+        notes: "No event match",
+        createdAt: "2026-04-25",
+        reviewedAt: "2026-04-25",
+        participantIds: [],
+        mentorApproved: false,
       },
     });
 
@@ -114,16 +185,17 @@ test("risk endpoints support create, update, and delete with link validation", a
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const qaReportsResponse = await app.inject({
       method: "GET",
-      url: "/api/qa-reports",
+      url: "/api/reports",
     });
 
     assert.equal(qaReportsResponse.statusCode, 200);
     const qaReportsBody = qaReportsResponse.json() as {
       items: Array<{
         id: string;
+        reportType: string;
       }>;
     };
-    const sourceQaReportId = qaReportsBody.items[0]?.id ?? null;
+    const sourceQaReportId = qaReportsBody.items.find((item) => item.reportType === "QA")?.id ?? null;
     assert.ok(sourceQaReportId);
 
     resetLimits();

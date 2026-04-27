@@ -11,10 +11,11 @@ import {
   findWorkstream,
   getEvents,
   getMembers,
-  getQaReports,
+  getReports,
   getTasks,
-  getTestResults,
+  getTaskDependencies,
 } from "../../data/store";
+import { wouldCreateDependencyCycle } from "../../domain/taskPlanning";
 import { uniqueIds } from "./taskTargets";
 
 function memberIsActiveInSeason(
@@ -48,25 +49,76 @@ export function validateQaReportLinks(input: {
   taskId: string;
   participantIds: string[];
 }) {
-  const taskExists = getTasks().some((task) => task.id === input.taskId);
-  if (!taskExists) {
-    return "The selected task does not exist.";
+  return validateReportLinks({
+    reportType: "QA",
+    projectId: "",
+    taskId: input.taskId,
+    eventId: null,
+  });
+}
+
+export function validateTestResultLinks(input: { eventId: string }) {
+  return validateReportLinks({
+    reportType: "EventTest",
+    projectId: "",
+    taskId: null,
+    eventId: input.eventId,
+  });
+}
+
+export function validateReportLinks(input: {
+  reportType: "QA" | "EventTest" | "Practice" | "Competition" | "Review";
+  projectId: string;
+  taskId?: string | null;
+  eventId?: string | null;
+}) {
+  if (input.projectId && !findProject(input.projectId)) {
+    return "The selected project does not exist.";
   }
 
-  const memberIds = new Set(getMembers().map((member) => member.id));
-  const missingParticipant = input.participantIds.find(
-    (participantId) => !memberIds.has(participantId),
-  );
-  if (missingParticipant) {
-    return "One or more selected participants do not exist.";
+  if (input.reportType === "QA") {
+    if (!input.taskId || !getTasks().some((task) => task.id === input.taskId)) {
+      return "The selected task does not exist.";
+    }
+    return null;
+  }
+
+  if (input.reportType === "Review") {
+    const taskExists = input.taskId ? getTasks().some((task) => task.id === input.taskId) : false;
+    const eventExists = input.eventId ? findEvent(input.eventId) : false;
+    if (!taskExists && !eventExists) {
+      return "Review reports need either a valid task or event.";
+    }
+    return null;
+  }
+
+  if (!input.eventId || !findEvent(input.eventId)) {
+    return "The selected event does not exist.";
   }
 
   return null;
 }
 
-export function validateTestResultLinks(input: { eventId: string }) {
-  if (!findEvent(input.eventId)) {
-    return "The selected event does not exist.";
+export function validateReportFindingLinks(input: {
+  reportId: string;
+  mechanismId?: string | null;
+  partInstanceId?: string | null;
+  artifactInstanceId?: string | null;
+}) {
+  if (!getReports().some((report) => report.id === input.reportId)) {
+    return "The selected report does not exist.";
+  }
+
+  if (input.mechanismId && !findMechanism(input.mechanismId)) {
+    return "The selected mechanism does not exist.";
+  }
+
+  if (input.partInstanceId && !findPartInstance(input.partInstanceId)) {
+    return "The selected part instance does not exist.";
+  }
+
+  if (input.artifactInstanceId && !findArtifact(input.artifactInstanceId)) {
+    return "The selected artifact does not exist.";
   }
 
   return null;
@@ -80,13 +132,15 @@ export function validateRiskLinks(input: {
   mitigationTaskId?: string | null;
 }) {
   if (input.sourceType === "qa-report") {
-    const qaReportExists = getQaReports().some((report) => report.id === input.sourceId);
+    const qaReportExists = getReports().some(
+      (report) => report.id === input.sourceId && report.reportType === "QA",
+    );
     if (!qaReportExists) {
       return "The selected QA report does not exist.";
     }
   } else {
-    const testResultExists = getTestResults().some(
-      (testResult) => testResult.id === input.sourceId,
+    const testResultExists = getReports().some(
+      (report) => report.id === input.sourceId && report.reportType !== "QA",
     );
     if (!testResultExists) {
       return "The selected test result does not exist.";
@@ -254,6 +308,106 @@ export function validateTaskLinks(input: {
         return "Assigned task members must be students or leads.";
       }
     }
+  }
+
+  return null;
+}
+
+export function validateTaskDependencyLinks(input: {
+  upstreamTaskId: string;
+  downstreamTaskId: string;
+  ignoreDependencyId?: string | null;
+}) {
+  if (input.upstreamTaskId === input.downstreamTaskId) {
+    return "A task cannot depend on itself.";
+  }
+
+  const upstreamTask = getTasks().find((task) => task.id === input.upstreamTaskId);
+  if (!upstreamTask) {
+    return "The selected upstream task does not exist.";
+  }
+
+  const downstreamTask = getTasks().find((task) => task.id === input.downstreamTaskId);
+  if (!downstreamTask) {
+    return "The selected downstream task does not exist.";
+  }
+
+  if (upstreamTask.projectId !== downstreamTask.projectId) {
+    return "Task dependencies must stay within a single project.";
+  }
+
+  if (
+    wouldCreateDependencyCycle(
+      getTaskDependencies(),
+      input.upstreamTaskId,
+      input.downstreamTaskId,
+      input.ignoreDependencyId ?? null,
+    )
+  ) {
+    return "This dependency would create a cycle.";
+  }
+
+  return null;
+}
+
+export function validateTaskBlockerLinks(input: {
+  blockedTaskId: string;
+  blockerType:
+    | "task"
+    | "event"
+    | "workstream"
+    | "mechanism"
+    | "part_instance"
+    | "artifact_instance"
+    | "external";
+  blockerId?: string | null;
+}) {
+  const blockedTask = getTasks().find((task) => task.id === input.blockedTaskId);
+  if (!blockedTask) {
+    return "The selected blocked task does not exist.";
+  }
+
+  if (input.blockerType !== "external" && !input.blockerId) {
+    return "A blocker record is required for this blocker type.";
+  }
+
+  if (input.blockerType === "external") {
+    return null;
+  }
+
+  switch (input.blockerType) {
+    case "task":
+      if (!getTasks().some((task) => task.id === input.blockerId)) {
+        return "The selected task blocker does not exist.";
+      }
+      break;
+    case "event":
+      if (!findEvent(input.blockerId ?? "")) {
+        return "The selected event blocker does not exist.";
+      }
+      break;
+    case "workstream":
+      if (!findWorkstream(input.blockerId ?? "")) {
+        return "The selected workstream blocker does not exist.";
+      }
+      break;
+    case "mechanism":
+      if (!findMechanism(input.blockerId ?? "")) {
+        return "The selected mechanism blocker does not exist.";
+      }
+      break;
+    case "part_instance":
+      if (!findPartInstance(input.blockerId ?? "")) {
+        return "The selected part instance blocker does not exist.";
+      }
+      break;
+    case "artifact_instance":
+      if (!findArtifact(input.blockerId ?? "")) {
+        return "The selected artifact blocker does not exist.";
+      }
+      break;
+    default:
+      return "The selected blocker type is invalid.";
   }
 
   return null;

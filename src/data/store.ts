@@ -14,12 +14,15 @@ import type {
   Project,
   PurchaseItem,
   Risk,
-  QaReport,
   QaFinding,
+  ReportType,
+  Report,
+  ReportFinding,
   Season,
   Subsystem,
+  TaskBlocker,
+  TaskDependency,
   Task,
-  TestResult,
   TestFinding,
   Workstream,
   WorkLog,
@@ -35,9 +38,13 @@ import type {
   PartInstanceInput,
   ProjectInput,
   QaReportInput,
+  ReportFindingInput,
+  ReportInput,
   RiskInput,
   PurchaseItemInput,
   SeasonInput,
+  TaskBlockerInput,
+  TaskDependencyInput,
   SubsystemInput,
   TaskInput,
   TestResultInput,
@@ -55,13 +62,15 @@ export type {
   PartDefinitionInput,
   PartInstanceInput,
   ProjectInput,
-  QaReportInput,
+  ReportFindingInput,
+  ReportInput,
   RiskInput,
   PurchaseItemInput,
   SeasonInput,
+  TaskBlockerInput,
+  TaskDependencyInput,
   SubsystemInput,
   TaskInput,
-  TestResultInput,
   WorkLogInput,
   WorkstreamInput,
 } from "./storeTypes";
@@ -79,18 +88,270 @@ function normalizeMemberSeasonMembership(
   };
 }
 
-function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
+function convertLegacyReports(snapshot: {
+  qaReports?: Array<{
+    id: string;
+    taskId: string;
+    participantIds: string[];
+    result: string;
+    mentorApproved: boolean;
+    notes: string;
+    reviewedAt: string;
+  }>;
+  testResults?: Array<{
+    id: string;
+    eventId: string;
+    title: string;
+    status: string;
+    findings: string[];
+  }>;
+  reports?: Report[];
+  members: Member[];
+  projects: Project[];
+  workstreams: Workstream[];
+}): Report[] {
+  if (snapshot.reports && snapshot.reports.length > 0) {
+    return snapshot.reports;
+  }
+
+  const projectId = snapshot.projects[0]?.id ?? "";
+  const creatorId = snapshot.members[0]?.id ?? null;
+
+  const qaReports = (snapshot.qaReports ?? []).map<Report>((report) => ({
+    id: report.id,
+    reportType: "QA",
+    projectId,
+    taskId: report.taskId,
+    eventId: null,
+    workstreamId: null,
+    createdByMemberId: creatorId,
+    result: report.result,
+    summary: report.notes,
+    notes: report.notes,
+    createdAt: report.reviewedAt,
+    participantIds: report.participantIds,
+    mentorApproved: report.mentorApproved,
+    reviewedAt: report.reviewedAt,
+  }));
+
+  const eventReports = (snapshot.testResults ?? []).map<Report>((result) => ({
+    id: result.id,
+    reportType: "EventTest",
+    projectId,
+    taskId: null,
+    eventId: result.eventId,
+    workstreamId: null,
+    createdByMemberId: creatorId,
+    result: result.status,
+    summary: result.title,
+    notes: result.findings.join("\n"),
+    createdAt: new Date().toISOString(),
+    title: result.title,
+    status: result.status as Report["status"],
+    findings: result.findings,
+  }));
+
+  return [...qaReports, ...eventReports];
+}
+
+function convertLegacyReportFindings(snapshot: {
+  qaFindings?: Array<{
+    id: string;
+    qaReportId: string | null;
+    taskId: string | null;
+    projectId: string;
+    workstreamId: string | null;
+    subsystemId: string | null;
+    mechanismId: string | null;
+    partInstanceId: string | null;
+    artifactId: string | null;
+    title: string;
+    detail: string;
+    severity: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  testFindings?: Array<{
+    id: string;
+    testResultId: string | null;
+    eventId: string | null;
+    taskId: string | null;
+    projectId: string;
+    workstreamId: string | null;
+    subsystemId: string | null;
+    mechanismId: string | null;
+    partInstanceId: string | null;
+    artifactId: string | null;
+    title: string;
+    detail: string;
+    severity: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  reportFindings?: ReportFinding[];
+  reports: Report[];
+}): ReportFinding[] {
+  if (snapshot.reportFindings && snapshot.reportFindings.length > 0) {
+    return snapshot.reportFindings;
+  }
+
+  const reportsById = new Map(snapshot.reports.map((report) => [report.id, report] as const));
+  const qaFindings = (snapshot.qaFindings ?? []).map<ReportFinding>((finding) => ({
+    id: finding.id,
+    reportId: finding.qaReportId ?? "",
+    mechanismId: finding.mechanismId,
+    partInstanceId: finding.partInstanceId,
+    artifactInstanceId: finding.artifactId,
+    issueType: finding.title,
+    severity: finding.severity as ReportFinding["severity"],
+    notes: finding.detail,
+    spawnedTaskId: null,
+    spawnedIterationId: null,
+    spawnedRiskId: null,
+    title: finding.title,
+    detail: finding.detail,
+    status: finding.status as ReportFinding["status"],
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    taskId: finding.taskId,
+    eventId: null,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  }));
+
+  const testFindings = (snapshot.testFindings ?? []).map<ReportFinding>((finding) => ({
+    id: finding.id,
+    reportId: finding.testResultId ?? "",
+    mechanismId: finding.mechanismId,
+    partInstanceId: finding.partInstanceId,
+    artifactInstanceId: finding.artifactId,
+    issueType: finding.title,
+    severity: finding.severity as ReportFinding["severity"],
+    notes: finding.detail,
+    spawnedTaskId: null,
+    spawnedIterationId: null,
+    spawnedRiskId: null,
+    title: finding.title,
+    detail: finding.detail,
+    status: finding.status as ReportFinding["status"],
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    taskId: finding.taskId,
+    eventId: finding.eventId,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  }));
+
+  return [...qaFindings, ...testFindings].map((finding) => {
+    const report = reportsById.get(finding.reportId);
+    return {
+      ...finding,
+      projectId: finding.projectId ?? report?.projectId,
+      workstreamId: finding.workstreamId ?? report?.workstreamId ?? null,
+      taskId: finding.taskId ?? report?.taskId ?? null,
+      eventId: finding.eventId ?? report?.eventId ?? null,
+    };
+  });
+}
+
+function isQaReportId(reportId: string) {
+  const report = currentSnapshot.reports.find((candidate) => candidate.id === reportId);
+  if (report) {
+    return report.reportType === "QA";
+  }
+
+  return reportId.startsWith("qa");
+}
+
+function cloneSnapshot(snapshot: PlatformSnapshot & {
+  qaReports?: Array<{
+    id: string;
+    taskId: string;
+    participantIds: string[];
+    result: string;
+    mentorApproved: boolean;
+    notes: string;
+    reviewedAt: string;
+  }>;
+  testResults?: Array<{
+    id: string;
+    eventId: string;
+    title: string;
+    status: string;
+    findings: string[];
+  }>;
+  qaFindings?: Array<{
+    id: string;
+    qaReportId: string | null;
+    taskId: string | null;
+    projectId: string;
+    workstreamId: string | null;
+    subsystemId: string | null;
+    mechanismId: string | null;
+    partInstanceId: string | null;
+    artifactId: string | null;
+    title: string;
+    detail: string;
+    severity: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  testFindings?: Array<{
+    id: string;
+    testResultId: string | null;
+    eventId: string | null;
+    taskId: string | null;
+    projectId: string;
+    workstreamId: string | null;
+    subsystemId: string | null;
+    mechanismId: string | null;
+    partInstanceId: string | null;
+    artifactId: string | null;
+    title: string;
+    detail: string;
+    severity: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  taskDependencies?: TaskDependency[];
+  taskBlockers?: TaskBlocker[];
+  reports?: Report[];
+  reportFindings?: ReportFinding[];
+}): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot);
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
+  const reports = convertLegacyReports(clonedSnapshot);
+  const reportFindings = convertLegacyReportFindings({
+    ...clonedSnapshot,
+    reports,
+  });
+  const taskDependencies =
+    clonedSnapshot.taskDependencies && clonedSnapshot.taskDependencies.length > 0
+      ? clonedSnapshot.taskDependencies
+      : legacyTaskDependencyRecords(clonedSnapshot.tasks ?? []);
+  const taskBlockers =
+    clonedSnapshot.taskBlockers && clonedSnapshot.taskBlockers.length > 0
+      ? clonedSnapshot.taskBlockers
+      : legacyTaskBlockerRecords(clonedSnapshot.tasks ?? []);
   return {
     ...clonedSnapshot,
+    reports,
+    reportFindings,
+    taskDependencies,
+    taskBlockers,
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
     ),
   };
 }
 
-let currentSnapshot = cloneSnapshot(initialSnapshot);
+let currentSnapshot = syncTaskRelationCaches(cloneSnapshot(initialSnapshot));
 let interactiveTutorialSnapshot: PlatformSnapshot | null = null;
 
 function isElevatedMemberRole(role: Member["role"]): boolean {
@@ -129,6 +390,86 @@ function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value))),
   );
+}
+
+function legacyTaskDependencyRecords(tasks: Task[]) {
+  const records: TaskDependency[] = [];
+  const seenPairs = new Set<string>();
+
+  tasks.forEach((task) => {
+    task.dependencyIds.forEach((upstreamTaskId) => {
+      const key = `${upstreamTaskId}:${task.id}`;
+      if (seenPairs.has(key)) {
+        return;
+      }
+
+      seenPairs.add(key);
+      records.push({
+        id: key,
+        upstreamTaskId,
+        downstreamTaskId: task.id,
+        dependencyType: "finish_to_start",
+        createdAt: new Date().toISOString(),
+      });
+    });
+  });
+
+  return records;
+}
+
+function legacyTaskBlockerRecords(tasks: Task[]) {
+  const records: TaskBlocker[] = [];
+
+  tasks.forEach((task) => {
+    task.blockers.forEach((description, index) => {
+      records.push({
+        id: `${task.id}:blocker:${index + 1}`,
+        blockedTaskId: task.id,
+        blockerType: "external",
+        blockerId: null,
+        description,
+        severity: "medium",
+        status: "open",
+        createdByMemberId: null,
+        createdAt: new Date().toISOString(),
+        resolvedAt: null,
+      });
+    });
+  });
+
+  return records;
+}
+
+function syncTaskRelationCaches(snapshot: PlatformSnapshot): PlatformSnapshot {
+  const dependencyIdsByTaskId = new Map<string, string[]>();
+  const blockerDescriptionsByTaskId = new Map<string, string[]>();
+
+  snapshot.taskDependencies.forEach((dependency) => {
+    const downstreamDependencies = dependencyIdsByTaskId.get(dependency.downstreamTaskId) ?? [];
+    downstreamDependencies.push(dependency.upstreamTaskId);
+    dependencyIdsByTaskId.set(dependency.downstreamTaskId, downstreamDependencies);
+  });
+
+  snapshot.taskBlockers.forEach((blocker) => {
+    if (blocker.status !== "open") {
+      return;
+    }
+
+    const current = blockerDescriptionsByTaskId.get(blocker.blockedTaskId) ?? [];
+    current.push(blocker.description);
+    blockerDescriptionsByTaskId.set(blocker.blockedTaskId, current);
+  });
+
+  const nextTasks = snapshot.tasks.map((task) => ({
+    ...task,
+    dependencyIds: dependencyIdsByTaskId.get(task.id) ?? [],
+    blockers: blockerDescriptionsByTaskId.get(task.id) ?? [],
+  }));
+
+  return {
+    ...snapshot,
+    tasks: nextTasks,
+  };
 }
 
 function normalizeTaskTargets(task: Task): Task {
@@ -826,24 +1167,48 @@ export function getTasks() {
   return currentSnapshot.tasks;
 }
 
+export function getTaskDependencies() {
+  return currentSnapshot.taskDependencies;
+}
+
+export function getTaskBlockers() {
+  return currentSnapshot.taskBlockers;
+}
+
+export function findTaskDependency(dependencyId: string) {
+  return currentSnapshot.taskDependencies.find((candidate) => candidate.id === dependencyId) ?? null;
+}
+
+export function findTaskBlocker(blockerId: string) {
+  return currentSnapshot.taskBlockers.find((candidate) => candidate.id === blockerId) ?? null;
+}
+
 export function getEvents() {
   return currentSnapshot.events;
 }
 
+export function getReports() {
+  return currentSnapshot.reports;
+}
+
+export function getReportFindings() {
+  return currentSnapshot.reportFindings;
+}
+
 export function getQaReports() {
-  return currentSnapshot.qaReports;
+  return currentSnapshot.reports.filter((report) => report.reportType === "QA");
 }
 
 export function getTestResults() {
-  return currentSnapshot.testResults;
+  return currentSnapshot.reports.filter((report) => report.reportType !== "QA");
 }
 
 export function getQaFindings() {
-  return currentSnapshot.qaFindings;
+  return currentSnapshot.reportFindings.filter((finding) => isQaReportId(finding.reportId));
 }
 
 export function getTestFindings() {
-  return currentSnapshot.testFindings;
+  return currentSnapshot.reportFindings.filter((finding) => !isQaReportId(finding.reportId));
 }
 
 export function getDesignIterations(): DesignIteration[] {
@@ -851,47 +1216,27 @@ export function getDesignIterations(): DesignIteration[] {
 }
 
 export function getFindings(): FindingListItem[] {
-  const qaItems: FindingListItem[] = currentSnapshot.qaFindings.map((finding) => ({
+  const reportItems: FindingListItem[] = currentSnapshot.reportFindings.map((finding) => ({
     id: finding.id,
-    sourceType: "qa",
-    sourceId: finding.qaReportId,
-    title: finding.title,
-    detail: finding.detail,
+    sourceType: isQaReportId(finding.reportId) ? "qa" : "test",
+    sourceId: finding.reportId,
+    title: finding.title ?? finding.issueType,
+    detail: finding.detail ?? finding.notes,
     severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
+    status: finding.status ?? "open",
+    projectId: finding.projectId ?? "",
+    workstreamId: finding.workstreamId ?? null,
+    subsystemId: finding.subsystemId ?? null,
     mechanismId: finding.mechanismId,
     partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    eventId: null,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
+    artifactId: finding.artifactInstanceId ?? null,
+    taskId: finding.taskId ?? finding.spawnedTaskId,
+    eventId: finding.eventId ?? null,
+    createdAt: finding.createdAt ?? new Date().toISOString(),
+    updatedAt: finding.updatedAt ?? finding.createdAt ?? new Date().toISOString(),
   }));
 
-  const testItems: FindingListItem[] = currentSnapshot.testFindings.map((finding) => ({
-    id: finding.id,
-    sourceType: "test",
-    sourceId: finding.testResultId,
-    title: finding.title,
-    detail: finding.detail,
-    severity: finding.severity,
-    status: finding.status,
-    projectId: finding.projectId,
-    workstreamId: finding.workstreamId,
-    subsystemId: finding.subsystemId,
-    mechanismId: finding.mechanismId,
-    partInstanceId: finding.partInstanceId,
-    artifactId: finding.artifactId,
-    taskId: finding.taskId,
-    eventId: finding.eventId,
-    createdAt: finding.createdAt,
-    updatedAt: finding.updatedAt,
-  }));
-
-  return [...qaItems, ...testItems];
+  return reportItems;
 }
 
 export function getTaskTargets() {
@@ -1258,20 +1603,17 @@ export function removeSubsystem(subsystemId: string) {
     partInstances: currentSnapshot.partInstances.filter(
       (partInstance) => !partInstanceIdsToRemove.has(partInstance.id),
     ),
-    tasks: currentSnapshot.tasks
-      .filter((task) => !taskIdsToRemove.has(task.id))
-      .map((task) => ({
-        ...task,
-        dependencyIds: task.dependencyIds.filter(
-          (dependencyId) => !taskIdsToRemove.has(dependencyId),
-        ),
-        linkedManufacturingIds: task.linkedManufacturingIds.filter(
-          (itemId) => !manufacturingItemIdsToRemove.has(itemId),
-        ),
-        linkedPurchaseIds: task.linkedPurchaseIds.filter(
-          (itemId) => !purchaseItemIdsToRemove.has(itemId),
-        ),
-      })),
+    tasks: currentSnapshot.tasks.filter((task) => !taskIdsToRemove.has(task.id)),
+    taskDependencies: currentSnapshot.taskDependencies.filter(
+      (dependency) =>
+        !taskIdsToRemove.has(dependency.upstreamTaskId) &&
+        !taskIdsToRemove.has(dependency.downstreamTaskId),
+    ),
+    taskBlockers: currentSnapshot.taskBlockers.filter(
+      (blocker) =>
+        !taskIdsToRemove.has(blocker.blockedTaskId) &&
+        !(blocker.blockerType === "task" && blocker.blockerId && taskIdsToRemove.has(blocker.blockerId)),
+    ),
     workLogs: currentSnapshot.workLogs.filter(
       (workLog) => !taskIdsToRemove.has(workLog.taskId),
     ),
@@ -1281,8 +1623,11 @@ export function removeSubsystem(subsystemId: string) {
         (relatedSubsystemId) => !subsystemIdsToRemove.has(relatedSubsystemId),
       ),
     })),
-    qaReports: currentSnapshot.qaReports.filter(
-      (report) => !taskIdsToRemove.has(report.taskId),
+    reports: currentSnapshot.reports.filter(
+      (report) => !taskIdsToRemove.has(report.taskId ?? ""),
+    ),
+    reportFindings: currentSnapshot.reportFindings.filter(
+      (finding) => !taskIdsToRemove.has(finding.taskId ?? "") && !taskIdsToRemove.has(finding.spawnedTaskId ?? ""),
     ),
     risks: currentSnapshot.risks.filter((risk) => {
       if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
@@ -1326,6 +1671,7 @@ export function removeSubsystem(subsystemId: string) {
       return true;
     }),
   };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
 
   return subsystem;
 }
@@ -1691,8 +2037,8 @@ export function createTask(input: TaskInput) {
     dueDate: input.dueDate,
     priority: input.priority,
     status: input.status,
-    blockers: input.blockers,
-    dependencyIds: input.dependencyIds,
+    blockers: [],
+    dependencyIds: [],
     linkedManufacturingIds: input.linkedManufacturingIds,
     linkedPurchaseIds: input.linkedPurchaseIds,
     estimatedHours: input.estimatedHours,
@@ -1707,6 +2053,7 @@ export function createTask(input: TaskInput) {
     ...currentSnapshot,
     tasks: [...currentSnapshot.tasks, normalizedTask],
   };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
 
   return normalizedTask;
 }
@@ -1733,31 +2080,27 @@ export function createEvent(input: EventInput) {
   return event;
 }
 
-export function createQaReport(input: QaReportInput) {
-  const reportIds = new Set(currentSnapshot.qaReports.map((report) => report.id));
-  const report: QaReport = {
-    id: uniqueId(toSlug(`${input.taskId} qa`) || "qa-report", reportIds),
-    taskId: input.taskId,
-    participantIds: input.participantIds,
+export function createReport(input: ReportInput) {
+  const reportIds = new Set(currentSnapshot.reports.map((report) => report.id));
+  const idBase =
+    input.reportType === "QA"
+      ? `${input.taskId ?? input.projectId} qa`
+      : `${input.eventId ?? input.projectId} report`;
+  const report: Report = {
+    id: uniqueId(toSlug(idBase) || "report", reportIds),
+    reportType: input.reportType,
+    projectId: input.projectId,
+    taskId: input.taskId ?? null,
+    eventId: input.eventId ?? null,
+    workstreamId: input.workstreamId ?? null,
+    createdByMemberId: input.createdByMemberId ?? null,
     result: input.result,
-    mentorApproved: input.mentorApproved,
+    summary: input.summary,
     notes: input.notes,
+    createdAt: input.createdAt,
+    participantIds: input.participantIds,
+    mentorApproved: input.mentorApproved,
     reviewedAt: input.reviewedAt,
-  };
-
-  currentSnapshot = {
-    ...currentSnapshot,
-    qaReports: [...currentSnapshot.qaReports, report],
-  };
-
-  return report;
-}
-
-export function createTestResult(input: TestResultInput) {
-  const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
-  const testResult: TestResult = {
-    id: uniqueId(toSlug(`${input.title} ${input.eventId}`) || "test-result", resultIds),
-    eventId: input.eventId,
     title: input.title,
     status: input.status,
     findings: input.findings,
@@ -1765,10 +2108,73 @@ export function createTestResult(input: TestResultInput) {
 
   currentSnapshot = {
     ...currentSnapshot,
-    testResults: [...currentSnapshot.testResults, testResult],
+    reports: [...currentSnapshot.reports, report],
   };
 
-  return testResult;
+  return report;
+}
+
+export function createReportFinding(input: ReportFindingInput) {
+  const findingIds = new Set(currentSnapshot.reportFindings.map((finding) => finding.id));
+  const finding: ReportFinding = {
+    id: uniqueId(toSlug(`${input.reportId}-${input.issueType}`) || "report-finding", findingIds),
+    reportId: input.reportId,
+    mechanismId: input.mechanismId,
+    partInstanceId: input.partInstanceId,
+    artifactInstanceId: input.artifactInstanceId,
+    issueType: input.issueType,
+    severity: input.severity,
+    notes: input.notes,
+    spawnedTaskId: input.spawnedTaskId,
+    spawnedIterationId: input.spawnedIterationId,
+    spawnedRiskId: input.spawnedRiskId,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    reportFindings: [...currentSnapshot.reportFindings, finding],
+  };
+
+  return finding;
+}
+
+export function createQaReport(input: QaReportInput) {
+  return createReport({
+    reportType: "QA",
+    projectId: currentSnapshot.projects[0]?.id ?? "",
+    taskId: input.taskId ?? "",
+    eventId: null,
+    workstreamId: null,
+    createdByMemberId: null,
+    result: input.result ?? "pass",
+    summary: input.summary ?? input.notes ?? "",
+    notes: input.notes ?? "",
+    createdAt: input.createdAt,
+    participantIds: input.participantIds ?? [],
+    mentorApproved: input.mentorApproved ?? false,
+    reviewedAt: input.reviewedAt ?? input.createdAt,
+    title: input.title,
+    status: input.status,
+    findings: [],
+  });
+}
+
+export function createTestResult(input: TestResultInput) {
+  return createReport({
+    reportType: "EventTest",
+    projectId: currentSnapshot.projects[0]?.id ?? "",
+    taskId: null,
+    eventId: input.eventId ?? "",
+    workstreamId: null,
+    createdByMemberId: null,
+    result: input.result ?? input.status ?? "pass",
+    summary: input.summary ?? input.title ?? "",
+    notes: input.notes ?? (input.findings ?? []).join("\n"),
+    createdAt: input.createdAt,
+    title: input.title ?? "",
+    status: input.status ?? "pass",
+    findings: input.findings ?? [],
+  });
 }
 
 export function updateEvent(eventId: string, input: Partial<EventInput>) {
@@ -1802,11 +2208,16 @@ export function removeEvent(eventId: string) {
   currentSnapshot = {
     ...currentSnapshot,
     events: currentSnapshot.events.filter((candidate) => candidate.id !== eventId),
-    testResults: currentSnapshot.testResults.filter((result) => result.eventId !== eventId),
+    reports: currentSnapshot.reports.filter(
+      (report) => report.eventId !== eventId || report.reportType === "QA",
+    ),
+    reportFindings: currentSnapshot.reportFindings.filter(
+      (finding) => finding.eventId !== eventId,
+    ),
     tasks: currentSnapshot.tasks.map((task) =>
       task.targetEventId === eventId
         ? {
-            ...task,
+          ...task,
             targetEventId: null,
           }
         : task,
@@ -1910,6 +2321,7 @@ export function updateTask(taskId: string, input: Partial<TaskInput>) {
       return updatedTask;
     }),
   };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
 
   return updatedTask;
 }
@@ -1923,22 +2335,177 @@ export function removeTask(taskId: string) {
   currentSnapshot = {
     ...currentSnapshot,
     tasks: currentSnapshot.tasks
-      .filter((candidate) => candidate.id !== taskId)
-      .map((candidate) => ({
-        ...candidate,
-        dependencyIds: candidate.dependencyIds.filter(
-          (dependencyId) => dependencyId !== taskId,
-        ),
-      })),
+      .filter((candidate) => candidate.id !== taskId),
+    taskDependencies: currentSnapshot.taskDependencies.filter(
+      (dependency) =>
+        dependency.upstreamTaskId !== taskId && dependency.downstreamTaskId !== taskId,
+    ),
+    taskBlockers: currentSnapshot.taskBlockers.filter(
+      (blocker) =>
+        blocker.blockedTaskId !== taskId &&
+        !(blocker.blockerType === "task" && blocker.blockerId === taskId),
+    ),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
-    qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
+    reports: currentSnapshot.reports.filter((report) => report.taskId !== taskId),
+    reportFindings: currentSnapshot.reportFindings.filter(
+      (finding) => finding.taskId !== taskId && finding.spawnedTaskId !== taskId,
+    ),
     qaReviews: currentSnapshot.qaReviews.filter(
       (review) => review.subjectType !== "task" || review.subjectId !== taskId,
     ),
     risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId),
   };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
 
   return task;
+}
+
+export function createTaskDependency(input: TaskDependencyInput) {
+  const dependencyIds = new Set(currentSnapshot.taskDependencies.map((dependency) => dependency.id));
+  const dependency: TaskDependency = {
+    id: uniqueId(
+      toSlug(`${input.upstreamTaskId}-${input.downstreamTaskId}`) || "task-dependency",
+      dependencyIds,
+    ),
+    upstreamTaskId: input.upstreamTaskId,
+    downstreamTaskId: input.downstreamTaskId,
+    dependencyType: input.dependencyType,
+    createdAt: new Date().toISOString(),
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    taskDependencies: [...currentSnapshot.taskDependencies, dependency],
+  };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
+
+  return dependency;
+}
+
+export function updateTaskDependency(
+  dependencyId: string,
+  input: Partial<TaskDependencyInput>,
+) {
+  let updatedDependency: TaskDependency | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    taskDependencies: currentSnapshot.taskDependencies.map((dependency) => {
+      if (dependency.id !== dependencyId) {
+        return dependency;
+      }
+
+      updatedDependency = {
+        ...dependency,
+        ...input,
+      };
+
+      return updatedDependency;
+    }),
+  };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
+
+  return updatedDependency;
+}
+
+export function removeTaskDependency(dependencyId: string) {
+  const dependency = currentSnapshot.taskDependencies.find(
+    (candidate) => candidate.id === dependencyId,
+  );
+  if (!dependency) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    taskDependencies: currentSnapshot.taskDependencies.filter(
+      (candidate) => candidate.id !== dependencyId,
+    ),
+  };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
+
+  return dependency;
+}
+
+export function createTaskBlocker(input: TaskBlockerInput) {
+  const blockerIds = new Set(currentSnapshot.taskBlockers.map((blocker) => blocker.id));
+  const status = input.status ?? "open";
+  const blocker: TaskBlocker = {
+    id: uniqueId(
+      toSlug(`${input.blockedTaskId}-${input.blockerType}-${input.description}`) ||
+        "task-blocker",
+      blockerIds,
+    ),
+    blockedTaskId: input.blockedTaskId,
+    blockerType: input.blockerType,
+    blockerId: input.blockerId ?? null,
+    description: input.description,
+    severity: input.severity,
+    status,
+    createdByMemberId: input.createdByMemberId ?? null,
+    createdAt: new Date().toISOString(),
+    resolvedAt: status === "resolved" ? new Date().toISOString() : null,
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    taskBlockers: [...currentSnapshot.taskBlockers, blocker],
+  };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
+
+  return blocker;
+}
+
+export function updateTaskBlocker(
+  blockerId: string,
+  input: Partial<TaskBlockerInput>,
+) {
+  let updatedBlocker: TaskBlocker | null = null;
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    taskBlockers: currentSnapshot.taskBlockers.map((blocker) => {
+      if (blocker.id !== blockerId) {
+        return blocker;
+      }
+
+      const nextStatus = input.status ?? blocker.status;
+      updatedBlocker = {
+        ...blocker,
+        ...input,
+        blockerId: input.blockerId === undefined ? blocker.blockerId : input.blockerId,
+        createdByMemberId:
+          input.createdByMemberId === undefined
+            ? blocker.createdByMemberId
+            : input.createdByMemberId,
+        status: nextStatus,
+        resolvedAt:
+          nextStatus === "resolved"
+            ? new Date().toISOString()
+            : null,
+      };
+
+      return updatedBlocker;
+    }),
+  };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
+
+  return updatedBlocker;
+}
+
+export function removeTaskBlocker(blockerId: string) {
+  const blocker = currentSnapshot.taskBlockers.find((candidate) => candidate.id === blockerId);
+  if (!blocker) {
+    return null;
+  }
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    taskBlockers: currentSnapshot.taskBlockers.filter((candidate) => candidate.id !== blockerId),
+  };
+  currentSnapshot = syncTaskRelationCaches(currentSnapshot);
+
+  return blocker;
 }
 
 export function createPurchaseItem(input: PurchaseItemInput) {

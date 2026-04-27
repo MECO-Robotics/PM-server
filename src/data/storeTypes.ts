@@ -8,6 +8,7 @@ import type {
   Member,
   PartInstance,
   Project,
+  ReportType,
   QaResult,
   RiskAttachmentType,
   RiskSeverity,
@@ -43,12 +44,33 @@ export interface TaskInput {
   status: TaskStatus;
   estimatedHours: number;
   actualHours: number;
-  blockers: string[];
-  dependencyIds: string[];
   linkedManufacturingIds: string[];
   linkedPurchaseIds: string[];
   requiresDocumentation: boolean;
   documentationLinked: boolean;
+}
+
+export interface TaskDependencyInput {
+  upstreamTaskId: string;
+  downstreamTaskId: string;
+  dependencyType: "blocks" | "soft" | "finish_to_start";
+}
+
+export interface TaskBlockerInput {
+  blockedTaskId: string;
+  blockerType:
+    | "task"
+    | "event"
+    | "workstream"
+    | "mechanism"
+    | "part_instance"
+    | "artifact_instance"
+    | "external";
+  blockerId: string | null;
+  description: string;
+  severity: "low" | "medium" | "high" | "critical";
+  status?: "open" | "resolved";
+  createdByMemberId?: string | null;
 }
 
 export interface WorkLogInput {
@@ -197,21 +219,40 @@ export interface EventInput {
   relatedSubsystemIds: string[];
 }
 
-export interface QaReportInput {
-  taskId: string;
-  participantIds: string[];
-  result: QaResult;
-  mentorApproved: boolean;
+export interface ReportInput {
+  reportType: ReportType;
+  projectId: string;
+  taskId: string | null;
+  eventId: string | null;
+  workstreamId: string | null;
+  createdByMemberId: string | null;
+  result: string;
+  summary: string;
   notes: string;
-  reviewedAt: string;
+  createdAt: string;
+  participantIds?: string[];
+  mentorApproved?: boolean;
+  reviewedAt?: string;
+  title?: string;
+  status?: TestResultStatus;
+  findings?: string[];
 }
 
-export interface TestResultInput {
-  eventId: string;
-  title: string;
-  status: TestResultStatus;
-  findings: string[];
+export interface ReportFindingInput {
+  reportId: string;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactInstanceId: string | null;
+  issueType: string;
+  severity: RiskSeverity;
+  notes: string;
+  spawnedTaskId: string | null;
+  spawnedIterationId: string | null;
+  spawnedRiskId: string | null;
 }
+
+export type QaReportInput = ReportInput;
+export type TestResultInput = ReportInput;
 
 export interface RiskInput {
   title: string;

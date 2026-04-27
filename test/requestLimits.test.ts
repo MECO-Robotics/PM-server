@@ -3,6 +3,12 @@ import { test } from "node:test";
 
 import { enforceRequestLimit, resetRequestLimits } from "../src/security/requestLimits";
 
+type TestReply = {
+  header(name: string, value: string): TestReply;
+  code(statusCode: number): TestReply;
+  send(body: unknown): TestReply;
+};
+
 function createReply() {
   const state = {
     statusCode: 200,
@@ -10,7 +16,7 @@ function createReply() {
     body: undefined as unknown,
   };
 
-  const reply: any = {
+  const reply: TestReply = {
     header(name: string, value: string) {
       state.headers[name] = value;
       return reply;

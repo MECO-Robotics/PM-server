@@ -19,19 +19,20 @@ import {
   createMaterial,
   createMember,
   createMechanism,
-  createQaReport,
+  createReport,
+  createReportFinding,
   createPartDefinition,
   createPartInstance,
   createProject,
   createSeason,
+  createTaskBlocker,
+  createTaskDependency,
   createSubsystem,
   createPurchaseItem,
   createRisk,
   createTask,
-  createTestResult,
   createWorkLog,
   createWorkstream,
-  findDiscipline,
   findEvent,
   findArtifact,
   findMaterial,
@@ -45,24 +46,27 @@ import {
   findRisk,
   findSubsystem,
   findWorkstream,
-  getDisciplines,
   getMembers,
-  getMechanisms,
   getManufacturingItems,
   getArtifacts,
   getMaterials,
+  getQaFindings,
+  getQaReports,
   getPartDefinitions,
   getPartInstances,
   getProjects,
   getPurchaseItems,
-  getQaReports,
+  getReportFindings,
+  getReports,
   getRisks,
   getSnapshot,
   getSeasons,
-  getSubsystems,
+  getTestFindings,
+  getTestResults,
   getTaskTargets,
   getTasks,
-  getTestResults,
+  getTaskBlockers,
+  getTaskDependencies,
   getTutorialBaselineState,
   type TutorialBaselineState,
   getWorkstreams,
@@ -76,6 +80,8 @@ import {
   removePartInstance,
   removePurchaseItem,
   removeRisk,
+  removeTaskBlocker,
+  removeTaskDependency,
   removeSubsystem,
   removeTask,
   removeWorkLog,
@@ -93,6 +99,8 @@ import {
   updateSubsystem,
   updatePurchaseItem,
   updateRisk,
+  updateTaskBlocker,
+  updateTaskDependency,
   startInteractiveTutorialSession,
   updateTask,
   updateWorkLog,
@@ -104,6 +112,7 @@ import {
   evaluateTaskCompletion,
   formatTaskStatus,
 } from "../domain/workflows";
+import { buildTaskPlanningState } from "../domain/taskPlanning";
 import {
   filterManufacturingItemsForPerson,
   filterPurchaseItemsForPerson,
@@ -123,11 +132,13 @@ import {
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
-  validateQaReportLinks,
+  validateReportFindingLinks,
+  validateReportLinks,
   validateRiskLinks,
   validateSubsystemPeople,
+  validateTaskBlockerLinks,
+  validateTaskDependencyLinks,
   validateTaskLinks,
-  validateTestResultLinks,
   validateWorkLogLinks,
   withManufacturingQaReviewCounts,
   wouldCreateSubsystemCycle,
@@ -153,7 +164,8 @@ import {
   partInstanceSchema,
   projectPatchSchema,
   projectSchema,
-  qaReportSchema,
+  reportFindingSchema,
+  reportSchema,
   riskPatchSchema,
   riskSchema,
   purchaseItemPatchSchema,
@@ -161,9 +173,12 @@ import {
   seasonSchema,
   subsystemPatchSchema,
   subsystemSchema,
+  taskBlockerPatchSchema,
+  taskBlockerSchema,
+  taskDependencyPatchSchema,
+  taskDependencySchema,
   taskPatchSchema,
   taskSchema,
-  testResultSchema,
   tutorialSessionResetSchema,
   workLogPatchSchema,
   workLogSchema,
@@ -179,6 +194,13 @@ const allowAuthRouteRequest = createRequestLimitGuard({
   scope: "auth",
   ...requestLimitConfig.auth,
 });
+
+function serializeTask(task: ReturnType<typeof getTasks>[number]) {
+  return {
+    ...task,
+    planningState: buildTaskPlanningState(task, getSnapshot()),
+  };
+}
 const allowAuthEmailRouteRequest = createRequestLimitGuard({
   scope: "auth-email",
   ...requestLimitConfig.authEmail,
@@ -385,6 +407,8 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const snapshot = getSnapshot();
     const personId = readPersonFilter(request);
+    const visibleTasks = filterTasksForPerson(personId);
+    const visibleTaskIds = new Set(visibleTasks.map((task) => task.id));
 
     return {
       seasons: snapshot.seasons,
@@ -399,14 +423,27 @@ export async function registerRoutes(app: FastifyInstance) {
       partDefinitions: snapshot.partDefinitions,
       partInstances: snapshot.partInstances,
       events: snapshot.events,
-      qaReports: snapshot.qaReports,
-      testResults: snapshot.testResults,
+      reports: snapshot.reports,
+      reportFindings: snapshot.reportFindings,
+      qaReports: getQaReports(),
+      testResults: getTestResults(),
+      qaFindings: getQaFindings(),
+      testFindings: getTestFindings(),
       risks: snapshot.risks,
       meetings: snapshot.meetings,
       attendanceRecords: snapshot.attendanceRecords,
       qaReviews: snapshot.qaReviews,
       escalations: snapshot.escalations,
-      tasks: filterTasksForPerson(personId),
+      tasks: visibleTasks.map((task) => ({
+        ...task,
+        planningState: buildTaskPlanningState(task, snapshot),
+      })),
+      taskDependencies: snapshot.taskDependencies.filter(
+        (dependency) =>
+          visibleTaskIds.has(dependency.upstreamTaskId) ||
+          visibleTaskIds.has(dependency.downstreamTaskId),
+      ),
+      taskBlockers: snapshot.taskBlockers.filter((blocker) => visibleTaskIds.has(blocker.blockedTaskId)),
       workLogs: filterWorkLogsForPerson(personId),
       purchaseItems: filterPurchaseItemsForPerson(personId),
       manufacturingItems: withManufacturingQaReviewCounts(
@@ -674,12 +711,12 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get("/api/qa-reports", async (request, reply) => {
+  app.get("/api/reports", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    const paginated = paginateItems(getQaReports(), request.query);
+    const paginated = paginateItems(getReports(), request.query);
 
     return {
       items: paginated.items,
@@ -687,30 +724,46 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.post<{ Body: unknown }>("/api/qa-reports", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/reports", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    const parsed = qaReportSchema.safeParse(request.body);
+    const parsed = reportSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
-        message: "QA report payload is invalid.",
+        message: "Report payload is invalid.",
         issues: parsed.error.flatten(),
       });
     }
 
-    const validationError = validateQaReportLinks(parsed.data);
+    const validationError = validateReportLinks(parsed.data);
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
       });
     }
 
-    const report = createQaReport({
+    const report = createReport({
       ...parsed.data,
-      participantIds: Array.from(new Set(parsed.data.participantIds)),
+      reportType: parsed.data.reportType,
+      projectId: parsed.data.projectId.trim(),
+      taskId: parsed.data.taskId ?? null,
+      eventId: parsed.data.eventId ?? null,
+      workstreamId: parsed.data.workstreamId ?? null,
+      createdByMemberId: parsed.data.createdByMemberId ?? null,
+      result: parsed.data.result.trim(),
+      summary: parsed.data.summary.trim(),
       notes: parsed.data.notes.trim(),
+      createdAt: parsed.data.createdAt,
+      participantIds: Array.from(new Set(parsed.data.participantIds ?? [])),
+      mentorApproved: parsed.data.mentorApproved ?? false,
+      reviewedAt: parsed.data.reviewedAt,
+      title: parsed.data.title?.trim(),
+      status: parsed.data.status,
+      findings: Array.from(new Set(parsed.data.findings ?? [])).map((finding) => finding.trim()).filter(
+        (finding) => finding.length > 0,
+      ),
     });
 
     return reply.code(201).send({
@@ -718,12 +771,12 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/api/test-results", async (request, reply) => {
+  app.get("/api/report-findings", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    const paginated = paginateItems(getTestResults(), request.query);
+    const paginated = paginateItems(getReportFindings(), request.query);
 
     return {
       items: paginated.items,
@@ -731,35 +784,41 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.post<{ Body: unknown }>("/api/test-results", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/report-findings", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    const parsed = testResultSchema.safeParse(request.body);
+    const parsed = reportFindingSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
-        message: "Test result payload is invalid.",
+        message: "Report finding payload is invalid.",
         issues: parsed.error.flatten(),
       });
     }
 
-    const validationError = validateTestResultLinks(parsed.data);
+    const validationError = validateReportFindingLinks(parsed.data);
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
       });
     }
 
-    const testResult = createTestResult({
+    const finding = createReportFinding({
       ...parsed.data,
-      findings: Array.from(new Set(parsed.data.findings.map((finding) => finding.trim()))).filter(
-        (finding) => finding.length > 0,
-      ),
+      reportId: parsed.data.reportId.trim(),
+      mechanismId: parsed.data.mechanismId ?? null,
+      partInstanceId: parsed.data.partInstanceId ?? null,
+      artifactInstanceId: parsed.data.artifactInstanceId ?? null,
+      issueType: parsed.data.issueType.trim(),
+      notes: parsed.data.notes.trim(),
+      spawnedTaskId: parsed.data.spawnedTaskId ?? null,
+      spawnedIterationId: parsed.data.spawnedIterationId ?? null,
+      spawnedRiskId: parsed.data.spawnedRiskId ?? null,
     });
 
     return reply.code(201).send({
-      item: testResult,
+      item: finding,
     });
   });
 
@@ -1026,6 +1085,7 @@ export async function registerRoutes(app: FastifyInstance) {
       dueDate: task.dueDate,
       status: formatTaskStatus(task.status),
       rawStatus: task.status,
+      planningState: buildTaskPlanningState(task, snapshot),
       priority: task.priority,
       estimatedHours: task.estimatedHours,
       actualHours: task.actualHours,
@@ -1579,6 +1639,235 @@ export async function registerRoutes(app: FastifyInstance) {
 
       return {
         item: task,
+      };
+    },
+  );
+
+  app.get("/api/task-dependencies", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getTaskDependencies(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/task-dependencies", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = taskDependencySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Task dependency payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateTaskDependencyLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    if (
+      getTaskDependencies().some(
+        (dependency) =>
+          dependency.upstreamTaskId === parsed.data.upstreamTaskId &&
+          dependency.downstreamTaskId === parsed.data.downstreamTaskId &&
+          dependency.dependencyType === parsed.data.dependencyType,
+      )
+    ) {
+      return reply.code(400).send({
+        message: "That dependency already exists.",
+      });
+    }
+
+    const dependency = createTaskDependency(parsed.data);
+    return reply.code(201).send({
+      item: dependency,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { dependencyId: string } }>(
+    "/api/task-dependencies/:dependencyId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = taskDependencyPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task dependency update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentDependency = getTaskDependencies().find(
+        (dependency) => dependency.id === request.params.dependencyId,
+      );
+      if (!currentDependency) {
+        return reply.code(404).send({
+          message: "Task dependency not found.",
+        });
+      }
+
+      const nextDependency = {
+        upstreamTaskId: parsed.data.upstreamTaskId ?? currentDependency.upstreamTaskId,
+        downstreamTaskId: parsed.data.downstreamTaskId ?? currentDependency.downstreamTaskId,
+        dependencyType: parsed.data.dependencyType ?? currentDependency.dependencyType,
+      };
+      const validationError = validateTaskDependencyLinks({
+        ...nextDependency,
+        ignoreDependencyId: currentDependency.id,
+      });
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      if (
+        getTaskDependencies().some(
+          (dependency) =>
+            dependency.id !== currentDependency.id &&
+            dependency.upstreamTaskId === nextDependency.upstreamTaskId &&
+            dependency.downstreamTaskId === nextDependency.downstreamTaskId &&
+            dependency.dependencyType === nextDependency.dependencyType,
+        )
+      ) {
+        return reply.code(400).send({
+          message: "That dependency already exists.",
+        });
+      }
+
+      const dependency = updateTaskDependency(request.params.dependencyId, parsed.data);
+      return {
+        item: dependency,
+      };
+    },
+  );
+
+  app.delete<{ Params: { dependencyId: string } }>(
+    "/api/task-dependencies/:dependencyId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const dependency = removeTaskDependency(request.params.dependencyId);
+      if (!dependency) {
+        return reply.code(404).send({
+          message: "Task dependency not found.",
+        });
+      }
+
+      return {
+        item: dependency,
+      };
+    },
+  );
+
+  app.get("/api/task-blockers", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    return {
+      items: getTaskBlockers(),
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/task-blockers", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = taskBlockerSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Task blocker payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateTaskBlockerLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const blocker = createTaskBlocker(parsed.data);
+    return reply.code(201).send({
+      item: blocker,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { blockerId: string } }>(
+    "/api/task-blockers/:blockerId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = taskBlockerPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task blocker update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentBlocker = getTaskBlockers().find(
+        (blocker) => blocker.id === request.params.blockerId,
+      );
+      if (!currentBlocker) {
+        return reply.code(404).send({
+          message: "Task blocker not found.",
+        });
+      }
+
+      const nextBlocker = {
+        blockedTaskId: parsed.data.blockedTaskId ?? currentBlocker.blockedTaskId,
+        blockerType: parsed.data.blockerType ?? currentBlocker.blockerType,
+        blockerId:
+          parsed.data.blockerId === undefined ? currentBlocker.blockerId : parsed.data.blockerId,
+      };
+      const validationError = validateTaskBlockerLinks(nextBlocker);
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const blocker = updateTaskBlocker(request.params.blockerId, parsed.data);
+      return {
+        item: blocker,
+      };
+    },
+  );
+
+  app.delete<{ Params: { blockerId: string } }>(
+    "/api/task-blockers/:blockerId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const blocker = removeTaskBlocker(request.params.blockerId);
+      if (!blocker) {
+        return reply.code(404).send({
+          message: "Task blocker not found.",
+        });
+      }
+
+      return {
+        item: blocker,
       };
     },
   );

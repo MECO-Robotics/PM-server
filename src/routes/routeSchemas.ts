@@ -57,8 +57,6 @@ export const taskSchema = z.object({
   status: z.enum(["not-started", "in-progress", "waiting-for-qa", "complete"]),
   estimatedHours: z.coerce.number().min(0),
   actualHours: z.coerce.number().min(0),
-  blockers: z.array(z.string().trim().min(1)).default([]),
-  dependencyIds: z.array(z.string().trim().min(1)).default([]),
   linkedManufacturingIds: z.array(z.string().trim().min(1)).default([]),
   linkedPurchaseIds: z.array(z.string().trim().min(1)).default([]),
   requiresDocumentation: z.boolean().default(false),
@@ -66,6 +64,52 @@ export const taskSchema = z.object({
 });
 
 export const taskPatchSchema = taskSchema.partial();
+
+export const taskDependencySchema = z.object({
+  upstreamTaskId: z.string().trim().min(1),
+  downstreamTaskId: z.string().trim().min(1),
+  dependencyType: z.enum(["blocks", "soft", "finish_to_start"]),
+});
+
+export const taskDependencyPatchSchema = taskDependencySchema.partial();
+
+export const taskBlockerSchema = z.object({
+  blockedTaskId: z.string().trim().min(1),
+  blockerType: z.enum([
+    "task",
+    "event",
+    "workstream",
+    "mechanism",
+    "part_instance",
+    "artifact_instance",
+    "external",
+  ]),
+  blockerId: z.string().trim().min(1).nullable(),
+  description: z.string().trim().min(3),
+  severity: z.enum(["low", "medium", "high", "critical"]),
+  status: z.enum(["open", "resolved"]).default("open"),
+  createdByMemberId: z.string().trim().min(1).nullable().optional(),
+});
+
+export const taskBlockerPatchSchema = z.object({
+  blockedTaskId: z.string().trim().min(1).optional(),
+  blockerType: z
+    .enum([
+      "task",
+      "event",
+      "workstream",
+      "mechanism",
+      "part_instance",
+      "artifact_instance",
+      "external",
+    ])
+    .optional(),
+  blockerId: z.string().trim().min(1).nullable().optional(),
+  description: z.string().trim().min(3).optional(),
+  severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+  status: z.enum(["open", "resolved"]).optional(),
+  createdByMemberId: z.string().trim().min(1).nullable().optional(),
+});
 
 export const eventSchema = z.object({
   title: z.string().trim().min(2),
@@ -97,21 +141,61 @@ export const eventPatchSchema = z.object({
   relatedSubsystemIds: z.array(z.string().trim().min(1)).optional(),
 });
 
-export const qaReportSchema = z.object({
-  taskId: z.string().trim().min(1),
-  participantIds: z.array(z.string().trim().min(1)).min(1),
-  result: z.enum(["pass", "minor-fix", "iteration-worthy"]),
-  mentorApproved: z.boolean().default(false),
+export const reportSchema = z
+  .object({
+    reportType: z.enum(["QA", "EventTest", "Practice", "Competition", "Review"]),
+    projectId: z.string().trim().min(1),
+    taskId: z.string().trim().min(1).nullable().optional(),
+    eventId: z.string().trim().min(1).nullable().optional(),
+    workstreamId: z.string().trim().min(1).nullable().optional(),
+    createdByMemberId: z.string().trim().min(1).nullable().optional(),
+    result: z.string().trim().min(1),
+    summary: z.string().trim().default(""),
+    notes: z.string().trim().default(""),
+    createdAt: z.string().date(),
+    participantIds: z.array(z.string().trim().min(1)).optional(),
+    mentorApproved: z.boolean().optional(),
+    reviewedAt: z.string().date().optional(),
+    title: z.string().trim().optional(),
+    status: z.enum(["pass", "fail", "blocked"]).optional(),
+    findings: z.array(z.string().trim().min(1)).optional(),
+  })
+  .superRefine((input, context) => {
+    if (input.reportType === "QA" && !input.taskId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "QA reports require a task.",
+        path: ["taskId"],
+      });
+    }
+
+    if (
+      ["EventTest", "Practice", "Competition"].includes(input.reportType) &&
+      !input.eventId
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Event-based reports require an event.",
+        path: ["eventId"],
+      });
+    }
+  });
+
+export const reportFindingSchema = z.object({
+  reportId: z.string().trim().min(1),
+  mechanismId: z.string().trim().min(1).nullable().optional(),
+  partInstanceId: z.string().trim().min(1).nullable().optional(),
+  artifactInstanceId: z.string().trim().min(1).nullable().optional(),
+  issueType: z.string().trim().min(1),
+  severity: z.enum(["high", "medium", "low"]),
   notes: z.string().trim().default(""),
-  reviewedAt: z.string().date(),
+  spawnedTaskId: z.string().trim().min(1).nullable().optional(),
+  spawnedIterationId: z.string().trim().min(1).nullable().optional(),
+  spawnedRiskId: z.string().trim().min(1).nullable().optional(),
 });
 
-export const testResultSchema = z.object({
-  eventId: z.string().trim().min(1),
-  title: z.string().trim().min(2),
-  status: z.enum(["pass", "fail", "blocked"]),
-  findings: z.array(z.string().trim().min(1)).default([]),
-});
+export const qaReportSchema = reportSchema;
+export const testResultSchema = reportSchema;
 
 export const riskSchema = z.object({
   title: z.string().trim().min(2),

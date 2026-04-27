@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 const require = createRequire(import.meta.url);
 
-async function loadEnvModule(_cacheBust: string) {
+async function loadEnvModule() {
   delete require.cache[require.resolve("../src/config/env.ts")];
   return require("../src/config/env.ts");
 }
@@ -45,7 +45,7 @@ test("production config refuses wildcard CORS and missing auth", async () => {
     delete process.env.AUTH_EMAIL_FROM;
 
     await assert.rejects(
-      loadEnvModule(`production-denied-${Date.now()}`),
+      loadEnvModule(),
       /Production deployments must configure AUTH_JWT_SECRET/,
     );
   } finally {
@@ -76,7 +76,7 @@ test("production config loads when auth and explicit origins are configured", as
     delete process.env.AUTH_EMAIL_SMTP_HOST;
     delete process.env.AUTH_EMAIL_FROM;
 
-    const config = await loadEnvModule(`production-allowed-${Date.now()}`);
+    const config = await loadEnvModule();
 
     assert.equal(config.authConfig.enabled, true);
     assert.deepEqual(config.corsConfig.origins, [
@@ -114,7 +114,7 @@ test("explicit SMTP settings override Resend fallback", async () => {
     process.env.AUTH_EMAIL_SMTP_PASS = "brevo-secret";
     process.env.AUTH_EMAIL_FROM = "MECO Robotics <no-reply@mecorobotics.org>";
 
-    const config = await loadEnvModule(`smtp-overrides-resend-${Date.now()}`);
+    const config = await loadEnvModule();
 
     assert.equal(config.emailSmtpConfig.host, "smtp-relay.brevo.com");
     assert.equal(config.emailSmtpConfig.port, 587);

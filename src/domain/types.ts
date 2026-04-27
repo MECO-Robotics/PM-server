@@ -16,7 +16,24 @@ export type TaskStatus =
   | "in-progress"
   | "waiting-for-qa"
   | "complete";
+export type TaskPlanningState =
+  | "ready"
+  | "waiting-on-dependency"
+  | "blocked"
+  | "overdue"
+  | "at-risk";
 export type TaskPriority = "critical" | "high" | "medium" | "low";
+export type TaskDependencyType = "blocks" | "soft" | "finish_to_start";
+export type TaskBlockerType =
+  | "task"
+  | "event"
+  | "workstream"
+  | "mechanism"
+  | "part_instance"
+  | "artifact_instance"
+  | "external";
+export type TaskBlockerSeverity = "low" | "medium" | "high" | "critical";
+export type TaskBlockerStatus = "open" | "resolved";
 export type ManufacturingProcess = "3d-print" | "cnc" | "fabrication";
 export type ManufacturingStatus =
   | "requested"
@@ -51,6 +68,7 @@ export type SeasonType = "season" | "offseason" | "initiative";
 export type ProjectType = "robot" | "operations" | "outreach" | "other";
 export type ProjectStatus = "planned" | "active" | "paused" | "complete";
 export type TestResultStatus = "pass" | "fail" | "blocked";
+export type ReportType = "QA" | "EventTest" | "Practice" | "Competition" | "Review";
 export type RiskSeverity = "high" | "medium" | "low";
 export type RiskAttachmentType = "project" | "workstream" | "mechanism" | "part-instance";
 export type FindingStatus = "open" | "in-progress" | "resolved";
@@ -171,12 +189,34 @@ export interface Task {
   status: TaskStatus;
   dependencyIds: string[];
   blockers: string[];
+  planningState?: TaskPlanningState;
   linkedManufacturingIds: string[];
   linkedPurchaseIds: string[];
   estimatedHours: number;
   actualHours: number;
   requiresDocumentation: boolean;
   documentationLinked: boolean;
+}
+
+export interface TaskDependency {
+  id: string;
+  upstreamTaskId: string;
+  downstreamTaskId: string;
+  dependencyType: TaskDependencyType;
+  createdAt: string;
+}
+
+export interface TaskBlocker {
+  id: string;
+  blockedTaskId: string;
+  blockerType: TaskBlockerType;
+  blockerId: string | null;
+  description: string;
+  severity: TaskBlockerSeverity;
+  status: TaskBlockerStatus;
+  createdByMemberId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export interface WorkLog {
@@ -273,6 +313,50 @@ export interface Workstream {
   name: string;
   description: string;
   isArchived: boolean;
+}
+
+export interface Report {
+  id: string;
+  reportType: ReportType;
+  projectId: string;
+  taskId: string | null;
+  eventId: string | null;
+  workstreamId: string | null;
+  createdByMemberId: string | null;
+  result: string;
+  summary: string;
+  notes: string;
+  createdAt: string;
+  participantIds?: string[];
+  mentorApproved?: boolean;
+  reviewedAt?: string;
+  title?: string;
+  status?: TestResultStatus;
+  findings?: string[];
+}
+
+export interface ReportFinding {
+  id: string;
+  reportId: string;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactInstanceId: string | null;
+  issueType: string;
+  severity: RiskSeverity;
+  notes: string;
+  spawnedTaskId: string | null;
+  spawnedIterationId: string | null;
+  spawnedRiskId: string | null;
+  title?: string;
+  detail?: string;
+  status?: FindingStatus;
+  projectId?: string;
+  workstreamId?: string | null;
+  subsystemId?: string | null;
+  taskId?: string | null;
+  eventId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface QaReport {
@@ -390,7 +474,11 @@ export interface PlatformSnapshot {
   partDefinitions: PartDefinition[];
   partInstances: PartInstance[];
   tasks: Task[];
+  taskDependencies: TaskDependency[];
+  taskBlockers: TaskBlocker[];
   events: Event[];
+  reports: Report[];
+  reportFindings: ReportFinding[];
   qaReports: QaReport[];
   testResults: TestResult[];
   qaFindings: QaFinding[];

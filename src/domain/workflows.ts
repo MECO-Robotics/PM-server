@@ -4,6 +4,7 @@ import {
   Task,
   TaskStatus,
 } from "./types";
+import { buildTaskPlanningState } from "./taskPlanning";
 
 export function evaluateTaskCompletion(task: Task, snapshot: PlatformSnapshot) {
   const workLogs = snapshot.workLogs.filter((workLog) => workLog.taskId === task.id);
@@ -35,26 +36,27 @@ export function evaluateTaskCompletion(task: Task, snapshot: PlatformSnapshot) {
 }
 
 export function buildDashboard(snapshot: PlatformSnapshot) {
-  const taskMap = new Map(snapshot.tasks.map((task) => [task.id, task]));
-
   const totalHours = snapshot.workLogs.reduce((sum, workLog) => {
     return sum + workLog.hours;
   }, 0);
+  const blockerCount =
+    snapshot.taskBlockers.length > 0
+      ? snapshot.taskBlockers.filter((blocker) => blocker.status === "open").length
+      : snapshot.tasks.filter((task) => task.blockers.length > 0 && task.status !== "complete").length;
 
   const openTasks = snapshot.tasks.filter((task) => task.status !== "complete");
   const waitingForQa = snapshot.tasks.filter(
     (task) => task.status === "waiting-for-qa",
   ).length;
-  const blocked = snapshot.tasks.filter((task) => task.blockers.length > 0).length;
+  const blocked = blockerCount;
   const nextTasks = snapshot.tasks
     .filter((task) => {
-      if (task.status === "complete" || task.blockers.length > 0) {
+      if (task.status === "complete") {
         return false;
       }
 
-      return task.dependencyIds.every((dependencyId) => {
-        return taskMap.get(dependencyId)?.status === "complete";
-      });
+      const planningState = buildTaskPlanningState(task, snapshot);
+      return planningState !== "blocked" && planningState !== "waiting-on-dependency";
     })
     .map((task) => ({
       id: task.id,
@@ -105,6 +107,10 @@ export function buildMetrics(snapshot: PlatformSnapshot) {
   const lowStockMaterials = snapshot.materials.filter(
     (material) => material.onHandQuantity <= material.reorderPoint,
   ).length;
+  const blockerCount =
+    snapshot.taskBlockers.length > 0
+      ? snapshot.taskBlockers.filter((blocker) => blocker.status === "open").length
+      : snapshot.tasks.filter((task) => task.blockers.length > 0 && task.status !== "complete").length;
 
   return {
     completionRate: Number(
@@ -119,7 +125,7 @@ export function buildMetrics(snapshot: PlatformSnapshot) {
     trackedMaterials: snapshot.materials.length,
     waitingForQa: snapshot.tasks.filter((task) => task.status === "waiting-for-qa")
       .length,
-    blockerCount: snapshot.tasks.reduce((sum, task) => sum + task.blockers.length, 0),
+    blockerCount,
     attendanceHours: snapshot.attendanceRecords.reduce((sum, record) => {
       return sum + record.totalHours;
     }, 0),

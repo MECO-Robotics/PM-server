@@ -2,6 +2,8 @@ import type {
   Mechanism,
   PartDefinition,
   PlatformSnapshot,
+  Report,
+  ReportFinding,
   Subsystem,
   Task,
   Workstream,
@@ -86,7 +88,15 @@ function normalizeTaskTargets(task: SeedTask): Task {
 
 const snapshotSeed: Omit<
   PlatformSnapshot,
-  "workstreams" | "subsystems" | "mechanisms" | "partDefinitions" | "tasks"
+  | "reports"
+  | "reportFindings"
+  | "workstreams"
+  | "subsystems"
+  | "mechanisms"
+  | "partDefinitions"
+  | "tasks"
+  | "taskDependencies"
+  | "taskBlockers"
 > & {
   workstreams: SeedWorkstream[];
   subsystems: SeedSubsystem[];
@@ -2361,11 +2371,117 @@ const snapshotSeed: Omit<
   ],
 };
 
+function buildReports(seed: typeof snapshotSeed): Report[] {
+  const projectId = seed.projects[0]?.id ?? "";
+  const creatorId = seed.members[0]?.id ?? null;
+  const qaReports = seed.qaReports.map<Report>((report) => ({
+    id: report.id,
+    reportType: "QA",
+    projectId,
+    taskId: report.taskId,
+    eventId: null,
+    workstreamId: null,
+    createdByMemberId: creatorId,
+    result: report.result,
+    summary: report.notes,
+    notes: report.notes,
+    createdAt: report.reviewedAt,
+    participantIds: report.participantIds,
+    mentorApproved: report.mentorApproved,
+    reviewedAt: report.reviewedAt,
+  }));
+
+  const eventReports = seed.testResults.map<Report>((result) => ({
+    id: result.id,
+    reportType: "EventTest",
+    projectId,
+    taskId: null,
+    eventId: result.eventId,
+    workstreamId: null,
+    createdByMemberId: creatorId,
+    result: result.status,
+    summary: result.title,
+    notes: result.findings.join("\n"),
+    createdAt: seed.events.find((event) => event.id === result.eventId)?.startDateTime ?? "2026-01-01T00:00:00",
+    title: result.title,
+    status: result.status,
+    findings: result.findings,
+  }));
+
+  return [...qaReports, ...eventReports];
+}
+
+function buildReportFindings(seed: typeof snapshotSeed, reports: Report[]): ReportFinding[] {
+  const reportsById = new Map(reports.map((report) => [report.id, report] as const));
+  const qaFindings = seed.qaFindings.map<ReportFinding>((finding) => ({
+    id: finding.id,
+    reportId: finding.qaReportId ?? "",
+    mechanismId: finding.mechanismId ?? null,
+    partInstanceId: finding.partInstanceId ?? null,
+    artifactInstanceId: finding.artifactId ?? null,
+    issueType: finding.title,
+    severity: finding.severity,
+    notes: finding.detail,
+    spawnedTaskId: null,
+    spawnedIterationId: null,
+    spawnedRiskId: null,
+    title: finding.title,
+    detail: finding.detail,
+    status: finding.status,
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    taskId: finding.taskId,
+    eventId: null,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  }));
+
+  const testFindings = seed.testFindings.map<ReportFinding>((finding) => ({
+    id: finding.id,
+    reportId: finding.testResultId ?? "",
+    mechanismId: finding.mechanismId ?? null,
+    partInstanceId: finding.partInstanceId ?? null,
+    artifactInstanceId: finding.artifactId ?? null,
+    issueType: finding.title,
+    severity: finding.severity,
+    notes: finding.detail,
+    spawnedTaskId: null,
+    spawnedIterationId: null,
+    spawnedRiskId: null,
+    title: finding.title,
+    detail: finding.detail,
+    status: finding.status,
+    projectId: finding.projectId,
+    workstreamId: finding.workstreamId,
+    subsystemId: finding.subsystemId,
+    taskId: finding.taskId,
+    eventId: finding.eventId,
+    createdAt: finding.createdAt,
+    updatedAt: finding.updatedAt,
+  }));
+
+  return [...qaFindings, ...testFindings].map((finding) => {
+    const report = reportsById.get(finding.reportId);
+    return {
+      ...finding,
+      projectId: finding.projectId ?? report?.projectId ?? "",
+      workstreamId: finding.workstreamId ?? report?.workstreamId ?? null,
+      taskId: finding.taskId ?? report?.taskId ?? null,
+      eventId: finding.eventId ?? report?.eventId ?? null,
+    };
+  });
+}
+
 export const snapshot: PlatformSnapshot = {
   ...snapshotSeed,
+  reports: buildReports(snapshotSeed),
+  reportFindings: buildReportFindings(snapshotSeed, buildReports(snapshotSeed)),
   workstreams: snapshotSeed.workstreams.map(withArchiveState),
   subsystems: snapshotSeed.subsystems.map(withIteration).map(withArchiveState),
   mechanisms: snapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
   partDefinitions: snapshotSeed.partDefinitions.map(withIteration).map(withArchiveState),
   tasks: snapshotSeed.tasks.map(normalizeTaskTargets),
+  taskDependencies: [],
+  taskBlockers: [],
 };

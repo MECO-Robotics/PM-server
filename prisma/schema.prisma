@@ -56,12 +56,32 @@ enum RequirementStatus {
   COMPLETE
 }
 
-enum BlockerType {
-  TASK_DEPENDENCY
-  MANUFACTURING_DELAY
-  SHIPPING_DELAY
-  QA_FEEDBACK
-  OTHER
+enum TaskDependencyType {
+  BLOCKS
+  SOFT
+  FINISH_TO_START
+}
+
+enum TaskBlockerType {
+  TASK
+  EVENT
+  WORKSTREAM
+  MECHANISM
+  PART_INSTANCE
+  ARTIFACT_INSTANCE
+  EXTERNAL
+}
+
+enum TaskBlockerSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum TaskBlockerStatus {
+  OPEN
+  RESOLVED
 }
 
 enum ManufacturingProcess {
@@ -290,22 +310,28 @@ model Event {
 }
 
 model TaskDependency {
-  predecessorId String
-  successorId   String
-  predecessor   Task   @relation("TaskRequiredBy", fields: [predecessorId], references: [id])
-  successor     Task   @relation("TaskDependsOn", fields: [successorId], references: [id])
-
-  @@id([predecessorId, successorId])
+  id              String             @id @default(cuid())
+  upstreamTaskId   String
+  downstreamTaskId String
+  dependencyType   TaskDependencyType
+  createdAt        DateTime           @default(now())
+  upstreamTask     Task               @relation("TaskRequiredBy", fields: [upstreamTaskId], references: [id])
+  downstreamTask   Task               @relation("TaskDependsOn", fields: [downstreamTaskId], references: [id])
 }
 
 model TaskBlocker {
-  id         String      @id @default(cuid())
-  taskId     String
-  type       BlockerType
-  summary    String
-  isResolved Boolean     @default(false)
-  task       Task        @relation(fields: [taskId], references: [id])
-  createdAt  DateTime    @default(now())
+  id                String              @id @default(cuid())
+  blockedTaskId     String
+  blockerType       TaskBlockerType
+  blockerId         String?
+  description       String
+  severity          TaskBlockerSeverity
+  status            TaskBlockerStatus   @default(OPEN)
+  createdByMemberId String?
+  createdAt         DateTime            @default(now())
+  resolvedAt        DateTime?
+  blockedTask       Task                @relation(fields: [blockedTaskId], references: [id])
+  createdByMember   Member?             @relation(fields: [createdByMemberId], references: [id])
 }
 
 model WorkLog {
