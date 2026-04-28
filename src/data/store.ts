@@ -119,6 +119,15 @@ function normalizeIteration(iteration: number | undefined) {
     : 1;
 }
 
+function normalizeWorkspaceColor(color: string | undefined) {
+  if (typeof color !== "string") {
+    return undefined;
+  }
+
+  const trimmedColor = color.trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(trimmedColor) ? trimmedColor : undefined;
+}
+
 function toSlug(value: string) {
   return value
     .toLowerCase()
@@ -772,6 +781,7 @@ export function createWorkstream(input: WorkstreamInput) {
     id: uniqueId(toSlug(input.name) || "workstream", workstreamIds),
     projectId: input.projectId,
     name: input.name,
+    color: normalizeWorkspaceColor(input.color),
     description: input.description,
     isArchived: input.isArchived ?? false,
   };
@@ -786,6 +796,8 @@ export function createWorkstream(input: WorkstreamInput) {
 
 export function updateWorkstream(workstreamId: string, input: Partial<WorkstreamInput>) {
   let updatedWorkstream: Workstream | null = null;
+  const nextColor =
+    input.color === undefined ? undefined : normalizeWorkspaceColor(input.color);
 
   currentSnapshot = {
     ...currentSnapshot,
@@ -797,6 +809,7 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
       updatedWorkstream = {
         ...workstream,
         ...input,
+        color: input.color === undefined ? workstream.color : nextColor,
       };
 
       return updatedWorkstream;
@@ -1141,6 +1154,7 @@ export function createSubsystem(input: SubsystemInput) {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
     projectId: input.projectId,
     name: input.name,
+    color: normalizeWorkspaceColor(input.color),
     description: input.description,
     photoUrl: input.photoUrl ?? "",
     iteration: normalizeIteration(input.iteration),
@@ -1177,6 +1191,8 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
     : input.parentSubsystemId === undefined
       ? currentSubsystem.parentSubsystemId
       : input.parentSubsystemId;
+  const nextColor =
+    input.color === undefined ? currentSubsystem.color : normalizeWorkspaceColor(input.color);
 
   currentSnapshot = {
     ...currentSnapshot,
@@ -1188,6 +1204,7 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       updatedSubsystem = {
         ...subsystem,
         ...input,
+        color: nextColor,
         iteration:
           input.iteration === undefined
             ? subsystem.iteration

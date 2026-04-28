@@ -221,18 +221,21 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
         projectId: "project-operations-2026",
         name: "Awards",
         description: "Awards submission workflow.",
+        color: "#E76F51",
       },
     });
 
     assert.equal(createWorkstreamResponse.statusCode, 201);
     const createWorkstreamBody = createWorkstreamResponse.json() as {
       item: {
+        color?: string;
         id: string;
         isArchived: boolean;
         projectId: string;
       };
     };
     assert.equal(createWorkstreamBody.item.id, "awards");
+    assert.equal(createWorkstreamBody.item.color, "#E76F51");
     assert.equal(createWorkstreamBody.item.isArchived, false);
     assert.equal(createWorkstreamBody.item.projectId, "project-operations-2026");
 
@@ -242,11 +245,13 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
       method: "PATCH",
       url: `/api/workstreams/${createWorkstreamBody.item.id}`,
       payload: {
+        color: "#2A9D8F",
         isArchived: true,
       },
     });
 
     assert.equal(updateWorkstreamResponse.statusCode, 200);
+    assert.equal(updateWorkstreamResponse.json().item.color, "#2A9D8F");
     assert.equal(updateWorkstreamResponse.json().item.isArchived, true);
 
     resetLimits();

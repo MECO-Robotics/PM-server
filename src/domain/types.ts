@@ -71,6 +71,7 @@ export interface Subsystem {
   id: string;
   projectId: string;
   name: string;
+  color?: string;
   description: string;
   photoUrl?: string;
   iteration: number;
@@ -280,6 +281,7 @@ export interface Workstream {
   id: string;
   projectId: string;
   name: string;
+  color?: string;
   description: string;
   isArchived: boolean;
 }

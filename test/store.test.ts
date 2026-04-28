@@ -258,9 +258,11 @@ test("createWorkstream adds a project-scoped workflow", () => {
   const workstream = createWorkstream({
     projectId: "project-operations-2026",
     name: "Awards",
+    color: "#E76F51",
     description: "Awards submission workflow.",
   });
 
+  assert.equal(workstream.color, "#E76F51");
   assert.equal(workstream.id, "awards");
   assert.equal(workstream.isArchived, false);
   assert.equal(workstream.projectId, "project-operations-2026");
@@ -292,6 +294,7 @@ test("createSubsystem auto-generates an integration task for its parent subsyste
   const subsystem = createSubsystem({
     projectId: "default-season-robot",
     name: "Test Subsystem",
+    color: "#4F86C6",
     description: "Temporary subsystem for coverage.",
     parentSubsystemId: "drive",
     responsibleEngineerId: "ava",
@@ -303,6 +306,7 @@ test("createSubsystem auto-generates an integration task for its parent subsyste
     (task) => task.title === "Integrate Test Subsystem",
   );
 
+  assert.equal(subsystem.color, "#4F86C6");
   assert.equal(subsystem.parentSubsystemId, "drive");
   assert.ok(integrationTask);
   assert.equal(integrationTask?.subsystemId, "drive");

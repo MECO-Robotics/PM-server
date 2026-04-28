@@ -142,6 +142,7 @@ export interface ArtifactInput {
 export interface WorkstreamInput {
   projectId: string;
   name: string;
+  color?: string;
   description: string;
   isArchived?: boolean;
 }
@@ -149,6 +150,7 @@ export interface WorkstreamInput {
 export interface SubsystemInput {
   projectId: string;
   name: string;
+  color?: string;
   description: string;
   photoUrl?: string;
   iteration?: number;

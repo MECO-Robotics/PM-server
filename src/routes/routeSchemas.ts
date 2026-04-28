@@ -137,6 +137,7 @@ export const iterationSchema = z.coerce.number().int().min(1).default(1);
 export const workstreamSchema = z.object({
   projectId: z.string().trim().min(1),
   name: z.string().trim().min(2),
+  color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   description: z.string().trim().min(3),
   isArchived: z.boolean().default(false),
 });
@@ -146,6 +147,7 @@ export const workstreamPatchSchema = workstreamSchema.partial();
 export const subsystemSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
+  color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   description: z.string().trim().min(3),
   photoUrl: z.string().trim().default(""),
   iteration: iterationSchema,

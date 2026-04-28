@@ -145,6 +145,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       payload: {
         projectId: "project-robot-2026",
         name: "Route Test Intake",
+        color: "#4F86C6",
         description: "Temporary child subsystem for route edge-case coverage.",
         iteration: 2,
         parentSubsystemId: "manipulator",
@@ -158,12 +159,14 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     assert.equal(childSubsystemResponse.statusCode, 201);
     const childSubsystemBody = childSubsystemResponse.json() as {
       item: {
+        color?: string;
         id: string;
         isArchived: boolean;
         iteration: number;
         photoUrl: string;
       };
     };
+    assert.equal(childSubsystemBody.item.color, "#4F86C6");
     assert.equal(childSubsystemBody.item.isArchived, false);
     assert.equal(childSubsystemBody.item.iteration, 2);
     assert.equal(
@@ -177,6 +180,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       method: "PATCH",
       url: `/api/subsystems/${childSubsystemBody.item.id}`,
       payload: {
+        color: "#7A5CFA",
         iteration: 3,
         isArchived: true,
         photoUrl: "https://cdn.example.test/subsystems/route-test-intake-v2.png",
@@ -184,6 +188,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     });
 
     assert.equal(childSubsystemIterationUpdateResponse.statusCode, 200);
+    assert.equal(childSubsystemIterationUpdateResponse.json().item.color, "#7A5CFA");
     assert.equal(childSubsystemIterationUpdateResponse.json().item.iteration, 3);
     assert.equal(childSubsystemIterationUpdateResponse.json().item.isArchived, true);
     assert.equal(
