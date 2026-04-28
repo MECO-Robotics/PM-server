@@ -18,6 +18,14 @@ const IMAGE_EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
   "image/webp": ".webp",
 };
 
+const VIDEO_EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "video/webm": ".webm",
+  "video/x-m4v": ".m4v",
+  "video/ogg": ".ogv",
+};
+
 let storageClient: S3Client | null = null;
 
 export class MediaUploadError extends Error {
@@ -30,11 +38,13 @@ export class MediaUploadError extends Error {
   }
 }
 
-interface PresignImageUploadInput {
+interface PresignMediaUploadInput {
   contentType: string;
   fileName: string;
   projectId: string;
 }
+
+type MediaUploadKind = "image" | "video";
 
 function getStorageClient() {
   if (
@@ -72,13 +82,14 @@ function sanitizePathSegment(value: string, fallback: string) {
   return normalized.length > 0 ? normalized : fallback;
 }
 
-function resolveImageExtension(fileName: string, contentType: string) {
+function resolveMediaExtension(fileName: string, contentType: string, kind: MediaUploadKind) {
   const rawExtension = extname(fileName).trim().toLowerCase();
   if (rawExtension.length > 0 && /^[.][a-z0-9]{1,10}$/.test(rawExtension)) {
     return rawExtension;
   }
 
-  return IMAGE_EXTENSION_BY_CONTENT_TYPE[contentType] ?? ".bin";
+  const extensionMap = kind === "image" ? IMAGE_EXTENSION_BY_CONTENT_TYPE : VIDEO_EXTENSION_BY_CONTENT_TYPE;
+  return extensionMap[contentType] ?? ".bin";
 }
 
 function encodeObjectKey(key: string) {
@@ -97,28 +108,29 @@ function buildPublicUrl(bucket: string, key: string) {
   return `${baseUrl}/${encodeURIComponent(bucket)}/${encodeObjectKey(key)}`;
 }
 
-function createObjectKey(projectId: string, fileName: string, contentType: string) {
+function createObjectKey(projectId: string, fileName: string, contentType: string, kind: MediaUploadKind) {
   const now = new Date();
   const year = now.getUTCFullYear().toString();
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
   const projectSegment = sanitizePathSegment(projectId, "project");
   const nameWithoutExtension = fileName.replace(/\.[^.]+$/, "");
-  const fileSegment = sanitizePathSegment(nameWithoutExtension, "image");
-  const extension = resolveImageExtension(fileName, contentType);
+  const fileSegment = sanitizePathSegment(nameWithoutExtension, kind);
+  const extension = resolveMediaExtension(fileName, contentType, kind);
   const randomSuffix = randomBytes(6).toString("hex");
+  const folder = kind === "image" ? "images" : "videos";
 
-  return `projects/${projectSegment}/images/${year}/${month}/${Date.now()}-${randomSuffix}-${fileSegment}${extension}`;
+  return `projects/${projectSegment}/${folder}/${year}/${month}/${Date.now()}-${randomSuffix}-${fileSegment}${extension}`;
 }
 
-export async function presignImageUpload(input: PresignImageUploadInput) {
+async function presignMediaUpload(input: PresignMediaUploadInput, kind: MediaUploadKind) {
   const contentType = input.contentType.trim().toLowerCase();
-  if (!contentType.startsWith("image/")) {
-    throw new MediaUploadError("Only image uploads are supported by the media bucket.");
+  if (!contentType.startsWith(`${kind}/`)) {
+    throw new MediaUploadError(`Only ${kind} uploads are supported by the media bucket.`);
   }
 
   const fileName = input.fileName.trim();
   if (fileName.length === 0) {
-    throw new MediaUploadError("Image uploads require a file name.");
+    throw new MediaUploadError(`${kind === "image" ? "Image" : "Video"} uploads require a file name.`);
   }
 
   const bucket = mediaUploadConfig.bucket;
@@ -126,7 +138,7 @@ export async function presignImageUpload(input: PresignImageUploadInput) {
     throw new MediaUploadError("Media uploads are not configured on the server yet.", 503);
   }
 
-  const key = createObjectKey(input.projectId, fileName, contentType);
+  const key = createObjectKey(input.projectId, fileName, contentType, kind);
   const client = getStorageClient();
   const uploadUrl = await getSignedUrl(
     client,
@@ -148,4 +160,12 @@ export async function presignImageUpload(input: PresignImageUploadInput) {
     publicUrl: buildPublicUrl(bucket, key),
     uploadUrl,
   };
+}
+
+export async function presignImageUpload(input: PresignMediaUploadInput) {
+  return presignMediaUpload(input, "image");
+}
+
+export async function presignVideoUpload(input: PresignMediaUploadInput) {
+  return presignMediaUpload(input, "video");
 }

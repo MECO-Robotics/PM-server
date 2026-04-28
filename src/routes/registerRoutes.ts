@@ -175,7 +175,11 @@ import {
   workstreamPatchSchema,
   workstreamSchema,
 } from "./routeSchemas";
-import { MediaUploadError, presignImageUpload } from "../storage/mediaUploadService";
+import {
+  MediaUploadError,
+  presignImageUpload,
+  presignVideoUpload,
+} from "../storage/mediaUploadService";
 
 const allowApiRouteRequest = createRequestLimitGuard({
   scope: "api",
@@ -1106,6 +1110,7 @@ export async function registerRoutes(app: FastifyInstance) {
       description: parsed.data.description ?? "",
       projectIds,
       relatedSubsystemIds,
+      photoUrl: parsed.data.photoUrl ?? "",
     });
 
     return reply.code(201).send({
@@ -1165,6 +1170,10 @@ export async function registerRoutes(app: FastifyInstance) {
             : parsed.data.description,
         projectIds: nextProjectIds,
         relatedSubsystemIds: nextRelatedSubsystemIds,
+        photoUrl:
+          parsed.data.photoUrl === undefined
+            ? currentEvent.photoUrl
+            : parsed.data.photoUrl,
       });
 
       return {
@@ -1312,6 +1321,41 @@ export async function registerRoutes(app: FastifyInstance) {
 
     try {
       return await presignImageUpload(parsed.data);
+    } catch (error) {
+      if (error instanceof MediaUploadError) {
+        return reply.code(error.statusCode).send({
+          message: error.message,
+        });
+      }
+
+      request.log.error({ err: error }, "Media upload presign failed");
+      return reply.code(500).send({
+        message: "Media upload failed unexpectedly.",
+      });
+    }
+  });
+
+  app.post<{ Body: unknown }>("/api/media/presign-video-upload", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = mediaUploadRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Media upload payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    if (!findProject(parsed.data.projectId)) {
+      return reply.code(400).send({
+        message: "The selected project does not exist.",
+      });
+    }
+
+    try {
+      return await presignVideoUpload(parsed.data);
     } catch (error) {
       if (error instanceof MediaUploadError) {
         return reply.code(error.statusCode).send({

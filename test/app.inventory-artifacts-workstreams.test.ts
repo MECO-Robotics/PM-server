@@ -462,3 +462,57 @@ test("media upload endpoint returns a presigned image upload contract", async ()
     );
   });
 });
+
+test("video upload endpoint returns a presigned video upload contract", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const presignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-video-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "QA review clip.mp4",
+        contentType: "video/mp4",
+      },
+    });
+
+    assert.equal(presignResponse.statusCode, 200);
+    const presignBody = presignResponse.json() as {
+      expiresInSeconds: number;
+      headers: {
+        "Content-Type": string;
+      };
+      key: string;
+      method: string;
+      publicUrl: string;
+      uploadUrl: string;
+    };
+
+    assert.equal(presignBody.method, "PUT");
+    assert.equal(presignBody.headers["Content-Type"], "video/mp4");
+    assert.match(
+      presignBody.key,
+      /^projects\/project-media-2026\/videos\/\d{4}\/\d{2}\/\d+-[a-f0-9]{12}-qa-review-clip\.mp4$/,
+    );
+    assert.ok(
+      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm/projects/project-media-2026/videos/"),
+    );
+
+    resetLimits();
+
+    const invalidTypeResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-video-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "not-a-video.png",
+        contentType: "image/png",
+      },
+    });
+
+    assert.equal(invalidTypeResponse.statusCode, 400);
+    assert.equal(
+      invalidTypeResponse.json().message,
+      "Only video uploads are supported by the media bucket.",
+    );
+  });
+});

@@ -48,6 +48,7 @@ export const taskSchema = z.object({
   artifactId: z.string().trim().min(1).nullable().optional(),
   artifactIds: z.array(z.string().trim().min(1)).optional(),
   targetEventId: z.string().trim().min(1).nullable(),
+  photoUrl: z.string().trim().default(""),
   ownerId: z.string().trim().min(1).nullable(),
   assigneeIds: z.array(z.string().trim().min(1)).default([]),
   mentorId: z.string().trim().min(1).nullable(),
@@ -82,6 +83,7 @@ export const eventSchema = z.object({
   description: z.string().trim().default(""),
   projectIds: z.array(z.string().trim().min(1)).default([]),
   relatedSubsystemIds: z.array(z.string().trim().min(1)).default([]),
+  photoUrl: z.string().trim().default(""),
 });
 
 export const eventPatchSchema = z.object({
@@ -95,6 +97,7 @@ export const eventPatchSchema = z.object({
   description: z.string().trim().optional(),
   projectIds: z.array(z.string().trim().min(1)).optional(),
   relatedSubsystemIds: z.array(z.string().trim().min(1)).optional(),
+  photoUrl: z.string().trim().optional(),
 });
 
 export const qaReportSchema = z.object({
@@ -103,6 +106,7 @@ export const qaReportSchema = z.object({
   result: z.enum(["pass", "minor-fix", "iteration-worthy"]),
   mentorApproved: z.boolean().default(false),
   notes: z.string().trim().default(""),
+  photoUrl: z.string().trim().default(""),
   reviewedAt: z.string().date(),
 });
 
@@ -111,6 +115,7 @@ export const testResultSchema = z.object({
   title: z.string().trim().min(2),
   status: z.enum(["pass", "fail", "blocked"]),
   findings: z.array(z.string().trim().min(1)).default([]),
+  photoUrl: z.string().trim().default(""),
 });
 
 export const riskSchema = z.object({
@@ -142,6 +147,7 @@ export const subsystemSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
+  photoUrl: z.string().trim().default(""),
   iteration: iterationSchema,
   isArchived: z.boolean().default(false),
   parentSubsystemId: z.string().trim().min(1).nullable().optional(),
@@ -156,6 +162,7 @@ export const mechanismSchema = z.object({
   subsystemId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
+  photoUrl: z.string().trim().default(""),
   iteration: iterationSchema,
   isArchived: z.boolean().default(false),
 });
@@ -163,17 +170,18 @@ export const mechanismSchema = z.object({
 export const mechanismPatchSchema = mechanismSchema.partial();
 
 export const partDefinitionSchema = z.object({
+  seasonId: z.string().trim().min(1).optional(),
+  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2),
   partNumber: z.string().trim().min(1),
   revision: z.string().trim().min(1),
   iteration: iterationSchema,
   isArchived: z.boolean().default(false),
   type: z.string().trim().min(1),
-  seasonId: z.string().trim().min(1).optional(),
-  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   source: z.string().trim().min(1),
   materialId: z.string().trim().min(1).nullable().optional(),
   description: z.string().trim().default(""),
+  photoUrl: z.string().trim().default(""),
 });
 
 export const partDefinitionPatchSchema = partDefinitionSchema.partial();
@@ -186,6 +194,7 @@ export const partInstanceSchema = z.object({
   quantity: z.coerce.number().min(1),
   trackIndividually: z.boolean().default(false),
   status: z.enum(["planned", "needed", "available", "installed", "retired"]),
+  photoUrl: z.string().trim().default(""),
 });
 
 export const partInstancePatchSchema = partInstanceSchema.partial();
@@ -272,6 +281,7 @@ export const workLogSchema = z.object({
   hours: z.coerce.number().min(0.5),
   participantIds: z.array(z.string().trim().min(1)).min(1),
   notes: z.string().trim().default(""),
+  photoUrl: z.string().trim().default(""),
 });
 
 export const workLogPatchSchema = workLogSchema.partial();

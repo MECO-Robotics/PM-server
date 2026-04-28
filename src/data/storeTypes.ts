@@ -34,6 +34,7 @@ export interface TaskInput {
   artifactId: string | null;
   artifactIds: string[];
   targetEventId: string | null;
+  photoUrl?: string;
   ownerId: string | null;
   assigneeIds: string[];
   mentorId: string | null;
@@ -57,6 +58,7 @@ export interface WorkLogInput {
   hours: number;
   participantIds: string[];
   notes: string;
+  photoUrl?: string;
 }
 
 export interface MemberInput {
@@ -148,6 +150,7 @@ export interface SubsystemInput {
   projectId: string;
   name: string;
   description: string;
+  photoUrl?: string;
   iteration?: number;
   isArchived?: boolean;
   parentSubsystemId: string | null;
@@ -160,22 +163,24 @@ export interface MechanismInput {
   subsystemId: string;
   name: string;
   description: string;
+  photoUrl?: string;
   iteration?: number;
   isArchived?: boolean;
 }
 
 export interface PartDefinitionInput {
+  seasonId?: string;
+  activeSeasonIds?: string[];
   name: string;
   partNumber: string;
   revision: string;
   iteration?: number;
-  seasonId?: string;
-  activeSeasonIds?: string[];
   isArchived?: boolean;
   type: string;
   source: string;
   materialId: string | null;
   description: string;
+  photoUrl?: string;
 }
 
 export interface PartInstanceInput {
@@ -186,6 +191,7 @@ export interface PartInstanceInput {
   quantity: number;
   trackIndividually: boolean;
   status: PartInstance["status"];
+  photoUrl?: string;
 }
 
 export interface EventInput {
@@ -197,6 +203,7 @@ export interface EventInput {
   description: string;
   projectIds: string[];
   relatedSubsystemIds: string[];
+  photoUrl?: string;
 }
 
 export interface QaReportInput {
@@ -205,6 +212,7 @@ export interface QaReportInput {
   result: QaResult;
   mentorApproved: boolean;
   notes: string;
+  photoUrl?: string;
   reviewedAt: string;
 }
 
@@ -213,6 +221,7 @@ export interface TestResultInput {
   title: string;
   status: TestResultStatus;
   findings: string[];
+  photoUrl?: string;
 }
 
 export interface RiskInput {

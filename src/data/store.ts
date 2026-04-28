@@ -1142,6 +1142,7 @@ export function createSubsystem(input: SubsystemInput) {
     projectId: input.projectId,
     name: input.name,
     description: input.description,
+    photoUrl: input.photoUrl ?? "",
     iteration: normalizeIteration(input.iteration),
     isArchived: input.isArchived ?? false,
     isCore: false,
@@ -1347,17 +1348,17 @@ export function removeSubsystem(subsystemId: string) {
 }
 
 export function createPartDefinition(input: PartDefinitionInput) {
-  const partDefinitionIds = new Set(
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const seasonId = input.seasonId ?? fallbackSeasonId;
   const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
+  const partDefinitionIds = new Set(
     currentSnapshot.partDefinitions.map((partDefinition) => partDefinition.id),
   );
   const partDefinition: PartDefinition = {
     id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
-    name: input.name,
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
+    name: input.name,
     partNumber: input.partNumber,
     revision: input.revision,
     iteration: normalizeIteration(input.iteration),
@@ -1366,6 +1367,7 @@ export function createPartDefinition(input: PartDefinitionInput) {
     source: input.source,
     materialId: input.materialId,
     description: input.description,
+    photoUrl: input.photoUrl ?? "",
   };
 
   currentSnapshot = {
@@ -1389,18 +1391,18 @@ export function updatePartDefinition(
         return partDefinition;
       }
 
-      updatedPartDefinition = {
-        ...partDefinition,
       const seasonId = input.seasonId ?? partDefinition.seasonId;
       const activeSeasonIds =
         input.activeSeasonIds === undefined
           ? uniqueIds([...(partDefinition.activeSeasonIds ?? []), seasonId])
           : uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
+      updatedPartDefinition = {
+        ...partDefinition,
         ...input,
-        iteration:
-          input.iteration === undefined
         seasonId,
         activeSeasonIds,
+        iteration:
+          input.iteration === undefined
             ? partDefinition.iteration
             : normalizeIteration(input.iteration),
       };
@@ -1479,6 +1481,7 @@ export function createMechanism(input: MechanismInput) {
     subsystemId: input.subsystemId,
     name: input.name,
     description: input.description,
+    photoUrl: input.photoUrl ?? "",
     iteration: normalizeIteration(input.iteration),
     isArchived: input.isArchived ?? false,
   };
@@ -1507,6 +1510,7 @@ export function createPartInstance(input: PartInstanceInput) {
     quantity: input.quantity,
     trackIndividually: input.trackIndividually,
     status: input.status,
+    photoUrl: input.photoUrl ?? "",
   };
 
   currentSnapshot = {
@@ -1712,6 +1716,7 @@ export function createTask(input: TaskInput) {
     artifactId: input.artifactId,
     artifactIds: input.artifactIds,
     targetEventId: input.targetEventId,
+    photoUrl: input.photoUrl ?? "",
     ownerId: input.ownerId,
     assigneeIds: input.assigneeIds,
     mentorId: input.mentorId,
@@ -1751,6 +1756,7 @@ export function createEvent(input: EventInput) {
     description: input.description,
     projectIds: input.projectIds,
     relatedSubsystemIds: input.relatedSubsystemIds,
+    photoUrl: input.photoUrl ?? "",
   };
 
   currentSnapshot = {
@@ -1770,6 +1776,7 @@ export function createQaReport(input: QaReportInput) {
     result: input.result,
     mentorApproved: input.mentorApproved,
     notes: input.notes,
+    photoUrl: input.photoUrl ?? "",
     reviewedAt: input.reviewedAt,
   };
 
@@ -1789,6 +1796,7 @@ export function createTestResult(input: TestResultInput) {
     title: input.title,
     status: input.status,
     findings: input.findings,
+    photoUrl: input.photoUrl ?? "",
   };
 
   currentSnapshot = {
@@ -1812,6 +1820,7 @@ export function updateEvent(eventId: string, input: Partial<EventInput>) {
       updatedEvent = {
         ...event,
         ...input,
+        photoUrl: input.photoUrl === undefined ? event.photoUrl : input.photoUrl,
       };
 
       return updatedEvent;
@@ -1852,6 +1861,7 @@ export function createWorkLog(input: WorkLogInput) {
     hours: input.hours,
     participantIds: input.participantIds,
     notes: input.notes,
+    photoUrl: input.photoUrl ?? "",
   };
 
   currentSnapshot = {

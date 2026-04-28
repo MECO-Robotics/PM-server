@@ -72,6 +72,7 @@ export interface Subsystem {
   projectId: string;
   name: string;
   description: string;
+  photoUrl?: string;
   iteration: number;
   isArchived: boolean;
   isCore: boolean;
@@ -92,16 +93,17 @@ export interface Mechanism {
   subsystemId: string;
   name: string;
   description: string;
+  photoUrl?: string;
   iteration: number;
   isArchived: boolean;
 }
 
 export interface PartDefinition {
   id: string;
-  name: string;
-  partNumber: string;
   seasonId: string;
   activeSeasonIds?: string[];
+  name: string;
+  partNumber: string;
   revision: string;
   iteration: number;
   isArchived: boolean;
@@ -109,6 +111,7 @@ export interface PartDefinition {
   source: string;
   materialId: string | null;
   description: string;
+  photoUrl?: string;
 }
 
 export interface PartInstance {
@@ -120,6 +123,7 @@ export interface PartInstance {
   quantity: number;
   trackIndividually: boolean;
   status: PartInstanceStatus;
+  photoUrl?: string;
 }
 
 export interface Material {
@@ -164,6 +168,7 @@ export interface Task {
   artifactId: string | null;
   artifactIds: string[];
   targetEventId: string | null;
+  photoUrl?: string;
   ownerId: string | null;
   assigneeIds: string[];
   mentorId: string | null;
@@ -188,6 +193,7 @@ export interface WorkLog {
   hours: number;
   participantIds: string[];
   notes: string;
+  photoUrl?: string;
 }
 
 export interface Meeting {
@@ -210,6 +216,7 @@ export interface Event {
   description: string;
   projectIds: string[];
   relatedSubsystemIds: string[];
+  photoUrl?: string;
 }
 
 export interface AttendanceRecord {
@@ -284,6 +291,7 @@ export interface QaReport {
   result: QaResult;
   mentorApproved: boolean;
   notes: string;
+  photoUrl?: string;
   reviewedAt: string;
 }
 
@@ -293,6 +301,7 @@ export interface TestResult {
   title: string;
   status: TestResultStatus;
   findings: string[];
+  photoUrl?: string;
 }
 
 export interface QaFinding {

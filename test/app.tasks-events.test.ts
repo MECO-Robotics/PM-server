@@ -77,6 +77,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         linkedPurchaseIds: [],
         estimatedHours: 0,
         actualHours: 0,
+        photoUrl: "https://cdn.example.test/tasks/mobile-task.png",
       },
     });
 
@@ -88,6 +89,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         assigneeIds: string[];
         startDate: string;
         workstreamId: string | null;
+        photoUrl: string;
       };
     };
     assert.equal(mobileTaskCreatedBody.item.projectId, "project-robot-2026");
@@ -100,6 +102,10 @@ test("task and event endpoints support mobile and multi-target payloads", async 
       typeof mobileTaskCreatedBody.item.workstreamId === "string" ||
         mobileTaskCreatedBody.item.workstreamId === null,
       true,
+    );
+    assert.equal(
+      mobileTaskCreatedBody.item.photoUrl,
+      "https://cdn.example.test/tasks/mobile-task.png",
     );
 
     resetLimits();
@@ -128,6 +134,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         linkedPurchaseIds: [],
         estimatedHours: 2,
         actualHours: 0,
+        photoUrl: "https://cdn.example.test/tasks/multi-target-task.png",
       },
     });
 
@@ -142,6 +149,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         mechanismIds: string[];
         partInstanceId: string | null;
         partInstanceIds: string[];
+        photoUrl: string;
       };
     };
     assert.equal(multiTargetTaskCreatedBody.item.workstreamId, "workstream-drive");
@@ -163,6 +171,10 @@ test("task and event endpoints support mobile and multi-target payloads", async 
     assert.deepEqual(multiTargetTaskCreatedBody.item.partInstanceIds, [
       "pi-swerve-encoder-bracket-front-left",
     ]);
+    assert.equal(
+      multiTargetTaskCreatedBody.item.photoUrl,
+      "https://cdn.example.test/tasks/multi-target-task.png",
+    );
 
     resetLimits();
 
@@ -178,6 +190,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         description: "Milestone shared across robot and operations work.",
         projectIds: ["project-robot-2026", "project-operations-2026"],
         relatedSubsystemIds: ["drive", "operations"],
+        photoUrl: "https://cdn.example.test/forms/event-demo.png",
       },
     });
 
@@ -187,6 +200,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         id: string;
         projectIds: string[];
         relatedSubsystemIds: string[];
+        photoUrl: string;
       };
     };
     assert.deepEqual(createdEventBody.item.projectIds, [
@@ -194,6 +208,10 @@ test("task and event endpoints support mobile and multi-target payloads", async 
       "project-operations-2026",
     ]);
     assert.deepEqual(createdEventBody.item.relatedSubsystemIds, ["drive", "operations"]);
+    assert.equal(
+      createdEventBody.item.photoUrl,
+      "https://cdn.example.test/forms/event-demo.png",
+    );
 
     resetLimits();
 
@@ -203,6 +221,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
       payload: {
         projectIds: ["project-outreach-2026"],
         relatedSubsystemIds: ["outreach"],
+        photoUrl: "https://cdn.example.test/forms/event-demo-v2.png",
       },
     });
 
@@ -211,10 +230,15 @@ test("task and event endpoints support mobile and multi-target payloads", async 
       item: {
         projectIds: string[];
         relatedSubsystemIds: string[];
+        photoUrl: string;
       };
     };
     assert.deepEqual(updatedEventBody.item.projectIds, ["project-outreach-2026"]);
     assert.deepEqual(updatedEventBody.item.relatedSubsystemIds, ["outreach"]);
+    assert.equal(
+      updatedEventBody.item.photoUrl,
+      "https://cdn.example.test/forms/event-demo-v2.png",
+    );
 
     resetLimits();
 
@@ -230,6 +254,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         description: "",
         projectIds: ["missing-project"],
         relatedSubsystemIds: [],
+        photoUrl: "https://cdn.example.test/forms/invalid.png",
       },
     });
 
@@ -249,6 +274,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         description: "",
         projectIds: ["project-outreach-2026"],
         relatedSubsystemIds: ["drive"],
+        photoUrl: "https://cdn.example.test/forms/invalid-subsystem.png",
       },
     });
 

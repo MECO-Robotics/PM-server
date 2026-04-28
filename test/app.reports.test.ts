@@ -15,6 +15,7 @@ test("qa report and event report endpoints support create flows with link valida
         mentorApproved: false,
         notes: "  QA report from web form  ",
         reviewedAt: "2026-04-25",
+        photoUrl: "https://cdn.example.test/forms/qa-report.png",
       },
     });
 
@@ -28,6 +29,7 @@ test("qa report and event report endpoints support create flows with link valida
         result: string;
         reviewedAt: string;
         taskId: string;
+        photoUrl: string;
       };
     };
     assert.equal(qaReportCreatedBody.item.taskId, "swerve-sensor-bundle");
@@ -36,6 +38,10 @@ test("qa report and event report endpoints support create flows with link valida
     assert.equal(qaReportCreatedBody.item.mentorApproved, false);
     assert.equal(qaReportCreatedBody.item.notes, "QA report from web form");
     assert.equal(qaReportCreatedBody.item.reviewedAt, "2026-04-25");
+    assert.equal(
+      qaReportCreatedBody.item.photoUrl,
+      "https://cdn.example.test/forms/qa-report.png",
+    );
 
     resetLimits();
 
@@ -68,6 +74,7 @@ test("qa report and event report endpoints support create flows with link valida
         title: "Event report route test",
         status: "pass",
         findings: ["Drive team aligned", "Drive team aligned", "Checklist complete"],
+        photoUrl: "https://cdn.example.test/forms/event-report.png",
       },
     });
 
@@ -79,11 +86,16 @@ test("qa report and event report endpoints support create flows with link valida
         id: string;
         status: string;
         title: string;
+        photoUrl: string;
       };
     };
     assert.equal(eventReportCreatedBody.item.eventId, "outreach-milestone-may-05");
     assert.equal(eventReportCreatedBody.item.title, "Event report route test");
     assert.equal(eventReportCreatedBody.item.status, "pass");
+    assert.equal(
+      eventReportCreatedBody.item.photoUrl,
+      "https://cdn.example.test/forms/event-report.png",
+    );
     assert.deepEqual(eventReportCreatedBody.item.findings, [
       "Drive team aligned",
       "Checklist complete",
@@ -99,6 +111,7 @@ test("qa report and event report endpoints support create flows with link valida
         title: "Invalid event linkage",
         status: "blocked",
         findings: ["No event match"],
+        photoUrl: "https://cdn.example.test/forms/event-report-invalid.png",
       },
     });
 

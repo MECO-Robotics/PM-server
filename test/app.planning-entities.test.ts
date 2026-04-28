@@ -36,6 +36,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         source: "Onshape",
         materialId: "mat-onyx-filament",
         description: "Created from the app test suite.",
+        photoUrl: "https://cdn.example.test/parts/route-test-part.png",
       },
     });
 
@@ -47,12 +48,17 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         isArchived: boolean;
         iteration: number;
         materialId: string | null;
+        photoUrl: string;
       };
     };
     assert.equal(partDefinitionBody.item.isArchived, false);
     assert.equal(partDefinitionBody.item.iteration, 4);
     assert.equal(partDefinitionBody.item.materialId, "mat-onyx-filament");
     assert.equal(partDefinitionBody.item.description, "Created from the app test suite.");
+    assert.equal(
+      partDefinitionBody.item.photoUrl,
+      "https://cdn.example.test/parts/route-test-part.png",
+    );
 
     resetLimits();
 
@@ -62,12 +68,17 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       payload: {
         iteration: 5,
         isArchived: true,
+        photoUrl: "https://cdn.example.test/parts/route-test-part-v2.png",
       },
     });
 
     assert.equal(partDefinitionIterationUpdateResponse.statusCode, 200);
     assert.equal(partDefinitionIterationUpdateResponse.json().item.iteration, 5);
     assert.equal(partDefinitionIterationUpdateResponse.json().item.isArchived, true);
+    assert.equal(
+      partDefinitionIterationUpdateResponse.json().item.photoUrl,
+      "https://cdn.example.test/parts/route-test-part-v2.png",
+    );
 
     resetLimits();
 
@@ -82,6 +93,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         quantity: 2,
         trackIndividually: true,
         status: "available",
+        photoUrl: "https://cdn.example.test/parts/route-test-instance.png",
       },
     });
 
@@ -91,11 +103,16 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         mechanismId: string | null;
         status: string;
         subsystemId: string;
+        photoUrl: string;
       };
     };
     assert.equal(partInstanceBody.item.mechanismId, "swerve-module");
     assert.equal(partInstanceBody.item.subsystemId, "drive");
     assert.equal(partInstanceBody.item.status, "available");
+    assert.equal(
+      partInstanceBody.item.photoUrl,
+      "https://cdn.example.test/parts/route-test-instance.png",
+    );
 
     resetLimits();
 
@@ -110,6 +127,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         quantity: 1,
         trackIndividually: false,
         status: "planned",
+        photoUrl: "https://cdn.example.test/parts/invalid.png",
       },
     });
 
@@ -133,6 +151,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         responsibleEngineerId: "lucas",
         mentorIds: ["riley"],
         risks: [],
+        photoUrl: "https://cdn.example.test/subsystems/route-test-intake.png",
       },
     });
 
@@ -142,10 +161,15 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         id: string;
         isArchived: boolean;
         iteration: number;
+        photoUrl: string;
       };
     };
     assert.equal(childSubsystemBody.item.isArchived, false);
     assert.equal(childSubsystemBody.item.iteration, 2);
+    assert.equal(
+      childSubsystemBody.item.photoUrl,
+      "https://cdn.example.test/subsystems/route-test-intake.png",
+    );
 
     resetLimits();
 
@@ -155,12 +179,17 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       payload: {
         iteration: 3,
         isArchived: true,
+        photoUrl: "https://cdn.example.test/subsystems/route-test-intake-v2.png",
       },
     });
 
     assert.equal(childSubsystemIterationUpdateResponse.statusCode, 200);
     assert.equal(childSubsystemIterationUpdateResponse.json().item.iteration, 3);
     assert.equal(childSubsystemIterationUpdateResponse.json().item.isArchived, true);
+    assert.equal(
+      childSubsystemIterationUpdateResponse.json().item.photoUrl,
+      "https://cdn.example.test/subsystems/route-test-intake-v2.png",
+    );
 
     resetLimits();
 
@@ -172,6 +201,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         name: "Route Test Roller",
         description: "Temporary mechanism for route iteration coverage.",
         iteration: 2,
+        photoUrl: "https://cdn.example.test/mechanisms/route-test-roller.png",
       },
     });
 
@@ -181,10 +211,15 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         id: string;
         isArchived: boolean;
         iteration: number;
+        photoUrl: string;
       };
     };
     assert.equal(mechanismBody.item.isArchived, false);
     assert.equal(mechanismBody.item.iteration, 2);
+    assert.equal(
+      mechanismBody.item.photoUrl,
+      "https://cdn.example.test/mechanisms/route-test-roller.png",
+    );
 
     resetLimits();
 
@@ -194,12 +229,17 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       payload: {
         iteration: 3,
         isArchived: true,
+        photoUrl: "https://cdn.example.test/mechanisms/route-test-roller-v2.png",
       },
     });
 
     assert.equal(mechanismIterationUpdateResponse.statusCode, 200);
     assert.equal(mechanismIterationUpdateResponse.json().item.iteration, 3);
     assert.equal(mechanismIterationUpdateResponse.json().item.isArchived, true);
+    assert.equal(
+      mechanismIterationUpdateResponse.json().item.photoUrl,
+      "https://cdn.example.test/mechanisms/route-test-roller-v2.png",
+    );
 
     resetLimits();
 

@@ -33,6 +33,7 @@ test("work log endpoints filter by participant and support create update delete 
         hours: 1.5,
         participantIds: ["priya", "lucas"],
         notes: "Route test work log",
+        photoUrl: "https://cdn.example.test/worklogs/route-test-log.png",
       },
     });
 
@@ -45,6 +46,7 @@ test("work log endpoints filter by participant and support create update delete 
         notes: string;
         participantIds: string[];
         taskId: string;
+        photoUrl: string;
       };
     };
     assert.equal(workLogCreatedBody.item.taskId, "swerve-sensor-bundle");
@@ -52,6 +54,10 @@ test("work log endpoints filter by participant and support create update delete 
     assert.equal(workLogCreatedBody.item.hours, 1.5);
     assert.deepEqual(workLogCreatedBody.item.participantIds, ["priya", "lucas"]);
     assert.equal(workLogCreatedBody.item.notes, "Route test work log");
+    assert.equal(
+      workLogCreatedBody.item.photoUrl,
+      "https://cdn.example.test/worklogs/route-test-log.png",
+    );
 
     resetLimits();
 
@@ -83,6 +89,7 @@ test("work log endpoints filter by participant and support create update delete 
         hours: 2,
         participantIds: ["lucas"],
         notes: "Route test work log updated from mobile",
+        photoUrl: "https://cdn.example.test/worklogs/route-test-log-v2.png",
       },
     });
 
@@ -92,11 +99,16 @@ test("work log endpoints filter by participant and support create update delete 
         hours: number;
         notes: string;
         participantIds: string[];
+        photoUrl: string;
       };
     };
     assert.equal(workLogUpdatedBody.item.hours, 2);
     assert.equal(workLogUpdatedBody.item.notes, "Route test work log updated from mobile");
     assert.deepEqual(workLogUpdatedBody.item.participantIds, ["lucas"]);
+    assert.equal(
+      workLogUpdatedBody.item.photoUrl,
+      "https://cdn.example.test/worklogs/route-test-log-v2.png",
+    );
 
     resetLimits();
 
