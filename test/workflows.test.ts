@@ -76,9 +76,12 @@ function makeTask(overrides: Partial<Task> = {}) {
 
 function makeWorkflowSnapshot() {
   const snapshot = structuredClone(initialSnapshot) as PlatformSnapshot;
+  const partDefinitionId = snapshot.partDefinitions[0]?.id ?? "part-def-a";
 
   snapshot.tasks = [
     makeTask({
+      mechanismId: "drive-shaft",
+      mechanismIds: ["drive-shaft"],
       status: "waiting-for-qa",
       priority: "critical",
       requiresDocumentation: true,
@@ -116,6 +119,38 @@ function makeWorkflowSnapshot() {
       estimatedHours: 6,
       actualHours: 1,
     }),
+  ];
+
+  snapshot.mechanisms = [
+    {
+      id: "drive-shaft",
+      subsystemId: "drive",
+      name: "Drive shaft",
+      description: "Transfers torque to the wheels.",
+      iteration: 1,
+      isArchived: false,
+    },
+    {
+      id: "controls-io",
+      subsystemId: "controls",
+      name: "Controls IO",
+      description: "Sensor and telemetry interface.",
+      iteration: 1,
+      isArchived: false,
+    },
+  ];
+
+  snapshot.partInstances = [
+    {
+      id: "part-instance-a",
+      subsystemId: "drive",
+      mechanismId: "drive-shaft",
+      partDefinitionId,
+      name: "Drive shaft assembly",
+      quantity: 1,
+      trackIndividually: true,
+      status: "installed",
+    },
   ];
 
   snapshot.workLogs = [
@@ -320,16 +355,52 @@ test("buildMetrics aggregates progress, stock, and activity totals", () => {
   const snapshot = makeWorkflowSnapshot();
   const metrics = buildMetrics(snapshot);
 
-  assert.deepEqual(metrics, {
-    completionRate: 0.33,
-    averageTrackedHoursPerTask: 2.33,
-    qaPasses: 1,
-    deliveredPurchases: 1,
-    lowStockMaterials: 2,
-    trackedMaterials: 3,
-    waitingForQa: 1,
-    blockerCount: 1,
-    attendanceHours: 5,
+  assert.equal(metrics.completionRate, 0.33);
+  assert.equal(metrics.averageTrackedHoursPerTask, 2.33);
+  assert.equal(metrics.qaPasses, 1);
+  assert.equal(metrics.deliveredPurchases, 1);
+  assert.equal(metrics.lowStockMaterials, 2);
+  assert.equal(metrics.trackedMaterials, 3);
+  assert.equal(metrics.waitingForQa, 1);
+  assert.equal(metrics.blockerCount, 1);
+  assert.equal(metrics.attendanceHours, 5);
+  assert.equal(metrics.subsystemMetrics.length, 9);
+  assert.equal(metrics.mechanismMetrics.length, 2);
+
+  const driveSubsystem = metrics.subsystemMetrics.find((metric) => metric.id === "drive");
+  const driveMechanism = metrics.mechanismMetrics.find((metric) => metric.id === "drive-shaft");
+
+  assert.deepEqual(driveSubsystem, {
+    id: "drive",
+    name: "Drivetrain",
+    projectId: "project-robot-2026",
+    taskCount: 1,
+    activeTaskCount: 1,
+    completeTaskCount: 0,
+    waitingForQaCount: 1,
+    blockerCount: 0,
+    plannedHours: 4,
+    loggedHours: 5,
+    completionRate: 0,
+    qaPassCount: 1,
+    mechanismCount: 1,
+  });
+
+  assert.deepEqual(driveMechanism, {
+    id: "drive-shaft",
+    name: "Drive shaft",
+    subsystemId: "drive",
+    subsystemName: "Drivetrain",
+    taskCount: 1,
+    activeTaskCount: 1,
+    completeTaskCount: 0,
+    waitingForQaCount: 1,
+    blockerCount: 0,
+    plannedHours: 4,
+    loggedHours: 5,
+    completionRate: 0,
+    qaPassCount: 1,
+    partInstanceCount: 1,
   });
 });
 
