@@ -185,6 +185,8 @@ model Requirement {
 
 model PartDefinition {
   id                 String             @id @default(cuid())
+  seasonId           String
+  activeSeasonIds    String[]
   name               String
   partNumber         String             @unique
   revision           String

@@ -169,6 +169,8 @@ export interface PartDefinitionInput {
   partNumber: string;
   revision: string;
   iteration?: number;
+  seasonId?: string;
+  activeSeasonIds?: string[];
   isArchived?: boolean;
   type: string;
   source: string;

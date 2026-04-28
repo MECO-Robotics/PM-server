@@ -169,6 +169,8 @@ export const partDefinitionSchema = z.object({
   iteration: iterationSchema,
   isArchived: z.boolean().default(false),
   type: z.string().trim().min(1),
+  seasonId: z.string().trim().min(1).optional(),
+  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   source: z.string().trim().min(1),
   materialId: z.string().trim().min(1).nullable().optional(),
   description: z.string().trim().default(""),

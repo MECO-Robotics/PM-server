@@ -15,7 +15,8 @@ type IteratedSeed<T extends { iteration: number; isArchived: boolean }> = Omit<
 
 type SeedSubsystem = IteratedSeed<Subsystem>;
 type SeedMechanism = IteratedSeed<Mechanism>;
-type SeedPartDefinition = IteratedSeed<PartDefinition>;
+type SeedPartDefinition = Omit<IteratedSeed<PartDefinition>, "seasonId" | "activeSeasonIds"> &
+  Partial<Pick<PartDefinition, "seasonId" | "activeSeasonIds">>;
 type SeedWorkstream = Omit<Workstream, "isArchived"> & Partial<Pick<Workstream, "isArchived">>;
 
 type SeedTask = Omit<
@@ -67,6 +68,20 @@ function withArchiveState<T extends { isArchived?: boolean }>(
 ): Omit<T, "isArchived"> & { isArchived: boolean } {
   return {
     ...item,
+    isArchived: item.isArchived ?? false,
+  };
+}
+
+function withPartDefinitionSeasonMembership(
+  item: SeedPartDefinition,
+  fallbackSeasonId: string,
+): PartDefinition {
+  const seasonId = item.seasonId ?? fallbackSeasonId;
+  return {
+    ...item,
+    seasonId,
+    activeSeasonIds: item.activeSeasonIds ?? [seasonId],
+    iteration: normalizeIteration(item.iteration),
     isArchived: item.isArchived ?? false,
   };
 }
@@ -2366,6 +2381,8 @@ export const snapshot: PlatformSnapshot = {
   workstreams: snapshotSeed.workstreams.map(withArchiveState),
   subsystems: snapshotSeed.subsystems.map(withIteration).map(withArchiveState),
   mechanisms: snapshotSeed.mechanisms.map(withIteration).map(withArchiveState),
-  partDefinitions: snapshotSeed.partDefinitions.map(withIteration).map(withArchiveState),
+  partDefinitions: snapshotSeed.partDefinitions.map((partDefinition) =>
+    withPartDefinitionSeasonMembership(partDefinition, snapshotSeed.seasons[0]?.id ?? "default-season"),
+  ),
   tasks: snapshotSeed.tasks.map(normalizeTaskTargets),
 };

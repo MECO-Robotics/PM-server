@@ -79,6 +79,19 @@ function normalizeMemberSeasonMembership(
   };
 }
 
+function normalizePartDefinitionSeasonMembership(
+  partDefinition: PartDefinition,
+  fallbackSeasonId: string,
+): PartDefinition {
+  const seasonId = partDefinition.seasonId || fallbackSeasonId;
+  const activeSeasonIds = uniqueIds([...(partDefinition.activeSeasonIds ?? []), seasonId]);
+  return {
+    ...partDefinition,
+    seasonId,
+    activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
+  };
+}
+
 function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot);
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
@@ -86,6 +99,9 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     ...clonedSnapshot,
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
+    ),
+    partDefinitions: clonedSnapshot.partDefinitions.map((partDefinition) =>
+      normalizePartDefinitionSeasonMembership(partDefinition, fallbackSeasonId),
     ),
   };
 }
@@ -1332,11 +1348,16 @@ export function removeSubsystem(subsystemId: string) {
 
 export function createPartDefinition(input: PartDefinitionInput) {
   const partDefinitionIds = new Set(
+  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const seasonId = input.seasonId ?? fallbackSeasonId;
+  const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
     currentSnapshot.partDefinitions.map((partDefinition) => partDefinition.id),
   );
   const partDefinition: PartDefinition = {
     id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
     name: input.name,
+    seasonId,
+    activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     partNumber: input.partNumber,
     revision: input.revision,
     iteration: normalizeIteration(input.iteration),
@@ -1370,9 +1391,16 @@ export function updatePartDefinition(
 
       updatedPartDefinition = {
         ...partDefinition,
+      const seasonId = input.seasonId ?? partDefinition.seasonId;
+      const activeSeasonIds =
+        input.activeSeasonIds === undefined
+          ? uniqueIds([...(partDefinition.activeSeasonIds ?? []), seasonId])
+          : uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
         ...input,
         iteration:
           input.iteration === undefined
+        seasonId,
+        activeSeasonIds,
             ? partDefinition.iteration
             : normalizeIteration(input.iteration),
       };

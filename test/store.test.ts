@@ -15,6 +15,7 @@ import {
   removeMember,
   removePartDefinition,
   resetStore,
+  updatePartDefinition,
   updateManufacturingItem,
   updateMember,
   updatePartInstance,
@@ -207,12 +208,50 @@ test("updateMember can reactivate an existing person for another season", () => 
     seasonId: "default-season",
   });
 
-  const updated = updateMember(member.id, {
+  const updatedMember = updateMember(member.id, {
     activeSeasonIds: [...(member.activeSeasonIds ?? []), season.id],
   });
 
-  assert.ok(updated);
-  assert.deepEqual(updated?.activeSeasonIds?.sort(), ["default-season", season.id].sort());
+  assert.ok(updatedMember);
+  const refreshedMember = getSnapshot().members.find((candidate) => candidate.id === member.id);
+  assert.ok(refreshedMember);
+  assert.deepEqual(refreshedMember?.activeSeasonIds?.sort(), ["default-season", season.id].sort());
+});
+
+test("createPartDefinition defaults active season membership and can be reactivated for another season", () => {
+  const season = createSeason({
+    name: "2027 Offseason",
+    type: "offseason",
+    startDate: "2027-05-01",
+    endDate: "2027-08-31",
+  });
+
+  const created = createPartDefinition({
+    name: "Seasoned Plate",
+    partNumber: "SEA-001",
+    revision: "A",
+    type: "custom",
+    source: "Onshape",
+    materialId: "mat-onyx-filament",
+    description: "Season-scoped part definition.",
+    seasonId: "default-season",
+  });
+
+  assert.deepEqual(created.activeSeasonIds, ["default-season"]);
+
+  const updatedPartDefinition = updatePartDefinition(created.id, {
+    activeSeasonIds: [...(created.activeSeasonIds ?? []), season.id],
+  });
+
+  assert.ok(updatedPartDefinition);
+  const refreshedPartDefinition = getSnapshot().partDefinitions.find(
+    (candidate) => candidate.id === created.id,
+  );
+  assert.ok(refreshedPartDefinition);
+  assert.deepEqual(
+    refreshedPartDefinition?.activeSeasonIds?.sort(),
+    ["default-season", season.id].sort(),
+  );
 });
 
 test("createWorkstream adds a project-scoped workflow", () => {

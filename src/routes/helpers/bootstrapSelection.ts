@@ -89,6 +89,15 @@ function isMemberActiveInSeason(member: Pick<Member, "seasonId" | "activeSeasonI
   return uniqueIds([...(member.activeSeasonIds ?? []), member.seasonId]).includes(seasonId);
 }
 
+function isPartDefinitionActiveInSeason(
+  partDefinition: Pick<PlatformSnapshot["partDefinitions"][number], "seasonId" | "activeSeasonIds">,
+  seasonId: string,
+) {
+  return uniqueIds([...(partDefinition.activeSeasonIds ?? []), partDefinition.seasonId]).includes(
+    seasonId,
+  );
+}
+
 function buildTaskDependencyRecords(tasks: Task[]) {
   return tasks.flatMap<BootstrapTaskDependencyRecord>((task) =>
     uniqueIds(task.dependencyIds).map((upstreamTaskId, dependencyIndex) => ({
@@ -403,6 +412,11 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   const scopedMembers = selectedSeasonId
     ? snapshot.members.filter((member) => isMemberActiveInSeason(member, selectedSeasonId))
     : snapshot.members;
+  const scopedPartDefinitions = selectedSeasonId
+    ? snapshot.partDefinitions.filter((partDefinition) =>
+        isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
+      )
+    : snapshot.partDefinitions;
 
   return {
     seasons: snapshot.seasons,
@@ -414,7 +428,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     mechanisms: scopedMechanisms,
     materials: snapshot.materials,
     artifacts: scopedArtifacts,
-    partDefinitions: snapshot.partDefinitions,
+    partDefinitions: scopedPartDefinitions,
     partInstances: scopedPartInstances,
     events: scopedEvents,
     reports: scopedReports,

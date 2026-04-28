@@ -100,6 +100,8 @@ export interface PartDefinition {
   id: string;
   name: string;
   partNumber: string;
+  seasonId: string;
+  activeSeasonIds?: string[];
   revision: string;
   iteration: number;
   isArchived: boolean;
