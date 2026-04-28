@@ -70,7 +70,7 @@ export const taskPatchSchema = taskSchema.partial();
 export const eventSchema = z.object({
   title: z.string().trim().min(2),
   type: z.enum([
-    "drive-practice",
+    "practice",
     "competition",
     "deadline",
     "internal-review",
@@ -87,7 +87,7 @@ export const eventSchema = z.object({
 export const eventPatchSchema = z.object({
   title: z.string().trim().min(2).optional(),
   type: z
-    .enum(["drive-practice", "competition", "deadline", "internal-review", "demo"])
+    .enum(["practice", "competition", "deadline", "internal-review", "demo"])
     .optional(),
   startDateTime: z.string().trim().min(1).optional(),
   endDateTime: z.string().trim().min(1).nullable().optional(),

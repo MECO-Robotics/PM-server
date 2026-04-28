@@ -858,7 +858,7 @@ const snapshotSeed: Omit<
     {
       id: "drive-practice-apr-25",
       title: "Drive Practice",
-      type: "drive-practice",
+      type: "practice",
       startDateTime: "2026-04-25T18:00:00-04:00",
       endDateTime: "2026-04-25T20:30:00-04:00",
       isExternal: false,
