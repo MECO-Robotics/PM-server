@@ -239,6 +239,12 @@ export const artifactSchema = z.object({
 
 export const artifactPatchSchema = artifactSchema.partial();
 
+export const mediaUploadRequestSchema = z.object({
+  projectId: z.string().trim().min(1),
+  fileName: z.string().trim().min(1).max(200),
+  contentType: z.string().trim().min(1).max(100),
+});
+
 export const manufacturingItemSchema = z.object({
   title: z.string().trim().min(3),
   subsystemId: z.string().min(1),

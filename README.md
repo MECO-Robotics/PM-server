@@ -43,6 +43,7 @@ For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when No
 - `POST /api/auth/email/verify`
 - `GET /api/auth/me`
 - `GET /api/dashboard`
+- `POST /api/media/presign-upload`
 - `GET /api/tasks`
 - `GET /api/meetings`
 - `GET /api/manufacturing`
@@ -95,6 +96,13 @@ AUTH_EMAIL_CODE_TTL_MINUTES=10
 AUTH_EMAIL_CODE_LENGTH=6
 AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS=60
 AUTH_EMAIL_MAX_VERIFY_ATTEMPTS=5
+S3_ACCESS_KEY_ID=your-s3-access-key
+S3_SECRET_ACCESS_KEY=your-s3-secret-key
+S3_ENDPOINT=https://your-s3-endpoint.example
+S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
+S3_REGION=us-east-1
+S3_BUCKET=meco-pm
+S3_PRESIGN_TTL_SECONDS=300
 ```
 
 If you keep separate Google OAuth clients for local and production, you can
@@ -174,6 +182,13 @@ AUTH_EMAIL_CODE_TTL_MINUTES=10
 AUTH_EMAIL_CODE_LENGTH=6
 AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS=60
 AUTH_EMAIL_MAX_VERIFY_ATTEMPTS=5
+S3_ACCESS_KEY_ID=your-s3-access-key
+S3_SECRET_ACCESS_KEY=your-s3-secret-key
+S3_ENDPOINT=https://your-s3-endpoint.example
+S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
+S3_REGION=us-east-1
+S3_BUCKET=meco-pm
+S3_PRESIGN_TTL_SECONDS=300
 ```
 
 ## Google SSO

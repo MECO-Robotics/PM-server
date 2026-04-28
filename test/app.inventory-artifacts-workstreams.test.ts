@@ -23,6 +23,19 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
       escalations: Array<{
         title: string;
       }>;
+      projects: Array<{
+        id: string;
+        seasonId: string;
+      }>;
+      reportFindings: Array<{
+        id: string;
+        reportId: string;
+      }>;
+      reports: Array<{
+        id: string;
+        projectId: string;
+        reportType: string;
+      }>;
       manufacturingItems: Array<{
         batchLabel?: string;
         id: string;
@@ -32,6 +45,15 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
       }>;
       meetings: Array<{
         id: string;
+      }>;
+      taskBlockers: Array<{
+        blockedTaskId: string;
+        id: string;
+      }>;
+      taskDependencies: Array<{
+        downstreamTaskId: string;
+        id: string;
+        upstreamTaskId: string;
       }>;
       qaReviews: Array<{
         id: string;
@@ -57,6 +79,26 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     assert.ok(bootstrapBody.attendanceRecords.some((record) => record.id === "att-1"));
     assert.ok(bootstrapBody.qaReviews.some((review) => review.id === "qa-1"));
     assert.ok(bootstrapBody.escalations.length > 0);
+    assert.ok(
+      bootstrapBody.reports.some((report) => report.id === "qareport-intake-guard"),
+    );
+    assert.ok(
+      bootstrapBody.reportFindings.some(
+        (finding) => finding.id === "qafinding-intake-guard-cut-quality",
+      ),
+    );
+    assert.ok(
+      bootstrapBody.taskDependencies.some(
+        (dependency) =>
+          dependency.upstreamTaskId === "swerve-sensor-bundle" &&
+          dependency.downstreamTaskId === "vision-calibration-sweep",
+      ),
+    );
+    assert.ok(
+      bootstrapBody.taskBlockers.some(
+        (blocker) => blocker.blockedTaskId === "intake-guard" && blocker.id.length > 0,
+      ),
+    );
 
     const seededOperationsArtifact = bootstrapBody.artifacts.find(
       (artifact) => artifact.id === "artifact-sponsor-recap-apr",
@@ -65,6 +107,86 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     assert.equal(seededOperationsArtifact?.projectId, "project-operations-2026");
     assert.equal(seededOperationsArtifact?.kind, "nontechnical");
     assert.ok(bootstrapBody.workLogs.some((workLog) => workLog.id === "log-1"));
+
+    const robotProject = bootstrapBody.projects.find(
+      (project) => project.id === "project-robot-2026",
+    );
+    assert.ok(robotProject);
+
+    resetLimits();
+
+    const scopedBootstrapResponse = await app.inject({
+      method: "GET",
+      url: `/api/bootstrap?seasonId=${encodeURIComponent(robotProject!.seasonId)}&projectId=${encodeURIComponent(robotProject!.id)}`,
+    });
+
+    assert.equal(scopedBootstrapResponse.statusCode, 200);
+    const scopedBootstrapBody = scopedBootstrapResponse.json() as {
+      projects: Array<{
+        id: string;
+        seasonId: string;
+      }>;
+      reports: Array<{
+        id: string;
+        projectId: string;
+      }>;
+      reportFindings: Array<{
+        id: string;
+        reportId: string;
+      }>;
+      taskBlockers: Array<{
+        blockedTaskId: string;
+        id: string;
+      }>;
+      taskDependencies: Array<{
+        downstreamTaskId: string;
+        id: string;
+        upstreamTaskId: string;
+      }>;
+      tasks: Array<{
+        id: string;
+        projectId: string;
+      }>;
+      workstreams: Array<{
+        id: string;
+        projectId: string;
+      }>;
+    };
+
+    assert.ok(
+      scopedBootstrapBody.projects.every(
+        (project) => project.seasonId === robotProject!.seasonId,
+      ),
+    );
+    assert.ok(
+      scopedBootstrapBody.tasks.every((task) => task.projectId === robotProject!.id),
+    );
+    assert.ok(
+      scopedBootstrapBody.workstreams.every(
+        (workstream) => workstream.projectId === robotProject!.id,
+      ),
+    );
+    assert.ok(
+      scopedBootstrapBody.reports.every((report) => report.projectId === robotProject!.id),
+    );
+    assert.ok(
+      scopedBootstrapBody.reportFindings.every((finding) =>
+        scopedBootstrapBody.reports.some((report) => report.id === finding.reportId),
+      ),
+    );
+    assert.ok(
+      scopedBootstrapBody.taskBlockers.every((blocker) =>
+        scopedBootstrapBody.tasks.some((task) => task.id === blocker.blockedTaskId),
+      ),
+    );
+    assert.ok(
+      scopedBootstrapBody.taskDependencies.every((dependency) =>
+        scopedBootstrapBody.tasks.some(
+          (task) =>
+            task.id === dependency.upstreamTaskId || task.id === dependency.downstreamTaskId,
+        ),
+      ),
+    );
 
     resetLimits();
 
@@ -277,6 +399,66 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
         (artifact) => artifact.id === createdArtifactBody.item.id,
       ),
       false,
+    );
+  });
+});
+
+test("media upload endpoint returns a presigned image upload contract", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const presignResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "Robot Reveal Photo.png",
+        contentType: "image/png",
+      },
+    });
+
+    assert.equal(presignResponse.statusCode, 200);
+    const presignBody = presignResponse.json() as {
+      expiresInSeconds: number;
+      headers: {
+        "Content-Type": string;
+      };
+      key: string;
+      method: string;
+      publicUrl: string;
+      uploadUrl: string;
+    };
+
+    assert.equal(presignBody.method, "PUT");
+    assert.equal(presignBody.expiresInSeconds, 300);
+    assert.equal(presignBody.headers["Content-Type"], "image/png");
+    assert.match(
+      presignBody.key,
+      /^projects\/project-media-2026\/images\/\d{4}\/\d{2}\/\d+-[a-f0-9]{12}-robot-reveal-photo\.png$/,
+    );
+    assert.ok(
+      presignBody.publicUrl.startsWith("https://cdn.example.test/meco-pm/projects/project-media-2026/images/"),
+    );
+
+    const uploadUrl = new URL(presignBody.uploadUrl);
+    assert.equal(uploadUrl.origin, "https://s3.example.test");
+    assert.ok(uploadUrl.pathname.startsWith("/meco-pm/projects/project-media-2026/images/"));
+    assert.equal(uploadUrl.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
+
+    resetLimits();
+
+    const invalidTypeResponse = await app.inject({
+      method: "POST",
+      url: "/api/media/presign-upload",
+      payload: {
+        projectId: "project-media-2026",
+        fileName: "not-an-image.pdf",
+        contentType: "application/pdf",
+      },
+    });
+
+    assert.equal(invalidTypeResponse.statusCode, 400);
+    assert.equal(
+      invalidTypeResponse.json().message,
+      "Only image uploads are supported by the media bucket.",
     );
   });
 });

@@ -17,6 +17,13 @@ const APP_ENV_KEYS = [
   "AUTH_RATE_LIMIT_WINDOW_SECONDS",
   "AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS",
   "AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
+  "S3_ENDPOINT",
+  "S3_PUBLIC_BASE_URL",
+  "S3_REGION",
+  "S3_BUCKET",
+  "S3_PRESIGN_TTL_SECONDS",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -53,6 +60,13 @@ function configureEnv() {
   process.env.AUTH_RATE_LIMIT_WINDOW_SECONDS = "60";
   process.env.AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS = "1";
   process.env.AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS = "60";
+  process.env.S3_ACCESS_KEY_ID = "test-access-key";
+  process.env.S3_SECRET_ACCESS_KEY = "test-secret-key";
+  process.env.S3_ENDPOINT = "https://s3.example.test";
+  process.env.S3_PUBLIC_BASE_URL = "https://cdn.example.test";
+  process.env.S3_REGION = "us-test-1";
+  process.env.S3_BUCKET = "meco-pm";
+  process.env.S3_PRESIGN_TTL_SECONDS = "300";
 }
 
 export async function withIntegrationApp(

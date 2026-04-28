@@ -133,6 +133,10 @@ import {
   wouldCreateSubsystemCycle,
 } from "./routeHelpers";
 import {
+  buildBootstrapResponse,
+  readBootstrapSelection,
+} from "./helpers/bootstrapSelection";
+import {
   artifactPatchSchema,
   artifactSchema,
   emailSignInRequestSchema,
@@ -143,6 +147,7 @@ import {
   manufacturingItemSchema,
   materialPatchSchema,
   materialSchema,
+  mediaUploadRequestSchema,
   memberPatchSchema,
   memberSchema,
   mechanismPatchSchema,
@@ -170,6 +175,7 @@ import {
   workstreamPatchSchema,
   workstreamSchema,
 } from "./routeSchemas";
+import { MediaUploadError, presignImageUpload } from "../storage/mediaUploadService";
 
 const allowApiRouteRequest = createRequestLimitGuard({
   scope: "api",
@@ -384,36 +390,9 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const snapshot = getSnapshot();
-    const personId = readPersonFilter(request);
+    const selection = readBootstrapSelection(request.query);
 
-    return {
-      seasons: snapshot.seasons,
-      projects: snapshot.projects,
-      workstreams: snapshot.workstreams,
-      members: snapshot.members,
-      subsystems: snapshot.subsystems,
-      disciplines: snapshot.disciplines,
-      mechanisms: snapshot.mechanisms,
-      materials: snapshot.materials,
-      artifacts: snapshot.artifacts,
-      partDefinitions: snapshot.partDefinitions,
-      partInstances: snapshot.partInstances,
-      events: snapshot.events,
-      qaReports: snapshot.qaReports,
-      testResults: snapshot.testResults,
-      risks: snapshot.risks,
-      meetings: snapshot.meetings,
-      attendanceRecords: snapshot.attendanceRecords,
-      qaReviews: snapshot.qaReviews,
-      escalations: snapshot.escalations,
-      tasks: filterTasksForPerson(personId),
-      workLogs: filterWorkLogsForPerson(personId),
-      purchaseItems: filterPurchaseItemsForPerson(personId),
-      manufacturingItems: withManufacturingQaReviewCounts(
-        filterManufacturingItemsForPerson(personId),
-        snapshot,
-      ),
-    };
+    return buildBootstrapResponse(snapshot, selection);
   });
 
   app.post("/api/tutorial/session/start", async (request, reply) => {
@@ -1310,6 +1289,41 @@ export async function registerRoutes(app: FastifyInstance) {
       items: paginated.items,
       pagination: paginated.pagination,
     };
+  });
+
+  app.post<{ Body: unknown }>("/api/media/presign-upload", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = mediaUploadRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Media upload payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    if (!findProject(parsed.data.projectId)) {
+      return reply.code(400).send({
+        message: "The selected project does not exist.",
+      });
+    }
+
+    try {
+      return await presignImageUpload(parsed.data);
+    } catch (error) {
+      if (error instanceof MediaUploadError) {
+        return reply.code(error.statusCode).send({
+          message: error.message,
+        });
+      }
+
+      request.log.error({ err: error }, "Media upload presign failed");
+      return reply.code(500).send({
+        message: "Media upload failed unexpectedly.",
+      });
+    }
   });
 
   app.post<{ Body: unknown }>("/api/artifacts", async (request, reply) => {

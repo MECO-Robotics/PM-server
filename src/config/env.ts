@@ -45,6 +45,13 @@ const envSchema = z.object({
   AUTH_EMAIL_CODE_LENGTH: z.coerce.number().int().min(4).max(8).default(6),
   AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(60),
   AUTH_EMAIL_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  S3_ENDPOINT: z.string().min(1).optional(),
+  S3_PUBLIC_BASE_URL: z.string().min(1).optional(),
+  S3_REGION: z.string().min(1).optional(),
+  S3_BUCKET: z.string().min(1).optional(),
+  S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
 });
 
 export const env = envSchema.parse(process.env);
@@ -95,6 +102,23 @@ function parseCorsOrigins(value: string) {
   return origins;
 }
 
+function normalizeUrl(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/\/+$/, "");
+  }
+
+  return `https://${trimmed}`.replace(/\/+$/, "");
+}
+
 const googleClientIds = parseGoogleClientIds(env.GOOGLE_CLIENT_ID);
 const resolvedResendApiKey = pickFirstString(env.RESEND_API_KEY);
 const resolvedExplicitEmailSmtpHost = pickFirstString(
@@ -143,6 +167,8 @@ const resolvedEmailFrom = pickFirstString(
   env.EMAIL_FROM,
   env.MAIL_FROM,
 );
+const s3Endpoint = normalizeUrl(env.S3_ENDPOINT);
+const s3PublicBaseUrl = normalizeUrl(env.S3_PUBLIC_BASE_URL) ?? s3Endpoint;
 export const emailSmtpConfig = {
   host: resolvedEmailSmtpHost,
   port: resolvedEmailSmtpPort,
@@ -209,4 +235,21 @@ export const requestLimitConfig = {
     maxRequests: env.AUTH_EMAIL_RATE_LIMIT_MAX_REQUESTS,
     windowMs: env.AUTH_EMAIL_RATE_LIMIT_WINDOW_SECONDS * 1000,
   },
+} as const;
+
+export const mediaUploadConfig = {
+  enabled: Boolean(
+    env.S3_ACCESS_KEY_ID &&
+      env.S3_SECRET_ACCESS_KEY &&
+      env.S3_ENDPOINT &&
+      env.S3_REGION &&
+      env.S3_BUCKET,
+  ),
+  accessKeyId: env.S3_ACCESS_KEY_ID,
+  secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+  endpoint: s3Endpoint,
+  publicBaseUrl: s3PublicBaseUrl,
+  region: env.S3_REGION,
+  bucket: env.S3_BUCKET,
+  presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
 } as const;
