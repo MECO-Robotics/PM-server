@@ -149,7 +149,7 @@ export function formatTaskStatus(status: TaskStatus) {
   }
 
   if (status === "waiting-for-qa") {
-    return "Waiting for QA";
+    return "QA";
   }
 
   return "Complete";

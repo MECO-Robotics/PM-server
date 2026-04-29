@@ -407,6 +407,6 @@ test("buildMetrics aggregates progress, stock, and activity totals", () => {
 test("formatTaskStatus renders the public labels", () => {
   assert.equal(formatTaskStatus("not-started"), "Not Started");
   assert.equal(formatTaskStatus("in-progress"), "In Progress");
-  assert.equal(formatTaskStatus("waiting-for-qa"), "Waiting for QA");
+  assert.equal(formatTaskStatus("waiting-for-qa"), "QA");
   assert.equal(formatTaskStatus("complete"), "Complete");
 });
