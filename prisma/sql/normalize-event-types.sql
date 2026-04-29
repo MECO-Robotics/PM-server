@@ -1,3 +1,3 @@
 UPDATE "Event"
-SET "type" = 'PRACTICE'
-WHERE "type" = 'DRIVE_PRACTICE';
+SET "type" = 'PRACTICE'::"EventType"
+WHERE "type"::text = 'DRIVE_PRACTICE';
