@@ -15,6 +15,7 @@ import {
   getTasks,
   getTestResults,
 } from "../../data/store";
+import { isTaskDisciplineAllowedForProject } from "../../domain/taskDisciplines";
 import { uniqueIds } from "./taskTargets";
 
 function memberIsActiveInSeason(
@@ -178,8 +179,15 @@ export function validateTaskLinks(input: {
     }
   }
 
-  if (input.disciplineId && !findDiscipline(input.disciplineId)) {
-    return "The selected discipline does not exist.";
+  if (input.disciplineId) {
+    const discipline = findDiscipline(input.disciplineId);
+    if (!discipline) {
+      return "The selected discipline does not exist.";
+    }
+
+    if (!isTaskDisciplineAllowedForProject(project, discipline.id)) {
+      return "The selected discipline does not belong to the selected project.";
+    }
   }
 
   const mechanismIds = uniqueIds([

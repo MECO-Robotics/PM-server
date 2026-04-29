@@ -60,7 +60,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         title: "Mobile task payload",
         summary: "Created from the mobile app's compact task draft.",
         subsystemId: mobileSubsystemCreatedBody.item.id,
-        disciplineId: "mechanical",
+        disciplineId: "design",
         requirementId: null,
         mechanismId: null,
         partInstanceId: null,
@@ -110,6 +110,41 @@ test("task and event endpoints support mobile and multi-target payloads", async 
 
     resetLimits();
 
+    const invalidOperationsTaskResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        projectId: "project-operations-2026",
+        workstreamId: "workstream-operations-logistics",
+        title: "Invalid operations discipline",
+        summary: "Attempts to use a robot-only discipline on a business task.",
+        subsystemId: "pit-readiness",
+        disciplineId: "design",
+        mechanismId: "pit-board",
+        partInstanceId: "pi-pit-board-frame",
+        targetEventId: "pit-freeze-apr-28",
+        ownerId: "sofia",
+        mentorId: "marco",
+        dueDate: "2026-05-01",
+        priority: "medium",
+        status: "not-started",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 2,
+        actualHours: 0,
+      },
+    });
+
+    assert.equal(invalidOperationsTaskResponse.statusCode, 400);
+    assert.match(
+      invalidOperationsTaskResponse.body,
+      /selected discipline does not belong to the selected project/i,
+    );
+
+    resetLimits();
+
     const multiTargetTaskCreateResponse = await app.inject({
       method: "POST",
       url: "/api/tasks",
@@ -119,7 +154,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         title: "Multi-target task payload",
         summary: "Created with multiple linked workstreams, subsystems, mechanisms, and parts.",
         subsystemIds: ["drive", "controls"],
-        disciplineId: "mechanical",
+        disciplineId: "design",
         mechanismIds: ["swerve-module", "auto-safety"],
         partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
         targetEventId: null,
