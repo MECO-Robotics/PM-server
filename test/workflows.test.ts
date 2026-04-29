@@ -29,7 +29,7 @@ function makeTask(overrides: Partial<Task> = {}) {
     summary: "Validate encoder calibration before practice.",
     subsystemId: "drive",
     subsystemIds: ["drive"],
-    disciplineId: "mechanical",
+    disciplineId: "design",
     mechanismId: null,
     mechanismIds: [],
     partInstanceId: null,
@@ -93,7 +93,7 @@ function makeWorkflowSnapshot() {
       id: "task-b",
       title: "Controls firmware",
       subsystemId: "controls",
-      disciplineId: "software",
+      disciplineId: "programming",
       ownerId: "ethan",
       mentorId: "riley",
       status: "complete",
@@ -107,7 +107,7 @@ function makeWorkflowSnapshot() {
       id: "task-c",
       title: "Controls integration",
       subsystemId: "controls",
-      disciplineId: "integration",
+      disciplineId: "testing",
       ownerId: "ethan",
       mentorId: "riley",
       status: "in-progress",
@@ -407,6 +407,6 @@ test("buildMetrics aggregates progress, stock, and activity totals", () => {
 test("formatTaskStatus renders the public labels", () => {
   assert.equal(formatTaskStatus("not-started"), "Not Started");
   assert.equal(formatTaskStatus("in-progress"), "In Progress");
-  assert.equal(formatTaskStatus("waiting-for-qa"), "Waiting for QA");
+  assert.equal(formatTaskStatus("waiting-for-qa"), "QA");
   assert.equal(formatTaskStatus("complete"), "Complete");
 });

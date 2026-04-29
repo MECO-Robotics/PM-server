@@ -2,10 +2,17 @@ import type {
   Mechanism,
   PartDefinition,
   PlatformSnapshot,
+  Project,
   Subsystem,
   Task,
   Workstream,
 } from "../domain/types";
+import {
+  TASK_DISCIPLINE_DEFINITIONS,
+  getDefaultTaskDisciplineIdForProject,
+  getTaskDisciplineBucketForProject,
+  isTaskDisciplineAllowedForProject,
+} from "../domain/taskDisciplines";
 
 type IteratedSeed<T extends { iteration: number; isArchived: boolean }> = Omit<
   T,
@@ -96,6 +103,76 @@ function normalizeTaskTargets(task: SeedTask): Task {
     artifactId: task.artifactId ?? null,
     artifactIds: task.artifactIds ?? uniqueIds([task.artifactId]),
     assigneeIds: task.assigneeIds ?? uniqueIds([task.ownerId]),
+  };
+}
+
+function normalizeTaskDiscipline(
+  task: Task,
+  projectsById: Map<string, Project>,
+): Task {
+  const project = projectsById.get(task.projectId);
+  if (isTaskDisciplineAllowedForProject(project, task.disciplineId)) {
+    return task;
+  }
+
+  const bucket = getTaskDisciplineBucketForProject(project);
+  const legacyDisciplineId =
+    bucket === "robot"
+      ? ({
+          mechanical: "design",
+          electrical: "electrical",
+          software: "programming",
+          integration: "testing",
+          "qa-test": "testing",
+        } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
+      : bucket === "operations"
+        ? ({
+            mechanical: "communications",
+            electrical: "documentation",
+            software: "research",
+            integration: "planning",
+            "qa-test": "documentation",
+          } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
+        : bucket === "outreach"
+          ? ({
+              mechanical: "presentation",
+              electrical: "documentation",
+              software: "media_production",
+              integration: "engagement",
+              "qa-test": "documentation",
+            } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
+          : bucket === "strategy"
+            ? ({
+                mechanical: "planning",
+                electrical: "documentation",
+                software: "data_analysis",
+                integration: "risk_review",
+                "qa-test": "game_analysis",
+              } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
+            : bucket === "training"
+              ? ({
+                  mechanical: "practice",
+                  electrical: "documentation",
+                  software: "instruction",
+                  integration: "assessment",
+                  "qa-test": "curriculum",
+                } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
+              : bucket === "media"
+                ? ({
+                    mechanical: "graphics",
+                    electrical: "web",
+                    software: "video",
+                    integration: "writing",
+                    "qa-test": "photography",
+                  } as const)[task.disciplineId as "mechanical" | "electrical" | "software" | "integration" | "qa-test"]
+      : undefined;
+
+  return {
+    ...task,
+    disciplineId:
+      legacyDisciplineId && isTaskDisciplineAllowedForProject(project, legacyDisciplineId)
+        ? legacyDisciplineId
+        : getDefaultTaskDisciplineIdForProject(project),
   };
 }
 
@@ -347,13 +424,7 @@ const snapshotSeed: Omit<
       risks: ["Data latency", "Inconsistent rubric scoring"],
     },
   ],
-  disciplines: [
-    { id: "mechanical", code: "mechanical", name: "Mechanical" },
-    { id: "electrical", code: "electrical", name: "Electrical" },
-    { id: "software", code: "software", name: "Software" },
-    { id: "integration", code: "integration", name: "Integration" },
-    { id: "qa-test", code: "qa-test", name: "QA / Test" },
-  ],
+  disciplines: TASK_DISCIPLINE_DEFINITIONS,
   mechanisms: [
     {
       id: "left-front-module",
@@ -2384,5 +2455,10 @@ export const snapshot: PlatformSnapshot = {
   partDefinitions: snapshotSeed.partDefinitions.map((partDefinition) =>
     withPartDefinitionSeasonMembership(partDefinition, snapshotSeed.seasons[0]?.id ?? "default-season"),
   ),
-  tasks: snapshotSeed.tasks.map(normalizeTaskTargets),
+  tasks: snapshotSeed.tasks.map(normalizeTaskTargets).map((task) =>
+    normalizeTaskDiscipline(
+      task,
+      new Map(snapshotSeed.projects.map((project) => [project.id, project])),
+    ),
+  ),
 };

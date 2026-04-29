@@ -36,3 +36,4 @@ ${SUDO} mkdir -p /opt/pm-server
 ${SUDO} chown -R "$USER:$USER" /opt/pm-server
 
 echo "Docker installed. Log out and back in before running docker commands without sudo."
+

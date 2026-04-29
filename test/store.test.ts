@@ -290,7 +290,7 @@ test("createMechanism auto-generates a wiring task for the new mechanism", () =>
   assert.equal(wiringTask?.disciplineId, "electrical");
 });
 
-test("createSubsystem auto-generates an integration task for its parent subsystem", () => {
+test("createSubsystem auto-generates a testing task for its parent subsystem", () => {
   const subsystem = createSubsystem({
     projectId: "default-season-robot",
     name: "Test Subsystem",
@@ -310,7 +310,7 @@ test("createSubsystem auto-generates an integration task for its parent subsyste
   assert.equal(subsystem.parentSubsystemId, "drive");
   assert.ok(integrationTask);
   assert.equal(integrationTask?.subsystemId, "drive");
-  assert.equal(integrationTask?.disciplineId, "integration");
+  assert.equal(integrationTask?.disciplineId, "testing");
   assert.equal(integrationTask?.mechanismId, null);
   assert.equal(integrationTask?.ownerId, "ava");
   assert.equal(integrationTask?.mentorId, "jordan");

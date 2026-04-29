@@ -13,6 +13,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "verify": "npm run typecheck && npm run test && npm run build",
     "prisma:generate": "prisma generate",
+    "prisma:normalize-event-types": "prisma db execute --schema prisma/schema.prisma --file prisma/sql/normalize-event-types.sql",
     "prisma:deploy": "prisma db push --skip-generate"
   },
   "keywords": [

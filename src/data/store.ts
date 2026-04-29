@@ -24,6 +24,10 @@ import type {
   Workstream,
   WorkLog,
 } from "../domain/types";
+import {
+  getDefaultTaskDisciplineIdForProject,
+  isTaskDisciplineAllowedForProject,
+} from "../domain/taskDisciplines";
 import type {
   ArtifactInput,
   EventInput,
@@ -509,6 +513,13 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
   return task;
 }
 
+function normalizeDisciplineIdForProject(projectId: string, disciplineId: string) {
+  const project = currentSnapshot.projects.find((candidate) => candidate.id === projectId);
+  return isTaskDisciplineAllowedForProject(project, disciplineId)
+    ? disciplineId
+    : getDefaultTaskDisciplineIdForProject(project);
+}
+
 function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
   if (!subsystem.parentSubsystemId) {
     return null;
@@ -536,7 +547,7 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     summary: `Complete integration and interface verification for ${subsystem.name}.`,
     subsystemId: parentSubsystem.id,
     subsystemIds: [parentSubsystem.id],
-    disciplineId: "integration",
+    disciplineId: "testing",
     mechanismId: null,
     mechanismIds: [],
     partInstanceId: null,
@@ -1725,7 +1736,7 @@ export function createTask(input: TaskInput) {
     summary: input.summary,
     subsystemId: input.subsystemId,
     subsystemIds: input.subsystemIds,
-    disciplineId: input.disciplineId,
+    disciplineId: normalizeDisciplineIdForProject(input.projectId, input.disciplineId),
     mechanismId: input.mechanismId,
     mechanismIds: input.mechanismIds,
     partInstanceId: input.partInstanceId,
@@ -1959,6 +1970,14 @@ export function updateTask(taskId: string, input: Partial<TaskInput>) {
       updatedTask = normalizeTaskTargets({
         ...task,
         ...input,
+        ...(input.disciplineId !== undefined
+          ? {
+              disciplineId: normalizeDisciplineIdForProject(
+                input.projectId ?? task.projectId,
+                input.disciplineId,
+              ),
+            }
+          : {}),
         ...scalarTargetUpdates,
       });
 
