@@ -37,7 +37,6 @@ enum DisciplineCode {
 
 enum EventType {
   PRACTICE
-  DRIVE_PRACTICE
   COMPETITION
   DEADLINE
   INTERNAL_REVIEW
