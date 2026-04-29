@@ -54,7 +54,6 @@ const envSchema = z.object({
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
   SLACK_BOT_TOKEN: z.string().min(1).optional(),
   SLACK_ALERT_USERGROUP_HANDLES: z.string().min(1).default("allmentors,allstudents"),
-  SLACK_CHANNEL_ANNOUNCEMENTS_ID: z.string().min(1).optional(),
   SLACK_CHANNEL_BUILD_ID: z.string().min(1).optional(),
   SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID: z.string().min(1).optional(),
   SLACK_CHANNEL_PROGRAMMING_ID: z.string().min(1).optional(),
@@ -278,7 +277,6 @@ export const slackConfig = {
   botToken: env.SLACK_BOT_TOKEN,
   alertUsergroupHandles: parseCsv(env.SLACK_ALERT_USERGROUP_HANDLES),
   channels: {
-    announcements: env.SLACK_CHANNEL_ANNOUNCEMENTS_ID,
     build: env.SLACK_CHANNEL_BUILD_ID,
     meetingPlansRecaps: env.SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID,
     programming: env.SLACK_CHANNEL_PROGRAMMING_ID,

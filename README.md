@@ -106,7 +106,6 @@ S3_BUCKET=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
-SLACK_CHANNEL_ANNOUNCEMENTS_ID=CS6SKSDD4
 SLACK_CHANNEL_BUILD_ID=C03171JMMB4
 SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID=C03MXBFGAM6
 SLACK_CHANNEL_PROGRAMMING_ID=C02BLURKRED
@@ -200,7 +199,6 @@ S3_BUCKET=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
-SLACK_CHANNEL_ANNOUNCEMENTS_ID=CS6SKSDD4
 SLACK_CHANNEL_BUILD_ID=C03171JMMB4
 SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID=C03MXBFGAM6
 SLACK_CHANNEL_PROGRAMMING_ID=C02BLURKRED
@@ -264,4 +262,3 @@ On every push to `main`, GitHub Actions will:
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
-

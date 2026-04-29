@@ -88,12 +88,13 @@ test("buildApp serves health and public auth config without auth enabled", async
     };
 
     assert.equal(homeBody.slackEnabled, false);
+    assert.equal(homeBody.slackConnected, false);
+    assert.equal(homeBody.slackError, null);
     assert.equal(homeBody.userEmail, null);
     assert.deepEqual(homeBody.alertUsergroupHandles, ["allmentors", "allstudents"]);
     assert.deepEqual(
       homeBody.channels.map((channel) => [channel.name, channel.slackChannelId]),
       [
-        ["announcements", "CS6SKSDD4"],
         ["build", "C03171JMMB4"],
         ["meeting-plans-n-recaps", "C03MXBFGAM6"],
         ["programming", "C02BLURKRED"],

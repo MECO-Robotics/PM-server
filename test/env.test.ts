@@ -132,7 +132,6 @@ test("slack config maps channel ids and alert usergroup handles", async () => {
     "CORS_ORIGIN",
     "SLACK_BOT_TOKEN",
     "SLACK_ALERT_USERGROUP_HANDLES",
-    "SLACK_CHANNEL_ANNOUNCEMENTS_ID",
     "SLACK_CHANNEL_BUILD_ID",
     "SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID",
     "SLACK_CHANNEL_PROGRAMMING_ID",
@@ -147,7 +146,6 @@ test("slack config maps channel ids and alert usergroup handles", async () => {
     process.env.CORS_ORIGIN = "http://localhost:5173";
     process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
     process.env.SLACK_ALERT_USERGROUP_HANDLES = " allmentors, allstudents ";
-    process.env.SLACK_CHANNEL_ANNOUNCEMENTS_ID = "CS6SKSDD4";
     process.env.SLACK_CHANNEL_BUILD_ID = "C03171JMMB4";
     process.env.SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID = "C03MXBFGAM6";
     process.env.SLACK_CHANNEL_PROGRAMMING_ID = "C02BLURKRED";
@@ -162,7 +160,6 @@ test("slack config maps channel ids and alert usergroup handles", async () => {
       "allstudents",
     ]);
     assert.deepEqual(config.slackConfig.channels, {
-      announcements: "CS6SKSDD4",
       build: "C03171JMMB4",
       meetingPlansRecaps: "C03MXBFGAM6",
       programming: "C02BLURKRED",

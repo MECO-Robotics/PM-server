@@ -415,7 +415,6 @@ export interface Escalation {
 }
 
 export type SlackChannelKey =
-  | "announcements"
   | "build"
   | "meetingPlansRecaps"
   | "programming"
@@ -471,6 +470,8 @@ export interface SlackHomeSummary {
 
 export interface SlackHomeResponse {
   slackEnabled: boolean;
+  slackConnected: boolean;
+  slackError: string | null;
   userEmail: string | null;
   alertUsergroupHandles: string[];
   channels: SlackHomeChannel[];
