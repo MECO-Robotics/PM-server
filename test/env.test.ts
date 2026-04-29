@@ -124,3 +124,52 @@ test("explicit SMTP settings override Resend fallback", async () => {
     restoreEnv(saved);
   }
 });
+
+test("slack config maps channel ids and alert usergroup handles", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "SLACK_BOT_TOKEN",
+    "SLACK_ALERT_USERGROUP_HANDLES",
+    "SLACK_CHANNEL_ANNOUNCEMENTS_ID",
+    "SLACK_CHANNEL_BUILD_ID",
+    "SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID",
+    "SLACK_CHANNEL_PROGRAMMING_ID",
+    "SLACK_CHANNEL_SCOUTING_STRATEGY_ID",
+    "SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_ALERT_USERGROUP_HANDLES = " allmentors, allstudents ";
+    process.env.SLACK_CHANNEL_ANNOUNCEMENTS_ID = "CS6SKSDD4";
+    process.env.SLACK_CHANNEL_BUILD_ID = "C03171JMMB4";
+    process.env.SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID = "C03MXBFGAM6";
+    process.env.SLACK_CHANNEL_PROGRAMMING_ID = "C02BLURKRED";
+    process.env.SLACK_CHANNEL_SCOUTING_STRATEGY_ID = "C05SW57962E";
+    process.env.SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID = "C088N9VC6H4";
+
+    const config = await loadEnvModule(`slack-config-${Date.now()}`);
+
+    assert.equal(config.slackConfig.enabled, true);
+    assert.deepEqual(config.slackConfig.alertUsergroupHandles, [
+      "allmentors",
+      "allstudents",
+    ]);
+    assert.deepEqual(config.slackConfig.channels, {
+      announcements: "CS6SKSDD4",
+      build: "C03171JMMB4",
+      meetingPlansRecaps: "C03MXBFGAM6",
+      programming: "C02BLURKRED",
+      scoutingStrategy: "C05SW57962E",
+      transportationAttendance: "C088N9VC6H4",
+    });
+  } finally {
+    restoreEnv(saved);
+  }
+});

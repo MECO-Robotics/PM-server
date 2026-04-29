@@ -62,5 +62,48 @@ test("buildApp serves health and public auth config without auth enabled", async
     });
 
     assert.equal(dashboardRateLimitedResponse.statusCode, 429);
+
+    resetLimits();
+
+    const homeResponse = await app.inject({
+      method: "GET",
+      url: "/api/home",
+    });
+
+    assert.equal(homeResponse.statusCode, 200);
+
+    const homeBody = homeResponse.json() as {
+      slackEnabled: boolean;
+      userEmail: string | null;
+      alertUsergroupHandles: string[];
+      channels: Array<{
+        key: string;
+        name: string;
+        slackChannelId: string | null;
+        visible: boolean;
+      }>;
+      unreadAlerts: unknown[];
+      meetingRecap: unknown | null;
+      summaries: unknown[];
+    };
+
+    assert.equal(homeBody.slackEnabled, false);
+    assert.equal(homeBody.userEmail, null);
+    assert.deepEqual(homeBody.alertUsergroupHandles, ["allmentors", "allstudents"]);
+    assert.deepEqual(
+      homeBody.channels.map((channel) => [channel.name, channel.slackChannelId]),
+      [
+        ["announcements", "CS6SKSDD4"],
+        ["build", "C03171JMMB4"],
+        ["meeting-plans-n-recaps", "C03MXBFGAM6"],
+        ["programming", "C02BLURKRED"],
+        ["scouting-n-strategy", "C05SW57962E"],
+        ["transportation-attendance", "C088N9VC6H4"],
+      ],
+    );
+    assert.equal(homeBody.channels.every((channel) => channel.visible), true);
+    assert.deepEqual(homeBody.unreadAlerts, []);
+    assert.equal(homeBody.meetingRecap, null);
+    assert.deepEqual(homeBody.summaries, []);
   });
 });

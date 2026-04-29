@@ -52,6 +52,14 @@ const envSchema = z.object({
   S3_REGION: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(1).optional(),
   S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
+  SLACK_BOT_TOKEN: z.string().min(1).optional(),
+  SLACK_ALERT_USERGROUP_HANDLES: z.string().min(1).default("allmentors,allstudents"),
+  SLACK_CHANNEL_ANNOUNCEMENTS_ID: z.string().min(1).optional(),
+  SLACK_CHANNEL_BUILD_ID: z.string().min(1).optional(),
+  SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID: z.string().min(1).optional(),
+  SLACK_CHANNEL_PROGRAMMING_ID: z.string().min(1).optional(),
+  SLACK_CHANNEL_SCOUTING_STRATEGY_ID: z.string().min(1).optional(),
+  SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID: z.string().min(1).optional(),
 });
 
 export const env = envSchema.parse(process.env);
@@ -83,6 +91,17 @@ function parseGoogleClientIds(value: string | undefined) {
     .split(",")
     .map((clientId) => clientId.trim())
     .filter((clientId) => clientId.length > 0);
+}
+
+function parseCsv(value: string | undefined) {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
 function parseCorsOrigins(value: string) {
@@ -252,4 +271,18 @@ export const mediaUploadConfig = {
   region: env.S3_REGION,
   bucket: env.S3_BUCKET,
   presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
+} as const;
+
+export const slackConfig = {
+  enabled: Boolean(env.SLACK_BOT_TOKEN),
+  botToken: env.SLACK_BOT_TOKEN,
+  alertUsergroupHandles: parseCsv(env.SLACK_ALERT_USERGROUP_HANDLES),
+  channels: {
+    announcements: env.SLACK_CHANNEL_ANNOUNCEMENTS_ID,
+    build: env.SLACK_CHANNEL_BUILD_ID,
+    meetingPlansRecaps: env.SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID,
+    programming: env.SLACK_CHANNEL_PROGRAMMING_ID,
+    scoutingStrategy: env.SLACK_CHANNEL_SCOUTING_STRATEGY_ID,
+    transportationAttendance: env.SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID,
+  },
 } as const;

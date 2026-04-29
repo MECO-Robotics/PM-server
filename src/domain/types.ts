@@ -390,6 +390,71 @@ export interface Escalation {
   severity: "high" | "medium";
 }
 
+export type SlackChannelKey =
+  | "announcements"
+  | "build"
+  | "meetingPlansRecaps"
+  | "programming"
+  | "scoutingStrategy"
+  | "transportationAttendance";
+
+export interface SlackHomeChannel {
+  key: SlackChannelKey;
+  name: string;
+  slackChannelId: string | null;
+  visible: boolean;
+}
+
+export interface SlackHomeAlert {
+  id: string;
+  channelKey: SlackChannelKey;
+  channelName: string;
+  slackMessageTs: string;
+  authorName: string;
+  text: string;
+  mentionedHandles: string[];
+  postedAt: string;
+  read: boolean;
+}
+
+export interface SlackHomeTodo {
+  id: string;
+  text: string;
+  assigneeLabel: string | null;
+  complete: boolean;
+}
+
+export interface SlackHomeMeetingRecap {
+  id: string;
+  channelKey: SlackChannelKey;
+  channelName: string;
+  slackMessageTs: string;
+  authorName: string;
+  text: string;
+  postedAt: string;
+  todos: SlackHomeTodo[];
+}
+
+export interface SlackHomeSummary {
+  id: string;
+  channelKey: SlackChannelKey;
+  channelName: string;
+  title: string;
+  summary: string;
+  messageCount: number;
+  updatedAt: string;
+}
+
+export interface SlackHomeResponse {
+  slackEnabled: boolean;
+  userEmail: string | null;
+  alertUsergroupHandles: string[];
+  channels: SlackHomeChannel[];
+  unreadAlerts: SlackHomeAlert[];
+  meetingRecap: SlackHomeMeetingRecap | null;
+  summaries: SlackHomeSummary[];
+}
+
 export interface PlatformSnapshot {
   seasons: Season[];
   projects: Project[];

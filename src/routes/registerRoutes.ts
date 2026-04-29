@@ -4,6 +4,7 @@ import { createRequestLimitGuard } from "../security/requestLimits";
 import {
   AuthError,
   buildDevelopmentSessionUser,
+  getSessionFromRequest,
   getPublicAuthConfig,
   isAuthEnabled,
   requireSession,
@@ -180,6 +181,7 @@ import {
   presignImageUpload,
   presignVideoUpload,
 } from "../storage/mediaUploadService";
+import { buildSlackHomeResponse } from "../slack/homeService";
 
 const allowApiRouteRequest = createRequestLimitGuard({
   scope: "api",
@@ -386,6 +388,19 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return buildDashboard(getSnapshot());
+  });
+
+  app.get("/api/home", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
+
+    return buildSlackHomeResponse({
+      members: getMembers(),
+      userEmail: session?.email ?? null,
+    });
   });
 
   app.get("/api/bootstrap", async (request, reply) => {

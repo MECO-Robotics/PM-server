@@ -43,6 +43,7 @@ For an MVP, `1 vCPU / 2 GB RAM` is the minimum I’d be comfortable with when No
 - `POST /api/auth/email/verify`
 - `GET /api/auth/me`
 - `GET /api/dashboard`
+- `GET /api/home`
 - `POST /api/media/presign-upload`
 - `GET /api/tasks`
 - `GET /api/meetings`
@@ -103,6 +104,14 @@ S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
 S3_BUCKET=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
+SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
+SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
+SLACK_CHANNEL_ANNOUNCEMENTS_ID=CS6SKSDD4
+SLACK_CHANNEL_BUILD_ID=C03171JMMB4
+SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID=C03MXBFGAM6
+SLACK_CHANNEL_PROGRAMMING_ID=C02BLURKRED
+SLACK_CHANNEL_SCOUTING_STRATEGY_ID=C05SW57962E
+SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID=C088N9VC6H4
 ```
 
 If you keep separate Google OAuth clients for local and production, you can
@@ -189,6 +198,14 @@ S3_PUBLIC_BASE_URL=https://your-public-cdn-or-bucket-host.example
 S3_REGION=us-east-1
 S3_BUCKET=meco-pm
 S3_PRESIGN_TTL_SECONDS=300
+SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
+SLACK_ALERT_USERGROUP_HANDLES=allmentors,allstudents
+SLACK_CHANNEL_ANNOUNCEMENTS_ID=CS6SKSDD4
+SLACK_CHANNEL_BUILD_ID=C03171JMMB4
+SLACK_CHANNEL_MEETING_PLANS_RECAPS_ID=C03MXBFGAM6
+SLACK_CHANNEL_PROGRAMMING_ID=C02BLURKRED
+SLACK_CHANNEL_SCOUTING_STRATEGY_ID=C05SW57962E
+SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID=C088N9VC6H4
 ```
 
 ## Google SSO
@@ -247,5 +264,4 @@ On every push to `main`, GitHub Actions will:
 The server refuses to start in production unless authentication is configured and `CORS_ORIGIN` is an explicit allowlist.
 
 The app container runs `prisma db push` on startup so the schema is applied before the server begins serving traffic.
-
 
