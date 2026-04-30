@@ -192,6 +192,13 @@ function summarizeChannel(channel: SlackHomeChannel, messages: SlackMessage[]) {
     .slice(0, 4)
     .map((message) => messagePreview(message))
     .filter((preview) => preview.length > 0);
+  const sourceMessages = channelMessages.slice(0, 10).map((message) => ({
+    id: `${message.channelId}:${message.ts}`,
+    authorName: message.authorName,
+    text: messagePreview(message),
+    postedAt: message.postedAt,
+    replyCount: message.replies.length,
+  }));
 
   const summaryParts = previewMessages.length > 0
     ? previewMessages
@@ -205,6 +212,7 @@ function summarizeChannel(channel: SlackHomeChannel, messages: SlackMessage[]) {
     summary: summaryParts.join(" "),
     messageCount: channelMessages.length + threadReplyCount,
     updatedAt: channelMessages[0]?.postedAt ?? new Date(0).toISOString(),
+    sourceMessages,
   } satisfies SlackHomeSummary;
 }
 

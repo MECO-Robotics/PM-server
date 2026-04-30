@@ -109,6 +109,8 @@ test("slack home response maps live messages into alerts, recap, and summaries",
     assert.equal(response.meetingRecap?.todos[0]?.assigneeLabel, "Programming");
     assert.equal(response.summaries.length, 1);
     assert.equal(response.summaries[0]?.messageCount, 2);
+    assert.equal(response.summaries[0]?.sourceMessages.length, 1);
+    assert.equal(response.summaries[0]?.sourceMessages[0]?.replyCount, 1);
   } finally {
     if (previousDatabaseUrl === undefined) {
       delete process.env.DATABASE_URL;
