@@ -2801,65 +2801,60 @@ export function removeWorkLog(workLogId: string) {
 }
 
 export function updateTask(taskId: string, input: Partial<TaskInput>): Task | null {
-  let updatedTask: Task | null = null;
+  const currentTask = currentSnapshot.tasks.find((task) => task.id === taskId);
+  if (!currentTask) {
+    return null;
+  }
+
+  const scalarTargetUpdates: Partial<TaskInput> = {};
+  if (input.workstreamId !== undefined && input.workstreamIds === undefined) {
+    scalarTargetUpdates.workstreamIds = uniqueIds([input.workstreamId]);
+  }
+  if (input.subsystemId !== undefined && input.subsystemIds === undefined) {
+    scalarTargetUpdates.subsystemIds = uniqueIds([input.subsystemId]);
+  }
+  if (input.mechanismId !== undefined && input.mechanismIds === undefined) {
+    scalarTargetUpdates.mechanismIds = uniqueIds([input.mechanismId]);
+  }
+  if (input.partInstanceId !== undefined && input.partInstanceIds === undefined) {
+    scalarTargetUpdates.partInstanceIds = uniqueIds([input.partInstanceId]);
+  }
+  if (input.artifactId !== undefined && input.artifactIds === undefined) {
+    scalarTargetUpdates.artifactIds = uniqueIds([input.artifactId]);
+  }
+
+  let updatedTask = normalizeTaskTargets({
+    ...currentTask,
+    ...input,
+    ...(input.disciplineId !== undefined
+      ? {
+          disciplineId: normalizeDisciplineIdForProject(
+            input.projectId ?? currentTask.projectId,
+            input.disciplineId,
+          ),
+        }
+      : {}),
+    ...scalarTargetUpdates,
+  });
+
+  if (updatedTask.subsystemId !== currentTask.subsystemId) {
+    updatedTask = {
+      ...updatedTask,
+      serialNumber: undefined,
+      serial: undefined,
+    };
+  }
 
   currentSnapshot = {
     ...currentSnapshot,
-    tasks: currentSnapshot.tasks.map((task) => {
-      if (task.id !== taskId) {
-        return task;
-      }
-
-      const scalarTargetUpdates: Partial<TaskInput> = {};
-      if (input.workstreamId !== undefined && input.workstreamIds === undefined) {
-        scalarTargetUpdates.workstreamIds = uniqueIds([input.workstreamId]);
-      }
-      if (input.subsystemId !== undefined && input.subsystemIds === undefined) {
-        scalarTargetUpdates.subsystemIds = uniqueIds([input.subsystemId]);
-      }
-      if (input.mechanismId !== undefined && input.mechanismIds === undefined) {
-        scalarTargetUpdates.mechanismIds = uniqueIds([input.mechanismId]);
-      }
-      if (input.partInstanceId !== undefined && input.partInstanceIds === undefined) {
-        scalarTargetUpdates.partInstanceIds = uniqueIds([input.partInstanceId]);
-      }
-      if (input.artifactId !== undefined && input.artifactIds === undefined) {
-        scalarTargetUpdates.artifactIds = uniqueIds([input.artifactId]);
-      }
-
-      updatedTask = normalizeTaskTargets({
-        ...task,
-        ...input,
-        ...(input.disciplineId !== undefined
-          ? {
-              disciplineId: normalizeDisciplineIdForProject(
-                input.projectId ?? task.projectId,
-                input.disciplineId,
-              ),
-            }
-          : {}),
-        ...scalarTargetUpdates,
-      });
-
-      if (updatedTask.subsystemId !== task.subsystemId) {
-        updatedTask = {
-          ...updatedTask,
-          serialNumber: undefined,
-          serial: undefined,
-        };
-      }
-
-      return updatedTask;
-    }),
+    tasks: currentSnapshot.tasks.map((task) => (task.id === taskId ? updatedTask : task)),
   };
 
   currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
 
-  if (!updatedTask) {
-    return null;
-  }
-
-  return currentSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask;
+  return (
+    currentSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask
+  );
 }
 
 export function removeTask(taskId: string) {
