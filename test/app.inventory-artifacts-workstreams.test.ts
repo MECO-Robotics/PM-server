@@ -181,10 +181,8 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     );
     assert.ok(
       scopedBootstrapBody.taskDependencies.every((dependency) =>
-        scopedBootstrapBody.tasks.some(
-          (task) =>
-            task.id === dependency.upstreamTaskId || task.id === dependency.downstreamTaskId,
-        ),
+        scopedBootstrapBody.tasks.some((task) => task.id === dependency.upstreamTaskId) &&
+        scopedBootstrapBody.tasks.some((task) => task.id === dependency.downstreamTaskId),
       ),
     );
 

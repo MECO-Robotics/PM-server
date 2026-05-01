@@ -118,6 +118,67 @@ export const testResultSchema = z.object({
   photoUrl: z.string().trim().default(""),
 });
 
+export const reportSchema = z.object({
+  reportType: z.enum(["QA", "EventTest"]),
+  projectId: z.string().trim().min(1),
+  taskId: z.string().trim().min(1).nullable(),
+  eventId: z.string().trim().min(1).nullable(),
+  workstreamId: z.string().trim().min(1).nullable(),
+  createdByMemberId: z.string().trim().min(1).nullable(),
+  result: z.string().trim().min(1),
+  summary: z.string().trim().default(""),
+  notes: z.string().trim().default(""),
+  photoUrl: z.string().trim().default(""),
+  createdAt: z.string().trim().min(1),
+  participantIds: z.array(z.string().trim().min(1)).optional(),
+  mentorApproved: z.boolean().optional(),
+  reviewedAt: z.string().date().optional(),
+  title: z.string().trim().min(1).optional(),
+  status: z.enum(["pass", "fail", "blocked"]).optional(),
+  findings: z.array(z.string().trim().min(1)).optional(),
+});
+
+export const reportFindingSchema = z.object({
+  reportId: z.string().trim().min(1),
+  mechanismId: z.string().trim().min(1).nullable(),
+  partInstanceId: z.string().trim().min(1).nullable(),
+  artifactInstanceId: z.string().trim().min(1).nullable(),
+  issueType: z.string().trim().min(1),
+  severity: z.enum(["high", "medium", "low"]),
+  notes: z.string().trim().default(""),
+  spawnedTaskId: z.string().trim().min(1).nullable(),
+  spawnedIterationId: z.string().trim().min(1).nullable(),
+  spawnedRiskId: z.string().trim().min(1).nullable(),
+});
+
+export const taskDependencySchema = z.object({
+  upstreamTaskId: z.string().trim().min(1),
+  downstreamTaskId: z.string().trim().min(1),
+  dependencyType: z.enum(["blocks", "soft", "finish_to_start"]),
+});
+
+export const taskDependencyPatchSchema = taskDependencySchema.partial();
+
+export const taskBlockerSchema = z.object({
+  blockedTaskId: z.string().trim().min(1),
+  blockerType: z.enum([
+    "task",
+    "event",
+    "workstream",
+    "mechanism",
+    "part_instance",
+    "artifact_instance",
+    "external",
+  ]),
+  blockerId: z.string().trim().min(1).nullable(),
+  description: z.string().trim().min(1),
+  severity: z.enum(["low", "medium", "high", "critical"]),
+  status: z.enum(["open", "resolved"]).default("open"),
+  createdByMemberId: z.string().trim().min(1).nullable().optional(),
+});
+
+export const taskBlockerPatchSchema = taskBlockerSchema.partial();
+
 export const riskSchema = z.object({
   title: z.string().trim().min(2),
   detail: z.string().trim().min(2),
@@ -265,6 +326,7 @@ export const manufacturingItemSchema = z.object({
   process: z.enum(["3d-print", "cnc", "fabrication"]),
   dueDate: z.string().date(),
   material: z.string().trim().min(2),
+  materialId: z.string().trim().min(1).nullable().optional(),
   partDefinitionId: z.string().trim().min(1).nullable().optional(),
   partInstanceId: z.string().trim().min(1).nullable().optional(),
   partInstanceIds: z.array(z.string().trim().min(1)).optional(),

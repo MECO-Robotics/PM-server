@@ -80,6 +80,18 @@ export type RiskAttachmentType = "project" | "workstream" | "mechanism" | "part-
 export type FindingStatus = "open" | "in-progress" | "resolved";
 export type FindingSourceType = "qa" | "test";
 export type IterationStatus = "planned" | "in-progress" | "complete";
+export type ReportType = "QA" | "EventTest" | "Practice" | "Competition" | "Review";
+export type TaskDependencyType = "blocks" | "soft" | "finish_to_start";
+export type TaskBlockerType =
+  | "task"
+  | "event"
+  | "workstream"
+  | "mechanism"
+  | "part_instance"
+  | "artifact_instance"
+  | "external";
+export type TaskBlockerSeverity = "low" | "medium" | "high" | "critical";
+export type TaskBlockerStatus = "open" | "resolved";
 
 export interface Member {
   id: string;
@@ -259,6 +271,7 @@ export interface ManufacturingItem {
   process: ManufacturingProcess;
   dueDate: string;
   material: string;
+  materialId: string | null;
   partDefinitionId: string | null;
   partInstanceId: string | null;
   partInstanceIds: string[];
@@ -267,6 +280,72 @@ export interface ManufacturingItem {
   mentorReviewed: boolean;
   inHouse: boolean;
   batchLabel?: string;
+}
+
+export interface Report {
+  id: string;
+  reportType: ReportType;
+  projectId: string;
+  taskId: string | null;
+  eventId: string | null;
+  workstreamId: string | null;
+  createdByMemberId: string | null;
+  result: string;
+  summary: string;
+  notes: string;
+  photoUrl?: string;
+  createdAt: string;
+  participantIds?: string[];
+  mentorApproved?: boolean;
+  reviewedAt?: string;
+  title?: string;
+  status?: TestResultStatus;
+  findings?: string[];
+}
+
+export interface ReportFinding {
+  id: string;
+  reportId: string;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactInstanceId: string | null;
+  issueType: string;
+  severity: RiskSeverity;
+  notes: string;
+  spawnedTaskId: string | null;
+  spawnedIterationId: string | null;
+  spawnedRiskId: string | null;
+  title?: string;
+  detail?: string;
+  status?: "open" | "resolved";
+  projectId?: string;
+  workstreamId?: string | null;
+  subsystemId?: string | null;
+  taskId?: string | null;
+  eventId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TaskDependency {
+  id: string;
+  upstreamTaskId: string;
+  downstreamTaskId: string;
+  dependencyType: TaskDependencyType;
+  createdAt: string;
+}
+
+export interface TaskBlocker {
+  id: string;
+  blockedTaskId: string;
+  blockerType: TaskBlockerType;
+  blockerId: string | null;
+  description: string;
+  severity: TaskBlockerSeverity;
+  status: TaskBlockerStatus;
+  createdByMemberId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export interface PurchaseItem {
@@ -503,6 +582,8 @@ export interface PlatformSnapshot {
   partInstances: PartInstance[];
   tasks: Task[];
   events: Event[];
+  taskDependencies: TaskDependency[];
+  taskBlockers: TaskBlocker[];
   qaReports: QaReport[];
   testResults: TestResult[];
   qaFindings: QaFinding[];

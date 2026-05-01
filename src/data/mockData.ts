@@ -179,6 +179,8 @@ function normalizeTaskDiscipline(
 const snapshotSeed: Omit<
   PlatformSnapshot,
   "workstreams" | "subsystems" | "mechanisms" | "partDefinitions" | "tasks"
+  | "taskDependencies"
+  | "taskBlockers"
 > & {
   workstreams: SeedWorkstream[];
   subsystems: SeedSubsystem[];
@@ -2086,6 +2088,7 @@ const snapshotSeed: Omit<
       process: "3d-print",
       dueDate: "2026-04-22",
       material: "Onyx",
+      materialId: "mat-onyx-filament",
       partDefinitionId: "pd-swerve-encoder-bracket",
       partInstanceId: "pi-swerve-encoder-bracket-front-left",
       partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
@@ -2102,6 +2105,7 @@ const snapshotSeed: Omit<
       process: "cnc",
       dueDate: "2026-04-24",
       material: "1/8 polycarbonate",
+      materialId: "mat-1-8-polycarbonate",
       partDefinitionId: "pd-intake-guard",
       partInstanceId: "pi-intake-guard-set",
       partInstanceIds: ["pi-intake-guard-set"],
@@ -2119,6 +2123,7 @@ const snapshotSeed: Omit<
       process: "fabrication",
       dueDate: "2026-04-28",
       material: "1/8 aluminum tube",
+      materialId: null,
       partDefinitionId: null,
       partInstanceId: null,
       partInstanceIds: [],
@@ -2136,6 +2141,7 @@ const snapshotSeed: Omit<
       process: "cnc",
       dueDate: "2026-04-30",
       material: "6061 aluminum angle",
+      materialId: "mat-6061-angle",
       partDefinitionId: "pd-limelight-mount-plate",
       partInstanceId: "pi-limelight-mount",
       partInstanceIds: ["pi-limelight-mount"],
@@ -2153,6 +2159,7 @@ const snapshotSeed: Omit<
       process: "3d-print",
       dueDate: "2026-05-02",
       material: "Onyx",
+      materialId: "mat-onyx-filament",
       partDefinitionId: "pd-climb-winch-spacer",
       partInstanceId: "pi-climb-winch-spacer-set",
       partInstanceIds: ["pi-climb-winch-spacer-set"],
@@ -2169,6 +2176,7 @@ const snapshotSeed: Omit<
       process: "fabrication",
       dueDate: "2026-04-27",
       material: "Aluminum angle and panel stock",
+      materialId: null,
       partDefinitionId: null,
       partInstanceId: null,
       partInstanceIds: [],
@@ -2186,6 +2194,7 @@ const snapshotSeed: Omit<
       process: "fabrication",
       dueDate: "2026-05-03",
       material: "Vinyl banner and foam board",
+      materialId: "mat-vinyl-banner",
       partDefinitionId: null,
       partInstanceId: null,
       partInstanceIds: [],
@@ -2203,6 +2212,7 @@ const snapshotSeed: Omit<
       process: "cnc",
       dueDate: "2026-05-02",
       material: "1/8 polycarbonate",
+      materialId: "mat-1-8-polycarbonate",
       partDefinitionId: "pd-tablet-mount-bracket",
       partInstanceId: "pi-tablet-mount-brackets",
       partInstanceIds: ["pi-tablet-mount-brackets"],
@@ -2449,6 +2459,8 @@ const snapshotSeed: Omit<
 
 export const snapshot: PlatformSnapshot = {
   ...snapshotSeed,
+  taskDependencies: [],
+  taskBlockers: [],
   workstreams: snapshotSeed.workstreams.map(withArchiveState),
   subsystems: snapshotSeed.subsystems.map(withIteration).map(withArchiveState),
   mechanisms: snapshotSeed.mechanisms.map(withIteration).map(withArchiveState),

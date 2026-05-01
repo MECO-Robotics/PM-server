@@ -20,6 +20,8 @@ import {
   createMaterial,
   createMember,
   createMechanism,
+  createReport,
+  createReportFinding,
   createQaReport,
   createPartDefinition,
   createPartInstance,
@@ -29,6 +31,8 @@ import {
   createPurchaseItem,
   createRisk,
   createTask,
+  createTaskBlocker,
+  createTaskDependency,
   createTestResult,
   createWorkLog,
   createWorkstream,
@@ -57,12 +61,15 @@ import {
   getProjects,
   getPurchaseItems,
   getQaReports,
+  getReports,
   getRisks,
   getSnapshot,
   getSeasons,
   getSubsystems,
   getTaskTargets,
   getTasks,
+  getTaskBlockers,
+  getTaskDependencies,
   getTestResults,
   getTutorialBaselineState,
   type TutorialBaselineState,
@@ -79,6 +86,8 @@ import {
   removeRisk,
   removeSubsystem,
   removeTask,
+  removeTaskBlocker,
+  removeTaskDependency,
   removeWorkLog,
   resetInteractiveTutorialSession,
   resetTutorialBaseline,
@@ -96,6 +105,8 @@ import {
   updateRisk,
   startInteractiveTutorialSession,
   updateTask,
+  updateTaskBlocker,
+  updateTaskDependency,
   updateWorkLog,
   updateWorkstream,
 } from "../data/store";
@@ -127,6 +138,7 @@ import {
   validateQaReportLinks,
   validateRiskLinks,
   validateSubsystemPeople,
+  validateTaskBlockerLinks,
   validateTaskLinks,
   validateTestResultLinks,
   validateWorkLogLinks,
@@ -160,6 +172,8 @@ import {
   projectPatchSchema,
   projectSchema,
   qaReportSchema,
+  reportFindingSchema,
+  reportSchema,
   riskPatchSchema,
   riskSchema,
   purchaseItemPatchSchema,
@@ -169,6 +183,10 @@ import {
   subsystemSchema,
   taskPatchSchema,
   taskSchema,
+  taskBlockerPatchSchema,
+  taskBlockerSchema,
+  taskDependencyPatchSchema,
+  taskDependencySchema,
   testResultSchema,
   tutorialSessionResetSchema,
   workLogPatchSchema,
@@ -671,6 +689,108 @@ export async function registerRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  app.get("/api/reports", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const bootstrap = buildBootstrapResponse(
+      getSnapshot(),
+      readBootstrapSelection(request.query),
+    );
+    const paginated = paginateItems(bootstrap.reports, request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/reports", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = reportSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Report payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError =
+      parsed.data.reportType === "QA"
+        ? parsed.data.taskId
+          ? validateQaReportLinks({
+              taskId: parsed.data.taskId,
+              participantIds: parsed.data.participantIds ?? [],
+            })
+          : "The selected task does not exist."
+        : parsed.data.eventId
+          ? validateTestResultLinks({ eventId: parsed.data.eventId })
+          : "The selected event does not exist.";
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const report = createReport(parsed.data);
+    if (!report) {
+      return reply.code(400).send({
+        message: "Report payload could not be created.",
+      });
+    }
+
+    return reply.code(201).send({
+      item: report,
+    });
+  });
+
+  app.get("/api/report-findings", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const bootstrap = buildBootstrapResponse(
+      getSnapshot(),
+      readBootstrapSelection(request.query),
+    );
+    const paginated = paginateItems(bootstrap.reportFindings, request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/report-findings", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = reportFindingSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Report finding payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    if (!getReports().some((report) => report.id === parsed.data.reportId)) {
+      return reply.code(400).send({
+        message: "The selected report does not exist.",
+      });
+    }
+
+    const finding = createReportFinding(parsed.data);
+
+    return reply.code(201).send({
+      item: finding,
+    });
+  });
 
   app.get("/api/qa-reports", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
@@ -1656,6 +1776,219 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get("/api/task-dependencies", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const bootstrap = buildBootstrapResponse(
+      getSnapshot(),
+      readBootstrapSelection(request.query),
+    );
+    const paginated = paginateItems(bootstrap.taskDependencies, request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/task-dependencies", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = taskDependencySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Task dependency payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const taskIds = new Set(getTasks().map((task) => task.id));
+    if (!taskIds.has(parsed.data.upstreamTaskId) || !taskIds.has(parsed.data.downstreamTaskId)) {
+      return reply.code(400).send({
+        message: "The selected dependency tasks do not exist.",
+      });
+    }
+
+    const dependency = createTaskDependency(parsed.data);
+    return reply.code(201).send({
+      item: dependency,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { dependencyId: string } }>(
+    "/api/task-dependencies/:dependencyId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = taskDependencyPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task dependency update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentDependency = getTaskDependencies().find(
+        (dependency) => dependency.id === request.params.dependencyId,
+      );
+      if (!currentDependency) {
+        return reply.code(404).send({
+          message: "Task dependency not found.",
+        });
+      }
+
+      const taskIds = new Set(getTasks().map((task) => task.id));
+      const nextUpstreamTaskId = parsed.data.upstreamTaskId ?? currentDependency.upstreamTaskId;
+      const nextDownstreamTaskId =
+        parsed.data.downstreamTaskId ?? currentDependency.downstreamTaskId;
+      if (!taskIds.has(nextUpstreamTaskId) || !taskIds.has(nextDownstreamTaskId)) {
+        return reply.code(400).send({
+          message: "The selected dependency tasks do not exist.",
+        });
+      }
+
+      const dependency = updateTaskDependency(request.params.dependencyId, parsed.data);
+      return {
+        item: dependency,
+      };
+    },
+  );
+
+  app.delete<{ Params: { dependencyId: string } }>(
+    "/api/task-dependencies/:dependencyId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const dependency = removeTaskDependency(request.params.dependencyId);
+      if (!dependency) {
+        return reply.code(404).send({
+          message: "Task dependency not found.",
+        });
+      }
+
+      return {
+        item: dependency,
+      };
+    },
+  );
+
+  app.get("/api/task-blockers", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const bootstrap = buildBootstrapResponse(
+      getSnapshot(),
+      readBootstrapSelection(request.query),
+    );
+    const paginated = paginateItems(bootstrap.taskBlockers, request.query);
+
+    return {
+      items: paginated.items,
+      pagination: paginated.pagination,
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/task-blockers", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const parsed = taskBlockerSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Task blocker payload is invalid.",
+        issues: parsed.error.flatten(),
+      });
+    }
+
+    const validationError = validateTaskBlockerLinks(parsed.data);
+    if (validationError) {
+      return reply.code(400).send({
+        message: validationError,
+      });
+    }
+
+    const blocker = createTaskBlocker(parsed.data);
+    return reply.code(201).send({
+      item: blocker,
+    });
+  });
+
+  app.patch<{ Body: unknown; Params: { blockerId: string } }>(
+    "/api/task-blockers/:blockerId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const parsed = taskBlockerPatchSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          message: "Task blocker update payload is invalid.",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const currentBlocker = getTaskBlockers().find(
+        (blocker) => blocker.id === request.params.blockerId,
+      );
+      if (!currentBlocker) {
+        return reply.code(404).send({
+          message: "Task blocker not found.",
+        });
+      }
+
+      const nextBlockedTaskId = parsed.data.blockedTaskId ?? currentBlocker.blockedTaskId;
+      const validationError = validateTaskBlockerLinks({
+        blockedTaskId: nextBlockedTaskId,
+        blockerType: parsed.data.blockerType ?? currentBlocker.blockerType,
+        blockerId:
+          parsed.data.blockerId === undefined
+            ? currentBlocker.blockerId
+            : parsed.data.blockerId,
+      });
+      if (validationError) {
+        return reply.code(400).send({
+          message: validationError,
+        });
+      }
+
+      const blocker = updateTaskBlocker(request.params.blockerId, parsed.data);
+      return {
+        item: blocker,
+      };
+    },
+  );
+
+  app.delete<{ Params: { blockerId: string } }>(
+    "/api/task-blockers/:blockerId",
+    async (request, reply) => {
+      if (!requireApiSessionIfEnabled(request, reply)) {
+        return;
+      }
+
+      const blocker = removeTaskBlocker(request.params.blockerId);
+      if (!blocker) {
+        return reply.code(404).send({
+          message: "Task blocker not found.",
+        });
+      }
+
+      return {
+        item: blocker,
+      };
+    },
+  );
+
   app.get("/api/members", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -2312,13 +2645,30 @@ export async function registerRoutes(app: FastifyInstance) {
         message: validationError,
       });
     }
-
     const partDefinition = parsed.data.partDefinitionId
       ? findPartDefinition(parsed.data.partDefinitionId)
       : null;
     if (parsed.data.partDefinitionId && !partDefinition) {
       return reply.code(400).send({
         message: "Please select a real part from the Parts tab.",
+      });
+    }
+    if (
+      partDefinition &&
+      parsed.data.materialId !== undefined &&
+      parsed.data.materialId !== (partDefinition.materialId ?? null)
+    ) {
+      return reply.code(400).send({
+        message: "The selected material does not match the selected part.",
+      });
+    }
+    const resolvedMaterialId = partDefinition
+      ? partDefinition.materialId ?? null
+      : parsed.data.materialId ?? null;
+    const materialError = validatePartDefinitionMaterialId(resolvedMaterialId);
+    if (materialError) {
+      return reply.code(400).send({
+        message: materialError,
       });
     }
 
@@ -2328,6 +2678,7 @@ export async function registerRoutes(app: FastifyInstance) {
     ]);
     const item = createManufacturingItem({
       ...parsed.data,
+      materialId: resolvedMaterialId,
       partDefinitionId: parsed.data.partDefinitionId ?? null,
       partInstanceId: partInstanceIds[0] ?? null,
       partInstanceIds,
@@ -2390,7 +2741,6 @@ export async function registerRoutes(app: FastifyInstance) {
           message: validationError,
         });
       }
-
       const partDefinition = nextItemShape.partDefinitionId
         ? findPartDefinition(nextItemShape.partDefinitionId)
         : null;
@@ -2399,9 +2749,30 @@ export async function registerRoutes(app: FastifyInstance) {
           message: "Please select a real part from the Parts tab.",
         });
       }
+      const requestedMaterialId =
+        parsed.data.materialId === undefined ? currentItem.materialId : parsed.data.materialId;
+      if (
+        partDefinition &&
+        parsed.data.materialId !== undefined &&
+        parsed.data.materialId !== (partDefinition.materialId ?? null)
+      ) {
+        return reply.code(400).send({
+          message: "The selected material does not match the selected part.",
+        });
+      }
+      const nextMaterialId = partDefinition
+        ? partDefinition.materialId ?? null
+        : requestedMaterialId ?? null;
+      const materialError = validatePartDefinitionMaterialId(nextMaterialId);
+      if (materialError) {
+        return reply.code(400).send({
+          message: materialError,
+        });
+      }
 
       const item = updateManufacturingItem(request.params.itemId, {
         ...parsed.data,
+        materialId: nextMaterialId ?? null,
         partDefinitionId: nextItemShape.partDefinitionId ?? null,
         partInstanceId: nextItemShape.partInstanceIds[0] ?? null,
         partInstanceIds: nextItemShape.partInstanceIds,

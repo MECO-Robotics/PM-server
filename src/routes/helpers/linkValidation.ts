@@ -267,6 +267,60 @@ export function validateTaskLinks(input: {
   return null;
 }
 
+export function validateTaskBlockerLinks(input: {
+  blockedTaskId: string;
+  blockerType:
+    | "task"
+    | "event"
+    | "workstream"
+    | "mechanism"
+    | "part_instance"
+    | "artifact_instance"
+    | "external";
+  blockerId: string | null;
+}) {
+  if (!getTasks().some((task) => task.id === input.blockedTaskId)) {
+    return "The selected blocked task does not exist.";
+  }
+
+  if (input.blockerType === "external") {
+    return input.blockerId === null ? null : "External blockers cannot link to another record.";
+  }
+
+  if (!input.blockerId) {
+    return "The selected blocker record does not exist.";
+  }
+
+  switch (input.blockerType) {
+    case "task":
+      return getTasks().some((task) => task.id === input.blockerId)
+        ? null
+        : "The selected blocker task does not exist.";
+    case "event":
+      return findEvent(input.blockerId)
+        ? null
+        : "The selected blocker event does not exist.";
+    case "workstream":
+      return findWorkstream(input.blockerId)
+        ? null
+        : "The selected blocker workstream does not exist.";
+    case "mechanism":
+      return findMechanism(input.blockerId)
+        ? null
+        : "The selected blocker mechanism does not exist.";
+    case "part_instance":
+      return findPartInstance(input.blockerId)
+        ? null
+        : "The selected blocker part instance does not exist.";
+    case "artifact_instance":
+      return findArtifact(input.blockerId)
+        ? null
+        : "The selected blocker artifact does not exist.";
+    default:
+      return "The selected blocker type is invalid.";
+  }
+}
+
 export function validateArtifactLinks(input: {
   projectId: string;
   workstreamId?: string | null | undefined;

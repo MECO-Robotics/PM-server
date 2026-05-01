@@ -381,6 +381,7 @@ model ManufacturingItem {
   dueDate           DateTime?
   priority          TaskPriority?
   material          String?
+  materialId        String?
   partDefinitionId  String?
   quantity          Int                   @default(1)
   mentorReviewed    Boolean               @default(false)

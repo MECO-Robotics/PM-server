@@ -74,7 +74,7 @@ export interface BootstrapTaskBlockerRecord {
   blockerType: "external" | "internal";
   blockerId: string | null;
   description: string;
-  severity: "high" | "medium" | "low";
+  severity: "critical" | "high" | "medium" | "low";
   status: "open" | "resolved";
   createdByMemberId: string | null;
   createdAt: string;
@@ -384,12 +384,43 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
 
     return true;
   });
-  const scopedTaskDependencies = buildTaskDependencyRecords(snapshot.tasks).filter(
+  const scopedExplicitTaskDependencies = snapshot.taskDependencies.filter(
     (dependency) =>
-      scopedTaskIds.has(dependency.upstreamTaskId) ||
+      scopedTaskIds.has(dependency.upstreamTaskId) &&
       scopedTaskIds.has(dependency.downstreamTaskId),
   );
-  const scopedTaskBlockers = buildTaskBlockerRecords(scopedTasks);
+  const explicitTaskDependencyKeys = new Set(
+    scopedExplicitTaskDependencies.map(
+      (dependency) =>
+        `${dependency.upstreamTaskId}:${dependency.downstreamTaskId}:${dependency.dependencyType}`,
+    ),
+  );
+  const scopedTaskDependencies = [
+    ...scopedExplicitTaskDependencies,
+    ...buildTaskDependencyRecords(snapshot.tasks).filter(
+      (dependency) =>
+        scopedTaskIds.has(dependency.upstreamTaskId) &&
+        scopedTaskIds.has(dependency.downstreamTaskId) &&
+        !explicitTaskDependencyKeys.has(
+          `${dependency.upstreamTaskId}:${dependency.downstreamTaskId}:${dependency.dependencyType}`,
+        ),
+    ),
+  ];
+  const scopedExplicitTaskBlockers = snapshot.taskBlockers.filter((blocker) =>
+    scopedTaskIds.has(blocker.blockedTaskId),
+  );
+  const explicitTaskBlockerKeys = new Set(
+    scopedExplicitTaskBlockers.map(
+      (blocker) => `${blocker.blockedTaskId}:${blocker.description}`,
+    ),
+  );
+  const scopedTaskBlockers = [
+    ...scopedExplicitTaskBlockers,
+    ...buildTaskBlockerRecords(scopedTasks).filter(
+      (blocker) =>
+        !explicitTaskBlockerKeys.has(`${blocker.blockedTaskId}:${blocker.description}`),
+    ),
+  ];
   const scopedQaReviews = snapshot.qaReviews.filter((review) => {
     if (review.subjectType === "task") {
       return scopedTaskIds.has(review.subjectId);

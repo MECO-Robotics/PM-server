@@ -102,6 +102,7 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
         process: "cnc",
         dueDate: "2026-05-08",
         material: "Aluminum plate",
+        materialId: "mat-onyx-filament",
         partDefinitionId: "pd-swerve-encoder-bracket",
         partInstanceId: "pi-swerve-encoder-bracket-front-left",
         partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
@@ -116,10 +117,12 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
     const targetedManufacturingCreatedBody =
       targetedManufacturingCreateResponse.json() as {
         item: {
+          materialId: string | null;
           partInstanceId: string | null;
           partInstanceIds: string[];
         };
       };
+    assert.equal(targetedManufacturingCreatedBody.item.materialId, "mat-onyx-filament");
     assert.equal(
       targetedManufacturingCreatedBody.item.partInstanceId,
       "pi-swerve-encoder-bracket-front-left",
@@ -127,6 +130,63 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
     assert.deepEqual(targetedManufacturingCreatedBody.item.partInstanceIds, [
       "pi-swerve-encoder-bracket-front-left",
     ]);
+
+    resetLimits();
+
+    const mismatchedManufacturingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/manufacturing",
+      payload: {
+        title: "Mismatched CNC Item",
+        subsystemId: "manipulator",
+        requestedById: "ava",
+        process: "cnc",
+        dueDate: "2026-05-08",
+        material: "Onyx",
+        materialId: "mat-onyx-filament",
+        partDefinitionId: "pd-intake-guard",
+        partInstanceId: "pi-intake-guard-set",
+        partInstanceIds: ["pi-intake-guard-set"],
+        quantity: 1,
+        status: "requested",
+        mentorReviewed: false,
+        inHouse: true,
+      },
+    });
+
+    assert.equal(mismatchedManufacturingCreateResponse.statusCode, 400);
+    assert.equal(
+      mismatchedManufacturingCreateResponse.json().message,
+      "The selected material does not match the selected part.",
+    );
+
+    resetLimits();
+
+    const derivedManufacturingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/manufacturing",
+      payload: {
+        title: "Derived Material CNC Item",
+        subsystemId: "manipulator",
+        requestedById: "ava",
+        process: "cnc",
+        dueDate: "2026-05-08",
+        material: "Polycarbonate",
+        partDefinitionId: "pd-intake-guard",
+        partInstanceId: "pi-intake-guard-set",
+        partInstanceIds: ["pi-intake-guard-set"],
+        quantity: 1,
+        status: "requested",
+        mentorReviewed: false,
+        inHouse: true,
+      },
+    });
+
+    assert.equal(derivedManufacturingCreateResponse.statusCode, 201);
+    assert.equal(
+      derivedManufacturingCreateResponse.json().item.materialId,
+      "mat-1-8-polycarbonate",
+    );
 
     resetLimits();
 
@@ -199,6 +259,7 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
       url: `/api/manufacturing/${fabricationCreatedBody.item.id}`,
       payload: {
         title: "Custom Welded Intake Frame Rev B",
+        materialId: "mat-1-8-polycarbonate",
         status: "in-progress",
       },
     });
@@ -206,6 +267,7 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
     assert.equal(fabricationUpdateResponse.statusCode, 200);
     const fabricationUpdatedBody = fabricationUpdateResponse.json() as {
       item: {
+        materialId: string | null;
         partDefinitionId: string | null;
         process: string;
         status: string;
@@ -213,6 +275,7 @@ test("manufacturing and purchase endpoints preserve mobile and fabrication flows
       };
     };
     assert.equal(fabricationUpdatedBody.item.process, "fabrication");
+    assert.equal(fabricationUpdatedBody.item.materialId, "mat-1-8-polycarbonate");
     assert.equal(fabricationUpdatedBody.item.partDefinitionId, null);
     assert.equal(fabricationUpdatedBody.item.title, "Custom Welded Intake Frame Rev B");
     assert.equal(fabricationUpdatedBody.item.status, "in-progress");

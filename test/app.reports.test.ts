@@ -123,6 +123,300 @@ test("qa report and event report endpoints support create flows with link valida
   });
 });
 
+test("web report and task planning contract endpoints persist records", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const reportCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/reports",
+      payload: {
+        reportType: "QA",
+        projectId: "project-robot-2026",
+        taskId: "swerve-sensor-bundle",
+        eventId: null,
+        workstreamId: null,
+        createdByMemberId: "ava",
+        result: "minor-fix",
+        summary: "QA report contract route",
+        notes: "QA report contract route",
+        photoUrl: "https://cdn.example.test/report.png",
+        createdAt: "2026-04-26",
+        participantIds: ["ava"],
+        mentorApproved: false,
+        reviewedAt: "2026-04-26",
+      },
+    });
+
+    assert.equal(reportCreateResponse.statusCode, 201);
+    const reportBody = reportCreateResponse.json() as {
+      item: {
+        id: string;
+        reportType: string;
+        taskId: string | null;
+      };
+    };
+    assert.equal(reportBody.item.reportType, "QA");
+    assert.equal(reportBody.item.taskId, "swerve-sensor-bundle");
+
+    resetLimits();
+
+    const unsupportedReportCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/reports",
+      payload: {
+        reportType: "Practice",
+        projectId: "project-robot-2026",
+        taskId: null,
+        eventId: "drive-practice-apr-30",
+        workstreamId: null,
+        createdByMemberId: "ava",
+        result: "pass",
+        summary: "Unsupported report type",
+        notes: "",
+        createdAt: "2026-04-26",
+      },
+    });
+
+    assert.equal(unsupportedReportCreateResponse.statusCode, 400);
+
+    resetLimits();
+
+    const findingCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/report-findings",
+      payload: {
+        reportId: reportBody.item.id,
+        mechanismId: null,
+        partInstanceId: "pi-swerve-encoder-bracket-front-left",
+        artifactInstanceId: null,
+        issueType: "Bracket needs edge cleanup",
+        severity: "medium",
+        notes: "Deburr the bracket before final install.",
+        spawnedTaskId: null,
+        spawnedIterationId: null,
+        spawnedRiskId: null,
+      },
+    });
+
+    assert.equal(findingCreateResponse.statusCode, 201);
+    assert.equal(findingCreateResponse.json().item.reportId, reportBody.item.id);
+
+    resetLimits();
+
+    const dependencyCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/task-dependencies",
+      payload: {
+        upstreamTaskId: "intake-guard",
+        downstreamTaskId: "swerve-sensor-bundle",
+        dependencyType: "blocks",
+      },
+    });
+
+    assert.equal(dependencyCreateResponse.statusCode, 201);
+    const dependencyBody = dependencyCreateResponse.json() as {
+      item: {
+        id: string;
+        dependencyType: string;
+      };
+    };
+    assert.equal(dependencyBody.item.dependencyType, "blocks");
+
+    resetLimits();
+
+    const dependencyUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/task-dependencies/${dependencyBody.item.id}`,
+      payload: {
+        dependencyType: "finish_to_start",
+      },
+    });
+
+    assert.equal(dependencyUpdateResponse.statusCode, 200);
+    assert.equal(dependencyUpdateResponse.json().item.dependencyType, "finish_to_start");
+
+    resetLimits();
+
+    const softDependencyCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/task-dependencies",
+      payload: {
+        upstreamTaskId: "pit-board-refresh",
+        downstreamTaskId: "pit-bin-labeling",
+        dependencyType: "soft",
+      },
+    });
+
+    assert.equal(softDependencyCreateResponse.statusCode, 201);
+    const softDependencyBody = softDependencyCreateResponse.json() as {
+      item: {
+        id: string;
+      };
+    };
+
+    resetLimits();
+
+    const invalidBlockerCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/task-blockers",
+      payload: {
+        blockedTaskId: "swerve-sensor-bundle",
+        blockerType: "task",
+        blockerId: "not-a-real-task",
+        description: "Invalid linked task",
+        severity: "high",
+        status: "open",
+        createdByMemberId: "ava",
+      },
+    });
+
+    assert.equal(invalidBlockerCreateResponse.statusCode, 400);
+    assert.equal(
+      invalidBlockerCreateResponse.json().message,
+      "The selected blocker task does not exist.",
+    );
+
+    resetLimits();
+
+    const blockerCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/task-blockers",
+      payload: {
+        blockedTaskId: "swerve-sensor-bundle",
+        blockerType: "external",
+        blockerId: null,
+        description: "Waiting for replacement encoder stock.",
+        severity: "high",
+        status: "open",
+        createdByMemberId: "ava",
+      },
+    });
+
+    assert.equal(blockerCreateResponse.statusCode, 201);
+    const blockerBody = blockerCreateResponse.json() as {
+      item: {
+        id: string;
+        severity: string;
+      };
+    };
+    assert.equal(blockerBody.item.severity, "high");
+
+    resetLimits();
+
+    const blockerUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/task-blockers/${blockerBody.item.id}`,
+      payload: {
+        description: "Waiting for replacement encoder stock and mentor review.",
+        severity: "critical",
+      },
+    });
+
+    assert.equal(blockerUpdateResponse.statusCode, 200);
+    assert.equal(blockerUpdateResponse.json().item.severity, "critical");
+
+    resetLimits();
+
+    const taskDependenciesResponse = await app.inject({
+      method: "GET",
+      url: "/api/task-dependencies",
+    });
+    assert.equal(taskDependenciesResponse.statusCode, 200);
+    assert.ok(
+      (taskDependenciesResponse.json() as { items: Array<{ id: string }> }).items.some(
+        (dependency) => dependency.id === dependencyBody.item.id,
+      ),
+    );
+
+    resetLimits();
+
+    const taskBlockersResponse = await app.inject({
+      method: "GET",
+      url: "/api/task-blockers",
+    });
+    assert.equal(taskBlockersResponse.statusCode, 200);
+    assert.ok(
+      (taskBlockersResponse.json() as { items: Array<{ id: string }> }).items.some(
+        (blocker) => blocker.id === blockerBody.item.id,
+      ),
+    );
+
+    resetLimits();
+
+    const bootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(bootstrapResponse.statusCode, 200);
+    const bootstrapBody = bootstrapResponse.json() as {
+      reportFindings: Array<{ reportId: string }>;
+      reports: Array<{ id: string }>;
+      taskBlockers: Array<{ id: string; severity: string }>;
+      taskDependencies: Array<{
+        dependencyType: string;
+        downstreamTaskId: string;
+        id: string;
+        upstreamTaskId: string;
+      }>;
+    };
+    assert.ok(bootstrapBody.reports.some((report) => report.id === reportBody.item.id));
+    assert.ok(
+      bootstrapBody.reportFindings.some((finding) => finding.reportId === reportBody.item.id),
+    );
+    assert.ok(
+      bootstrapBody.taskDependencies.some(
+        (dependency) =>
+          dependency.id === dependencyBody.item.id &&
+          dependency.dependencyType === "finish_to_start",
+      ),
+    );
+    assert.ok(
+      bootstrapBody.taskDependencies.some(
+        (dependency) =>
+          dependency.id === softDependencyBody.item.id &&
+          dependency.dependencyType === "soft",
+      ),
+    );
+    assert.ok(
+      bootstrapBody.taskDependencies.some(
+        (dependency) =>
+          dependency.upstreamTaskId === "pit-board-refresh" &&
+          dependency.downstreamTaskId === "pit-bin-labeling" &&
+          dependency.dependencyType === "finish_to_start",
+      ),
+    );
+    assert.ok(
+      bootstrapBody.taskBlockers.some(
+        (blocker) => blocker.id === blockerBody.item.id && blocker.severity === "critical",
+      ),
+    );
+
+    resetLimits();
+
+    const dependencyDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/task-dependencies/${dependencyBody.item.id}`,
+    });
+    assert.equal(dependencyDeleteResponse.statusCode, 200);
+
+    resetLimits();
+
+    const softDependencyDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/task-dependencies/${softDependencyBody.item.id}`,
+    });
+    assert.equal(softDependencyDeleteResponse.statusCode, 200);
+
+    resetLimits();
+
+    const blockerDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/task-blockers/${blockerBody.item.id}`,
+    });
+    assert.equal(blockerDeleteResponse.statusCode, 200);
+  });
+});
+
 test("risk endpoints support create, update, and delete with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const qaReportsResponse = await app.inject({

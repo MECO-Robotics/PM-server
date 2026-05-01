@@ -27,6 +27,7 @@ export {
   validateQaReportLinks,
   validateRiskLinks,
   validateSubsystemPeople,
+  validateTaskBlockerLinks,
   validateTaskLinks,
   validateTestResultLinks,
   validateWorkLogLinks,

@@ -9,10 +9,15 @@ import type {
   PartInstance,
   Project,
   QaResult,
+  ReportType,
   RiskAttachmentType,
   RiskSeverity,
   PurchaseStatus,
   Season,
+  TaskBlockerSeverity,
+  TaskBlockerStatus,
+  TaskBlockerType,
+  TaskDependencyType,
   TaskPriority,
   TaskStatus,
   TestResultStatus,
@@ -106,6 +111,7 @@ export interface ManufacturingItemInput {
   process: ManufacturingProcess;
   dueDate: string;
   material: string;
+  materialId?: string | null;
   partDefinitionId: string | null;
   partInstanceId?: string | null;
   partInstanceIds?: string[];
@@ -224,6 +230,55 @@ export interface TestResultInput {
   status: TestResultStatus;
   findings: string[];
   photoUrl?: string;
+}
+
+export interface ReportInput {
+  reportType: ReportType;
+  projectId: string;
+  taskId: string | null;
+  eventId: string | null;
+  workstreamId: string | null;
+  createdByMemberId: string | null;
+  result: string;
+  summary: string;
+  notes: string;
+  photoUrl?: string;
+  createdAt: string;
+  participantIds?: string[];
+  mentorApproved?: boolean;
+  reviewedAt?: string;
+  title?: string;
+  status?: TestResultStatus;
+  findings?: string[];
+}
+
+export interface ReportFindingInput {
+  reportId: string;
+  mechanismId: string | null;
+  partInstanceId: string | null;
+  artifactInstanceId: string | null;
+  issueType: string;
+  severity: RiskSeverity;
+  notes: string;
+  spawnedTaskId: string | null;
+  spawnedIterationId: string | null;
+  spawnedRiskId: string | null;
+}
+
+export interface TaskDependencyInput {
+  upstreamTaskId: string;
+  downstreamTaskId: string;
+  dependencyType: TaskDependencyType;
+}
+
+export interface TaskBlockerInput {
+  blockedTaskId: string;
+  blockerType: TaskBlockerType;
+  blockerId: string | null;
+  description: string;
+  severity: TaskBlockerSeverity;
+  status?: TaskBlockerStatus;
+  createdByMemberId?: string | null;
 }
 
 export interface RiskInput {
