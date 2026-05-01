@@ -1,5 +1,6 @@
 import type {
   Event,
+  EventRequirement,
   Member,
   PlatformSnapshot,
   QaFinding,
@@ -314,6 +315,27 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   });
   const scopedEventIds = new Set(scopedEvents.map((event) => event.id));
   const scopedEventsById = new Map(scopedEvents.map((event) => [event.id, event] as const));
+  const scopedEventRequirements = (snapshot.eventRequirements ?? []).filter((requirement) => {
+    if (!scopedEventIds.has(requirement.eventId)) {
+      return false;
+    }
+
+    switch (requirement.targetType) {
+      case "project":
+        return activeProjectIds.has(requirement.targetId);
+      case "subsystem":
+        return scopedSubsystemIds.has(requirement.targetId);
+      case "mechanism":
+        return scopedMechanismIds.has(requirement.targetId);
+      case "artifact":
+        return scopedArtifacts.some((artifact) => artifact.id === requirement.targetId);
+      case "part-instance":
+        return scopedPartInstanceIds.has(requirement.targetId);
+      case "workflow":
+        // Not currently modeled in the seed store; allow requirements through for forward compatibility.
+        return true;
+    }
+  });
   const scopedTasks = snapshot.tasks.filter(
     (task) =>
       activeProjectIds.has(task.projectId) &&
@@ -421,6 +443,10 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
         !explicitTaskBlockerKeys.has(`${blocker.blockedTaskId}:${blocker.description}`),
     ),
   ];
+  const scopedTaskBlockedFlagById = new Map<string, boolean>();
+  scopedTasks.forEach((task) => {
+    scopedTaskBlockedFlagById.set(task.id, (task.blockers ?? []).length > 0);
+  });
   const scopedQaReviews = snapshot.qaReviews.filter((review) => {
     if (review.subjectType === "task") {
       return scopedTaskIds.has(review.subjectId);
@@ -462,12 +488,16 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     partDefinitions: scopedPartDefinitions,
     partInstances: scopedPartInstances,
     events: scopedEvents,
+    eventRequirements: scopedEventRequirements as EventRequirement[],
     reports: scopedReports,
     reportFindings: scopedReportFindings,
     qaReports: scopedQaReports,
     testResults: scopedTestResults,
     risks: scopedRisks,
-    tasks: scopedTasks,
+    tasks: scopedTasks.map((task) => ({
+      ...task,
+      isBlocked: scopedTaskBlockedFlagById.get(task.id) ?? false,
+    })),
     taskDependencies: scopedTaskDependencies,
     taskBlockers: scopedTaskBlockers,
     workLogs: scopedWorkLogs,

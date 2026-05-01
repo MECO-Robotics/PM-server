@@ -5,8 +5,10 @@ import { authConfig as runtimeAuthConfig } from "../config/env";
 export const memberSchema = z.object({
   name: z.string().trim().min(2),
   email: z.union([z.literal(""), z.string().trim().email()]).default(""),
+  photoUrl: z.string().trim().default(""),
   role: z.enum(["student", "lead", "mentor", "admin", "external"]),
   elevated: z.boolean().default(false),
+  disciplineId: z.string().trim().min(1).nullable().optional(),
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
 });
@@ -208,6 +210,12 @@ export const workstreamPatchSchema = workstreamSchema.partial();
 export const subsystemSchema = z.object({
   projectId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
+  serialAlias: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{1,8}$/)
+    .optional(),
   color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   description: z.string().trim().min(3),
   photoUrl: z.string().trim().default(""),
@@ -236,7 +244,8 @@ export const partDefinitionSchema = z.object({
   seasonId: z.string().trim().min(1).optional(),
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2),
-  partNumber: z.string().trim().min(1),
+  // When omitted/blank, the platform assigns the next available part number.
+  partNumber: z.string().trim().optional().default(""),
   revision: z.string().trim().min(1),
   iteration: iterationSchema,
   isArchived: z.boolean().default(false),
@@ -247,7 +256,20 @@ export const partDefinitionSchema = z.object({
   photoUrl: z.string().trim().default(""),
 });
 
-export const partDefinitionPatchSchema = partDefinitionSchema.partial();
+export const partDefinitionPatchSchema = z.object({
+  seasonId: z.string().trim().min(1).optional(),
+  activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
+  name: z.string().trim().min(2).optional(),
+  partNumber: z.string().trim().min(1).optional(),
+  revision: z.string().trim().min(1).optional(),
+  iteration: iterationSchema.optional(),
+  isArchived: z.boolean().optional(),
+  type: z.string().trim().min(1).optional(),
+  source: z.string().trim().min(1).optional(),
+  materialId: z.string().trim().min(1).nullable().optional(),
+  description: z.string().trim().optional(),
+  photoUrl: z.string().trim().optional(),
+});
 
 export const partInstanceSchema = z.object({
   subsystemId: z.string().trim().min(1),

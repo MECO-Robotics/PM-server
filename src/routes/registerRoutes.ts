@@ -1150,6 +1150,7 @@ export async function registerRoutes(app: FastifyInstance) {
       dependencyIds: task.dependencyIds,
       gate: evaluateTaskCompletion(task, snapshot),
       blockers: task.blockers,
+      isBlocked: (task.blockers ?? []).length > 0,
       linkedManufacturingIds: task.linkedManufacturingIds,
       linkedPurchaseIds: task.linkedPurchaseIds,
       requiresDocumentation: task.requiresDocumentation,
@@ -1667,7 +1668,10 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const createdTask = createTask(taskInput);
     return reply.code(201).send({
-      item: createdTask,
+      item: {
+        ...createdTask,
+        isBlocked: (createdTask.blockers ?? []).length > 0,
+      },
     });
   });
 
@@ -1751,7 +1755,12 @@ export async function registerRoutes(app: FastifyInstance) {
         artifactIds: nextTaskShape.artifactIds,
       });
       return {
-        item: updatedTask,
+        item: updatedTask
+          ? {
+              ...updatedTask,
+              isBlocked: (updatedTask.blockers ?? []).length > 0,
+            }
+          : updatedTask,
       };
     },
   );
@@ -1771,7 +1780,10 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       return {
-        item: task,
+        item: {
+          ...task,
+          isBlocked: (task.blockers ?? []).length > 0,
+        },
       };
     },
   );
@@ -2033,6 +2045,16 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
+    if (
+      parsed.data.disciplineId !== undefined &&
+      parsed.data.disciplineId !== null &&
+      !findDiscipline(parsed.data.disciplineId)
+    ) {
+      return reply.code(400).send({
+        message: "Roster payload references an unknown discipline.",
+      });
+    }
+
     const member = createMember(parsed.data);
     return reply.code(201).send({
       item: member,
@@ -2069,6 +2091,16 @@ export async function registerRoutes(app: FastifyInstance) {
       ) {
         return reply.code(400).send({
           message: "Roster update payload references an unknown active season.",
+        });
+      }
+
+      if (
+        parsed.data.disciplineId !== undefined &&
+        parsed.data.disciplineId !== null &&
+        !findDiscipline(parsed.data.disciplineId)
+      ) {
+        return reply.code(400).send({
+          message: "Roster update payload references an unknown discipline.",
         });
       }
 

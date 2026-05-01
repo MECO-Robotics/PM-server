@@ -62,6 +62,26 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
 
     resetLimits();
 
+    const autoPartDefinitionResponse = await app.inject({
+      method: "POST",
+      url: "/api/part-definitions",
+      payload: {
+        name: "Auto Serial Part",
+        revision: "A",
+        iteration: 1,
+        type: "custom",
+        source: "Onshape",
+        materialId: "mat-onyx-filament",
+        description: "Created without part number to validate auto serialization.",
+        photoUrl: "",
+      },
+    });
+
+    assert.equal(autoPartDefinitionResponse.statusCode, 201);
+    assert.match(autoPartDefinitionResponse.json().item.partNumber, /^P-\d{3}$/);
+
+    resetLimits();
+
     const partDefinitionIterationUpdateResponse = await app.inject({
       method: "PATCH",
       url: `/api/part-definitions/${partDefinitionBody.item.id}`,
@@ -244,6 +264,47 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     assert.equal(
       mechanismIterationUpdateResponse.json().item.photoUrl,
       "https://cdn.example.test/mechanisms/route-test-roller-v2.png",
+    );
+
+    resetLimits();
+
+    const memberResponse = await app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: {
+        name: "Route Test Member",
+        email: "route.test.member@mecorobotics.org",
+        role: "student",
+        elevated: false,
+        seasonId: "default-season",
+        activeSeasonIds: ["default-season"],
+        photoUrl: "https://cdn.example.test/people/route-test-member.png",
+      },
+    });
+
+    assert.equal(memberResponse.statusCode, 201);
+    const memberBody = memberResponse.json() as {
+      item: {
+        id: string;
+        photoUrl: string;
+      };
+    };
+    assert.equal(memberBody.item.photoUrl, "https://cdn.example.test/people/route-test-member.png");
+
+    resetLimits();
+
+    const memberPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/members/${memberBody.item.id}`,
+      payload: {
+        photoUrl: "https://cdn.example.test/people/route-test-member-v2.png",
+      },
+    });
+
+    assert.equal(memberPatchResponse.statusCode, 200);
+    assert.equal(
+      memberPatchResponse.json().item.photoUrl,
+      "https://cdn.example.test/people/route-test-member-v2.png",
     );
 
     resetLimits();

@@ -182,6 +182,7 @@ test("createMember generates unique slugs for repeated names", () => {
   const first = createMember({
     name: "Ava Chen",
     role: "student",
+    photoUrl: "https://cdn.example.test/people/ava-chen.png",
   });
   const second = createMember({
     name: "Ava Chen",
@@ -189,10 +190,31 @@ test("createMember generates unique slugs for repeated names", () => {
   });
 
   assert.equal(first.id, "ava-chen");
+  assert.equal(first.photoUrl, "https://cdn.example.test/people/ava-chen.png");
   assert.deepEqual(first.activeSeasonIds, [first.seasonId]);
   assert.equal(second.id, "ava-chen-2");
   assert.deepEqual(second.activeSeasonIds, [second.seasonId]);
   assert.equal(getSnapshot().members.slice(-2).map((member) => member.id).join(","), "ava-chen,ava-chen-2");
+});
+
+test("createMember and updateMember preserve profile pictures", () => {
+  const member = createMember({
+    name: "Profile Person",
+    role: "mentor",
+    photoUrl: "https://cdn.example.test/people/profile-person.png",
+  });
+
+  assert.equal(member.photoUrl, "https://cdn.example.test/people/profile-person.png");
+
+  const updatedMember = updateMember(member.id, {
+    photoUrl: "https://cdn.example.test/people/profile-person-v2.png",
+  });
+
+  assert.ok(updatedMember);
+  assert.equal(
+    getSnapshot().members.find((candidate) => candidate.id === member.id)?.photoUrl,
+    "https://cdn.example.test/people/profile-person-v2.png",
+  );
 });
 
 test("updateMember can reactivate an existing person for another season", () => {

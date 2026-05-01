@@ -3,7 +3,9 @@ import type {
   Artifact,
   DesignIteration,
   Discipline,
+  EventRequirement,
   Event,
+  EventStatus,
   ManufacturingItem,
   Material,
   Mechanism,
@@ -108,10 +110,240 @@ function normalizePartDefinitionSeasonMembership(
   };
 }
 
+function normalizeSubsystemSerialAlias(value: string | undefined) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return normalized.length > 0 ? normalized.slice(0, 8) : undefined;
+}
+
+function deriveSubsystemSerialAlias(name: string) {
+  const trimmedName = typeof name === "string" ? name.trim() : "";
+  if (!trimmedName) {
+    return "SYS";
+  }
+
+  const words = trimmedName
+    .split(/[^A-Za-z0-9]+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+  const initials = words.map((word) => word[0] ?? "").join("").toUpperCase();
+  if (initials.length >= 2) {
+    return initials.slice(0, 8);
+  }
+
+  const lettersOnly = trimmedName.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  return (lettersOnly.slice(0, 2) || "SY").slice(0, 8);
+}
+
+function normalizeTaskCreatedAt(task: Task) {
+  if (typeof task.createdAt === "string" && task.createdAt.trim()) {
+    return task.createdAt;
+  }
+
+  const candidateDate = task.startDate || task.dueDate;
+  if (typeof candidateDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(candidateDate)) {
+    return new Date(`${candidateDate}T00:00:00.000Z`).toISOString();
+  }
+
+  return new Date().toISOString();
+}
+
+function formatTaskSerial(task: Task, subsystem: Subsystem | undefined) {
+  const serialNumber = typeof task.serialNumber === "number" ? task.serialNumber : 0;
+  const alias = subsystem?.serialAlias ?? deriveSubsystemSerialAlias(subsystem?.name ?? "");
+  return `T-${alias}${serialNumber}`;
+}
+
+function normalizeSnapshotTaskSerials(snapshot: PlatformSnapshot): PlatformSnapshot {
+  const normalizedSubsystems = snapshot.subsystems.map((subsystem) => ({
+    ...subsystem,
+    serialAlias: normalizeSubsystemSerialAlias(subsystem.serialAlias),
+  }));
+  const subsystemsById = new Map(
+    normalizedSubsystems.map((subsystem) => [subsystem.id, subsystem] as const),
+  );
+
+  const tasksWithCreatedAt = snapshot.tasks.map((task) => ({
+    ...task,
+    createdAt: normalizeTaskCreatedAt(task),
+  }));
+
+  const tasksBySubsystemId = new Map<string, Task[]>();
+  for (const task of tasksWithCreatedAt) {
+    const bucket = tasksBySubsystemId.get(task.subsystemId);
+    if (bucket) {
+      bucket.push(task);
+    } else {
+      tasksBySubsystemId.set(task.subsystemId, [task]);
+    }
+  }
+
+  const normalizedTasks = tasksWithCreatedAt.map((task) => task);
+  const taskIndexById = new Map(normalizedTasks.map((task, index) => [task.id, index] as const));
+
+  for (const [subsystemId, tasks] of tasksBySubsystemId) {
+    const subsystem = subsystemsById.get(subsystemId);
+    const usedNumbers = new Set<number>();
+    let maxSerialNumber = 0;
+    const missingSerialTasks: Task[] = [];
+
+    for (const task of tasks) {
+      if (typeof task.serialNumber !== "number" || !Number.isFinite(task.serialNumber)) {
+        missingSerialTasks.push(task);
+        continue;
+      }
+
+      const serialNumber = Math.trunc(task.serialNumber);
+      if (serialNumber < 1 || usedNumbers.has(serialNumber)) {
+        missingSerialTasks.push({ ...task, serialNumber: undefined });
+        continue;
+      }
+
+      usedNumbers.add(serialNumber);
+      maxSerialNumber = Math.max(maxSerialNumber, serialNumber);
+    }
+
+    const nextMissingSerialTasks = missingSerialTasks
+      .map((task) => ({
+        ...task,
+        createdAt: normalizeTaskCreatedAt(task),
+      }))
+      .sort((a, b) => {
+        const diff = a.createdAt!.localeCompare(b.createdAt!);
+        return diff !== 0 ? diff : a.id.localeCompare(b.id);
+      });
+
+    let nextSerialNumber = maxSerialNumber;
+    for (const task of nextMissingSerialTasks) {
+      nextSerialNumber += 1;
+      usedNumbers.add(nextSerialNumber);
+
+      const index = taskIndexById.get(task.id);
+      if (index === undefined) {
+        continue;
+      }
+
+      normalizedTasks[index] = {
+        ...normalizedTasks[index],
+        createdAt: task.createdAt,
+        serialNumber: nextSerialNumber,
+      };
+    }
+
+    for (const task of tasks) {
+      const index = taskIndexById.get(task.id);
+      if (index === undefined) {
+        continue;
+      }
+
+      const updated = normalizedTasks[index];
+      const serialNumber = typeof updated.serialNumber === "number" ? updated.serialNumber : 0;
+      normalizedTasks[index] = {
+        ...updated,
+        serialNumber,
+        serial: formatTaskSerial({ ...updated, serialNumber }, subsystem),
+      };
+    }
+  }
+
+  return {
+    ...snapshot,
+    subsystems: normalizedSubsystems,
+    tasks: normalizedTasks,
+  };
+}
+
 function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const clonedSnapshot = structuredClone(snapshot);
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
-  return {
+  const projectsById = new Map(clonedSnapshot.projects.map((project) => [project.id, project] as const));
+
+  const normalizeEventSeasonId = (event: Event) => {
+    if (event.seasonId) {
+      return event.seasonId;
+    }
+
+    const projectSeasonId =
+      (event.projectIds ?? [])
+        .map((projectId) => projectsById.get(projectId)?.seasonId ?? null)
+        .find((seasonId): seasonId is string => Boolean(seasonId)) ?? null;
+
+    return projectSeasonId ?? fallbackSeasonId;
+  };
+
+  const normalizeEventStatus = (status: EventStatus | undefined): EventStatus =>
+    status === "not-started" || status === "in-progress" || status === "waiting-for-qa" || status === "complete"
+      ? status
+      : "not-started";
+
+  const normalizedEvents = clonedSnapshot.events.map((event) => ({
+    ...event,
+    seasonId: normalizeEventSeasonId(event),
+    status: normalizeEventStatus(event.status),
+    isBlocked: event.isBlocked ?? false,
+    blockedReason: event.blockedReason ?? null,
+    blockedByType: event.blockedByType ?? null,
+    blockedById: event.blockedById ?? null,
+    photoUrl: typeof event.photoUrl === "string" ? event.photoUrl : "",
+  }));
+
+  const buildLegacyScopeRequirements = (events: Event[]): EventRequirement[] => {
+    const requirements: EventRequirement[] = [];
+    const seen = new Set<string>();
+
+    for (const event of events) {
+      let sortOrder = 1;
+      for (const projectId of uniqueIds(event.projectIds ?? [])) {
+        const id = `${event.id}:scope:project:${projectId}`;
+        if (seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        requirements.push({
+          id,
+          eventId: event.id,
+          targetType: "project",
+          targetId: projectId,
+          conditionType: "custom",
+          conditionValue: "in_scope",
+          required: true,
+          sortOrder: sortOrder++,
+          notes: "",
+        });
+      }
+
+      for (const subsystemId of uniqueIds(event.relatedSubsystemIds ?? [])) {
+        const id = `${event.id}:scope:subsystem:${subsystemId}`;
+        if (seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        requirements.push({
+          id,
+          eventId: event.id,
+          targetType: "subsystem",
+          targetId: subsystemId,
+          conditionType: "custom",
+          conditionValue: "in_scope",
+          required: true,
+          sortOrder: sortOrder++,
+          notes: "",
+        });
+      }
+    }
+
+    return requirements;
+  };
+
+  const normalizedEventRequirements =
+    clonedSnapshot.eventRequirements && Array.isArray(clonedSnapshot.eventRequirements)
+      ? clonedSnapshot.eventRequirements
+      : buildLegacyScopeRequirements(normalizedEvents);
+
+  return normalizeSnapshotTaskSerials({
     ...clonedSnapshot,
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
@@ -119,7 +351,9 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     partDefinitions: clonedSnapshot.partDefinitions.map((partDefinition) =>
       normalizePartDefinitionSeasonMembership(partDefinition, fallbackSeasonId),
     ),
-  };
+    events: normalizedEvents,
+    eventRequirements: normalizedEventRequirements,
+  });
 }
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
@@ -170,6 +404,52 @@ function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value))),
   );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getNextPartNumberForPrefix(prefixInput: string) {
+  const prefix = prefixInput.trim().toUpperCase();
+  if (!prefix) {
+    return "P-001";
+  }
+
+  const pattern = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`, "i");
+  let maxSerial = 0;
+  for (const partDefinition of currentSnapshot.partDefinitions) {
+    const match = pattern.exec(partDefinition.partNumber.trim());
+    if (!match) {
+      continue;
+    }
+
+    const parsed = Number(match[1]);
+    if (!Number.isFinite(parsed)) {
+      continue;
+    }
+
+    maxSerial = Math.max(maxSerial, parsed);
+  }
+
+  const nextSerial = maxSerial + 1;
+  return `${prefix}-${String(nextSerial).padStart(3, "0")}`;
+}
+
+function resolvePartNumberForNewPartDefinition(requestedPartNumber: string | undefined) {
+  const trimmed = (requestedPartNumber ?? "").trim();
+  if (!trimmed) {
+    return getNextPartNumberForPrefix("P");
+  }
+
+  const normalized = trimmed.toUpperCase();
+  const prefixMatch = /^([A-Z0-9]{2,10})-?$/.exec(normalized);
+  const hasDigits = /\d/.test(normalized);
+  if (prefixMatch && !hasDigits) {
+    return getNextPartNumberForPrefix(prefixMatch[1]);
+  }
+
+  return trimmed;
 }
 
 function normalizeTaskTargets(task: Task): Task {
@@ -490,6 +770,7 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
     id: uniqueId(toSlug(`Wire ${mechanism.name}`) || "wire-task", taskIds),
+    createdAt: new Date().toISOString(),
     projectId: ownership.projectId,
     workstreamId: ownership.workstreamId,
     workstreamIds: uniqueIds([ownership.workstreamId]),
@@ -552,6 +833,7 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
   const task: Task = {
     id: uniqueId(toSlug(`Integrate ${subsystem.name}`) || "integration-task", taskIds),
+    createdAt: new Date().toISOString(),
     projectId: ownership.projectId,
     workstreamId: null,
     workstreamIds: [],
@@ -880,6 +1162,10 @@ export function getTasks() {
 
 export function getEvents() {
   return currentSnapshot.events;
+}
+
+export function getEventRequirements() {
+  return currentSnapshot.eventRequirements ?? [];
 }
 
 export function getTaskDependencies() {
@@ -1310,6 +1596,7 @@ export function createSubsystem(input: SubsystemInput) {
     id: uniqueId(toSlug(input.name) || "subsystem", subsystemIds),
     projectId: input.projectId,
     name: input.name,
+    serialAlias: normalizeSubsystemSerialAlias(input.serialAlias),
     color: normalizeWorkspaceColor(input.color),
     description: input.description,
     photoUrl: input.photoUrl ?? "",
@@ -1324,11 +1611,11 @@ export function createSubsystem(input: SubsystemInput) {
 
   const integrationTask = createSubsystemIntegrationTask(subsystem);
 
-  currentSnapshot = {
+  currentSnapshot = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     subsystems: [...currentSnapshot.subsystems, subsystem],
     tasks: integrationTask ? [...currentSnapshot.tasks, integrationTask] : currentSnapshot.tasks,
-  };
+  });
 
   return subsystem;
 }
@@ -1349,6 +1636,10 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       : input.parentSubsystemId;
   const nextColor =
     input.color === undefined ? currentSubsystem.color : normalizeWorkspaceColor(input.color);
+  const nextSerialAlias =
+    input.serialAlias === undefined
+      ? currentSubsystem.serialAlias
+      : normalizeSubsystemSerialAlias(input.serialAlias);
 
   currentSnapshot = {
     ...currentSnapshot,
@@ -1360,6 +1651,7 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       updatedSubsystem = {
         ...subsystem,
         ...input,
+        serialAlias: nextSerialAlias,
         color: nextColor,
         iteration:
           input.iteration === undefined
@@ -1371,6 +1663,8 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
       return updatedSubsystem;
     }),
   };
+
+  currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
 
   return updatedSubsystem;
 }
@@ -1527,12 +1821,13 @@ export function createPartDefinition(input: PartDefinitionInput) {
   const partDefinitionIds = new Set(
     currentSnapshot.partDefinitions.map((partDefinition) => partDefinition.id),
   );
+  const partNumber = resolvePartNumberForNewPartDefinition(input.partNumber);
   const partDefinition: PartDefinition = {
     id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     name: input.name,
-    partNumber: input.partNumber,
+    partNumber,
     revision: input.revision,
     iteration: normalizeIteration(input.iteration),
     isArchived: input.isArchived ?? false,
@@ -1661,11 +1956,11 @@ export function createMechanism(input: MechanismInput) {
 
   const wiringTask = createMechanismWiringTask(mechanism);
 
-  currentSnapshot = {
+  currentSnapshot = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     mechanisms: [...currentSnapshot.mechanisms, mechanism],
     tasks: wiringTask ? [...currentSnapshot.tasks, wiringTask] : currentSnapshot.tasks,
-  };
+  });
 
   return mechanism;
 }
@@ -1872,8 +2167,19 @@ export function removeMechanism(mechanismId: string) {
 
 export function createTask(input: TaskInput) {
   const taskIds = new Set(currentSnapshot.tasks.map((task) => task.id));
+  const nextSerialNumber =
+    currentSnapshot.tasks.reduce((max, task) => {
+      if (task.subsystemId !== input.subsystemId) {
+        return max;
+      }
+
+      const serialNumber = typeof task.serialNumber === "number" ? Math.trunc(task.serialNumber) : 0;
+      return Number.isFinite(serialNumber) ? Math.max(max, serialNumber) : max;
+    }, 0) + 1;
   const task: Task = {
     id: uniqueId(toSlug(input.title) || "task", taskIds),
+    createdAt: new Date().toISOString(),
+    serialNumber: nextSerialNumber,
     projectId: input.projectId,
     workstreamId: input.workstreamId,
     workstreamIds: input.workstreamIds,
@@ -1909,18 +2215,64 @@ export function createTask(input: TaskInput) {
 
   const normalizedTask = normalizeTaskTargets(task);
 
-  currentSnapshot = {
+  currentSnapshot = normalizeSnapshotTaskSerials({
     ...currentSnapshot,
     tasks: [...currentSnapshot.tasks, normalizedTask],
-  };
+  });
 
-  return normalizedTask;
+  return currentSnapshot.tasks.find((task) => task.id === normalizedTask.id) ?? normalizedTask;
+}
+
+function buildScopeRequirementsForEvent(input: {
+  eventId: string;
+  projectIds: string[];
+  relatedSubsystemIds: string[];
+}) {
+  const requirements: EventRequirement[] = [];
+  let sortOrder = 1;
+
+  for (const projectId of uniqueIds(input.projectIds)) {
+    requirements.push({
+      id: `${input.eventId}:scope:project:${projectId}`,
+      eventId: input.eventId,
+      targetType: "project",
+      targetId: projectId,
+      conditionType: "custom",
+      conditionValue: "in_scope",
+      required: true,
+      sortOrder: sortOrder++,
+      notes: "",
+    });
+  }
+
+  for (const subsystemId of uniqueIds(input.relatedSubsystemIds)) {
+    requirements.push({
+      id: `${input.eventId}:scope:subsystem:${subsystemId}`,
+      eventId: input.eventId,
+      targetType: "subsystem",
+      targetId: subsystemId,
+      conditionType: "custom",
+      conditionValue: "in_scope",
+      required: true,
+      sortOrder: sortOrder++,
+      notes: "",
+    });
+  }
+
+  return requirements;
 }
 
 export function createEvent(input: EventInput) {
   const eventIds = new Set(currentSnapshot.events.map((event) => event.id));
+  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const seasonId =
+    input.projectIds
+      .map((projectId) => findProject(projectId)?.seasonId ?? null)
+      .find((candidate): candidate is string => Boolean(candidate)) ??
+    fallbackSeasonId;
   const event: Event = {
     id: uniqueId(toSlug(`${input.title} ${input.startDateTime.slice(0, 10)}`) || "event", eventIds),
+    seasonId,
     title: input.title,
     type: input.type,
     startDateTime: input.startDateTime,
@@ -1929,12 +2281,25 @@ export function createEvent(input: EventInput) {
     description: input.description,
     projectIds: input.projectIds,
     relatedSubsystemIds: input.relatedSubsystemIds,
+    status: "not-started",
+    isBlocked: false,
+    blockedReason: null,
+    blockedByType: null,
+    blockedById: null,
     photoUrl: input.photoUrl ?? "",
   };
 
   currentSnapshot = {
     ...currentSnapshot,
     events: [...currentSnapshot.events, event],
+    eventRequirements: [
+      ...(currentSnapshot.eventRequirements ?? []),
+      ...buildScopeRequirementsForEvent({
+        eventId: event.id,
+        projectIds: event.projectIds ?? [],
+        relatedSubsystemIds: event.relatedSubsystemIds ?? [],
+      }),
+    ],
   };
 
   return event;
@@ -2275,24 +2640,77 @@ export function removeTaskBlocker(blockerId: string) {
 }
 
 export function updateEvent(eventId: string, input: Partial<EventInput>) {
+  const currentEvent = currentSnapshot.events.find((event) => event.id === eventId);
+  if (!currentEvent) {
+    return null;
+  }
+
   let updatedEvent: Event | null = null;
+  const desiredProjectIds = input.projectIds === undefined ? undefined : uniqueIds(input.projectIds);
+  const desiredRelatedSubsystemIds =
+    input.relatedSubsystemIds === undefined ? undefined : uniqueIds(input.relatedSubsystemIds);
+  const nextProjectIds = desiredProjectIds ?? (currentEvent.projectIds ?? []);
+  const nextRelatedSubsystemIds =
+    desiredRelatedSubsystemIds ?? (currentEvent.relatedSubsystemIds ?? []);
+  const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
+  const nextSeasonId =
+    nextProjectIds
+      .map((projectId) => findProject(projectId)?.seasonId ?? null)
+      .find((candidate): candidate is string => Boolean(candidate)) ??
+    currentEvent.seasonId ??
+    fallbackSeasonId;
+
+  updatedEvent = {
+    ...currentEvent,
+    ...input,
+    seasonId: nextSeasonId,
+    projectIds: nextProjectIds,
+    relatedSubsystemIds: nextRelatedSubsystemIds,
+    photoUrl: input.photoUrl === undefined ? currentEvent.photoUrl : input.photoUrl,
+  };
 
   currentSnapshot = {
     ...currentSnapshot,
-    events: currentSnapshot.events.map((event) => {
-      if (event.id !== eventId) {
-        return event;
+    events: currentSnapshot.events.map((event) =>
+      event.id === eventId ? updatedEvent! : event,
+    ),
+  };
+
+  if (updatedEvent) {
+    const desiredScopeRequirementIds = new Set(
+      buildScopeRequirementsForEvent({
+        eventId: updatedEvent.id,
+        projectIds: updatedEvent.projectIds ?? [],
+        relatedSubsystemIds: updatedEvent.relatedSubsystemIds ?? [],
+      }).map((req) => req.id),
+    );
+
+    const existing = currentSnapshot.eventRequirements ?? [];
+    const retained = existing.filter((req) => {
+      if (req.eventId !== updatedEvent!.id) {
+        return true;
       }
 
-      updatedEvent = {
-        ...event,
-        ...input,
-        photoUrl: input.photoUrl === undefined ? event.photoUrl : input.photoUrl,
-      };
+      // Keep non-scope requirements untouched. Scope requirements are synced to legacy fields.
+      if (!req.id.startsWith(`${updatedEvent!.id}:scope:`)) {
+        return true;
+      }
 
-      return updatedEvent;
-    }),
-  };
+      return desiredScopeRequirementIds.has(req.id);
+    });
+
+    const retainedIds = new Set(retained.map((req) => req.id));
+    const additions = buildScopeRequirementsForEvent({
+      eventId: updatedEvent.id,
+      projectIds: updatedEvent.projectIds ?? [],
+      relatedSubsystemIds: updatedEvent.relatedSubsystemIds ?? [],
+    }).filter((req) => !retainedIds.has(req.id));
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      eventRequirements: [...retained, ...additions],
+    };
+  }
 
   return updatedEvent;
 }
@@ -2306,6 +2724,9 @@ export function removeEvent(eventId: string) {
   currentSnapshot = {
     ...currentSnapshot,
     events: currentSnapshot.events.filter((candidate) => candidate.id !== eventId),
+    eventRequirements: (currentSnapshot.eventRequirements ?? []).filter(
+      (requirement) => requirement.eventId !== eventId,
+    ),
     testResults: currentSnapshot.testResults.filter((result) => result.eventId !== eventId),
     tasks: currentSnapshot.tasks.map((task) =>
       task.targetEventId === eventId
@@ -2379,7 +2800,7 @@ export function removeWorkLog(workLogId: string) {
   return workLog;
 }
 
-export function updateTask(taskId: string, input: Partial<TaskInput>) {
+export function updateTask(taskId: string, input: Partial<TaskInput>): Task | null {
   let updatedTask: Task | null = null;
 
   currentSnapshot = {
@@ -2420,11 +2841,25 @@ export function updateTask(taskId: string, input: Partial<TaskInput>) {
         ...scalarTargetUpdates,
       });
 
+      if (updatedTask.subsystemId !== task.subsystemId) {
+        updatedTask = {
+          ...updatedTask,
+          serialNumber: undefined,
+          serial: undefined,
+        };
+      }
+
       return updatedTask;
     }),
   };
 
-  return updatedTask;
+  currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
+
+  if (!updatedTask) {
+    return null;
+  }
+
+  return currentSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask;
 }
 
 export function removeTask(taskId: string) {
@@ -2457,6 +2892,8 @@ export function removeTask(taskId: string) {
     ),
     risks: currentSnapshot.risks.filter((risk) => risk.mitigationTaskId !== taskId),
   };
+
+  currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
 
   return task;
 }
@@ -2638,12 +3075,15 @@ export function createMember(input: MemberInput) {
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const seasonId = input.seasonId ?? fallbackSeasonId;
   const activeSeasonIds = uniqueIds([...(input.activeSeasonIds ?? []), seasonId]);
+  const disciplineId = input.disciplineId === undefined ? undefined : input.disciplineId;
   const member: Member = {
     id: uniqueId(toSlug(input.name) || "member", memberIds),
     name: input.name,
     email: (input.email ?? "").trim(),
+    photoUrl: (input.photoUrl ?? "").trim(),
     role: input.role,
     elevated: isElevatedMemberRole(input.role),
+    ...(disciplineId !== undefined ? { disciplineId } : null),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
   };
@@ -2668,6 +3108,8 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
 
       const nextRole = input.role ?? member.role;
       const nextEmail = input.email === undefined ? member.email : input.email.trim();
+      const nextPhotoUrl =
+        input.photoUrl === undefined ? member.photoUrl : input.photoUrl.trim();
       const nextSeasonId = input.seasonId ?? member.seasonId;
       const nextActiveSeasonIds = uniqueIds([
         ...(input.activeSeasonIds ?? member.activeSeasonIds ?? [member.seasonId]),
@@ -2678,6 +3120,7 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
         ...input,
         role: nextRole,
         email: nextEmail,
+        photoUrl: nextPhotoUrl,
         seasonId: nextSeasonId,
         activeSeasonIds:
           nextActiveSeasonIds.length > 0 ? nextActiveSeasonIds : [nextSeasonId],

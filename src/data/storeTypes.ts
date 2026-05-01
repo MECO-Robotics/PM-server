@@ -69,8 +69,10 @@ export interface WorkLogInput {
 export interface MemberInput {
   name: string;
   email?: string;
+  photoUrl?: string;
   role: Member["role"];
   elevated?: boolean;
+  disciplineId?: string | null;
   seasonId?: string;
   activeSeasonIds?: string[];
 }
@@ -156,6 +158,7 @@ export interface WorkstreamInput {
 export interface SubsystemInput {
   projectId: string;
   name: string;
+  serialAlias?: string;
   color?: string;
   description: string;
   photoUrl?: string;

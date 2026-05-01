@@ -40,6 +40,19 @@ export type TaskStatus =
   | "in-progress"
   | "waiting-for-qa"
   | "complete";
+
+// Milestones are represented as Events in the current platform API.
+// EventStatus matches the high-level TaskStatus vocabulary for consistency.
+export type EventStatus = TaskStatus;
+
+export type EventBlockedByType =
+  | "task"
+  | "event"
+  | "artifact"
+  | "subsystem"
+  | "mechanism"
+  | "part-instance"
+  | "external";
 export type TaskPriority = "critical" | "high" | "medium" | "low";
 export type ManufacturingProcess = "3d-print" | "cnc" | "fabrication";
 export type ManufacturingStatus =
@@ -97,8 +110,10 @@ export interface Member {
   id: string;
   name: string;
   email: string;
+  photoUrl?: string;
   role: MemberRole;
   elevated: boolean;
+  disciplineId?: string | null;
   seasonId: string;
   activeSeasonIds?: string[];
 }
@@ -107,6 +122,7 @@ export interface Subsystem {
   id: string;
   projectId: string;
   name: string;
+  serialAlias?: string;
   color?: string;
   description: string;
   photoUrl?: string;
@@ -190,6 +206,9 @@ export interface Artifact {
 
 export interface Task {
   id: string;
+  createdAt?: string;
+  serialNumber?: number;
+  serial?: string;
   projectId: string;
   workstreamId: string | null;
   workstreamIds: string[];
@@ -215,6 +234,7 @@ export interface Task {
   status: TaskStatus;
   dependencyIds: string[];
   blockers: string[];
+  isBlocked?: boolean;
   linkedManufacturingIds: string[];
   linkedPurchaseIds: string[];
   estimatedHours: number;
@@ -245,6 +265,8 @@ export interface Meeting {
 
 export interface Event {
   id: string;
+  // Required in the milestone model, optional for legacy seeds.
+  seasonId?: string;
   title: string;
   type: EventType;
   startDateTime: string;
@@ -253,7 +275,37 @@ export interface Event {
   description: string;
   projectIds: string[];
   relatedSubsystemIds: string[];
+  status?: EventStatus;
+  isBlocked?: boolean;
+  blockedReason?: string | null;
+  blockedByType?: EventBlockedByType | null;
+  blockedById?: string | null;
   photoUrl?: string;
+}
+
+export type EventRequirementTargetType =
+  | "project"
+  | "workflow"
+  | "artifact"
+  | "subsystem"
+  | "mechanism"
+  | "part-instance";
+
+export type EventRequirementConditionType = "iteration" | "workflow_state" | "custom";
+
+// Generalized milestone requirements: "What condition must be true by this event?"
+export interface EventRequirement {
+  id: string;
+  eventId: string;
+  targetType: EventRequirementTargetType;
+  targetId: string;
+  conditionType: EventRequirementConditionType;
+  // Stored as a compact string so we can iterate on semantics without migrations in the seed store.
+  // Examples: "iteration>=2", "state=COMPLETE", "state=QA_PASSED", "in_scope"
+  conditionValue: string;
+  required: boolean;
+  sortOrder: number;
+  notes: string;
 }
 
 export interface AttendanceRecord {
@@ -582,6 +634,8 @@ export interface PlatformSnapshot {
   partInstances: PartInstance[];
   tasks: Task[];
   events: Event[];
+  // Optional for legacy snapshots; normalized in the store on load.
+  eventRequirements?: EventRequirement[];
   taskDependencies: TaskDependency[];
   taskBlockers: TaskBlocker[];
   qaReports: QaReport[];
