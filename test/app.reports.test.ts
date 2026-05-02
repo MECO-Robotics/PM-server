@@ -206,9 +206,10 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        upstreamTaskId: "intake-guard",
-        downstreamTaskId: "swerve-sensor-bundle",
-        dependencyType: "blocks",
+        taskId: "swerve-sensor-bundle",
+        kind: "task",
+        refId: "intake-guard",
+        dependencyType: "hard",
       },
     });
 
@@ -219,7 +220,7 @@ test("web report and task planning contract endpoints persist records", async ()
         dependencyType: string;
       };
     };
-    assert.equal(dependencyBody.item.dependencyType, "blocks");
+    assert.equal(dependencyBody.item.dependencyType, "hard");
 
     resetLimits();
 
@@ -227,12 +228,12 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "PATCH",
       url: `/api/task-dependencies/${dependencyBody.item.id}`,
       payload: {
-        dependencyType: "finish_to_start",
+        dependencyType: "soft",
       },
     });
 
     assert.equal(dependencyUpdateResponse.statusCode, 200);
-    assert.equal(dependencyUpdateResponse.json().item.dependencyType, "finish_to_start");
+    assert.equal(dependencyUpdateResponse.json().item.dependencyType, "soft");
 
     resetLimits();
 
@@ -240,8 +241,9 @@ test("web report and task planning contract endpoints persist records", async ()
       method: "POST",
       url: "/api/task-dependencies",
       payload: {
-        upstreamTaskId: "pit-board-refresh",
-        downstreamTaskId: "pit-bin-labeling",
+        taskId: "pit-bin-labeling",
+        kind: "task",
+        refId: "pit-board-refresh",
         dependencyType: "soft",
       },
     });
@@ -353,10 +355,11 @@ test("web report and task planning contract endpoints persist records", async ()
       reports: Array<{ id: string }>;
       taskBlockers: Array<{ id: string; severity: string }>;
       taskDependencies: Array<{
+        taskId: string;
+        kind: string;
+        refId: string;
         dependencyType: string;
-        downstreamTaskId: string;
         id: string;
-        upstreamTaskId: string;
       }>;
     };
     assert.ok(bootstrapBody.reports.some((report) => report.id === reportBody.item.id));
@@ -367,7 +370,7 @@ test("web report and task planning contract endpoints persist records", async ()
       bootstrapBody.taskDependencies.some(
         (dependency) =>
           dependency.id === dependencyBody.item.id &&
-          dependency.dependencyType === "finish_to_start",
+          dependency.dependencyType === "soft",
       ),
     );
     assert.ok(
@@ -380,9 +383,9 @@ test("web report and task planning contract endpoints persist records", async ()
     assert.ok(
       bootstrapBody.taskDependencies.some(
         (dependency) =>
-          dependency.upstreamTaskId === "pit-board-refresh" &&
-          dependency.downstreamTaskId === "pit-bin-labeling" &&
-          dependency.dependencyType === "finish_to_start",
+          dependency.taskId === "pit-bin-labeling" &&
+          dependency.refId === "pit-board-refresh" &&
+          dependency.dependencyType === "soft",
       ),
     );
     assert.ok(

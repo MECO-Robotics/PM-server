@@ -153,13 +153,113 @@ export const reportFindingSchema = z.object({
   spawnedRiskId: z.string().trim().min(1).nullable(),
 });
 
-export const taskDependencySchema = z.object({
-  upstreamTaskId: z.string().trim().min(1),
-  downstreamTaskId: z.string().trim().min(1),
-  dependencyType: z.enum(["blocks", "soft", "finish_to_start"]),
+const taskDependencyKindSchema = z.enum(["task", "milestone", "part_instance", "event"]);
+const taskDependencyTypeSchema = z.enum(["hard", "soft"]);
+const legacyTaskDependencyTypeSchema = z.enum(["blocks", "soft", "finish_to_start"]);
+
+const taskDependencyInputSchema = z.object({
+  taskId: z.string().trim().min(1),
+  kind: taskDependencyKindSchema,
+  refId: z.string().trim().min(1),
+  requiredState: z.string().trim().min(1).optional(),
+  dependencyType: taskDependencyTypeSchema,
 });
 
-export const taskDependencyPatchSchema = taskDependencySchema.partial();
+const legacyTaskDependencyInputSchema = z.object({
+  upstreamTaskId: z.string().trim().min(1),
+  downstreamTaskId: z.string().trim().min(1),
+  dependencyType: legacyTaskDependencyTypeSchema,
+});
+
+const taskDependencyPatchInputSchema = z.object({
+  taskId: z.string().trim().min(1).optional(),
+  kind: taskDependencyKindSchema.optional(),
+  refId: z.string().trim().min(1).optional(),
+  requiredState: z.string().trim().min(1).optional(),
+  dependencyType: z.union([taskDependencyTypeSchema, legacyTaskDependencyTypeSchema]).optional(),
+  upstreamTaskId: z.string().trim().min(1).optional(),
+  downstreamTaskId: z.string().trim().min(1).optional(),
+});
+
+function normalizeTaskDependencyInput(input: {
+  taskId?: string;
+  kind?: "task" | "milestone" | "part_instance" | "event";
+  refId?: string;
+  requiredState?: string;
+  dependencyType?: "hard" | "soft" | "blocks" | "finish_to_start";
+  upstreamTaskId?: string;
+  downstreamTaskId?: string;
+}) {
+  return {
+    taskId: input.taskId ?? input.downstreamTaskId ?? "",
+    kind: input.kind ?? "task",
+    refId: input.refId ?? input.upstreamTaskId ?? "",
+    requiredState: input.requiredState ?? (input.kind === "part_instance" ? "available" : "complete"),
+    dependencyType:
+      input.dependencyType === "soft"
+        ? "soft"
+        : "hard",
+  } as const;
+}
+
+function normalizeTaskDependencyPatchInput(input: {
+  taskId?: string;
+  kind?: "task" | "milestone" | "part_instance" | "event";
+  refId?: string;
+  requiredState?: string;
+  dependencyType?: "hard" | "soft" | "blocks" | "finish_to_start";
+  upstreamTaskId?: string;
+  downstreamTaskId?: string;
+}) {
+  const normalized: Partial<{
+    taskId: string;
+    kind: "task" | "milestone" | "part_instance" | "event";
+    refId: string;
+    requiredState: string;
+    dependencyType: "hard" | "soft";
+  }> = {};
+
+  if (input.taskId !== undefined || input.downstreamTaskId !== undefined) {
+    normalized.taskId = input.taskId ?? input.downstreamTaskId ?? "";
+  }
+
+  if (input.kind !== undefined) {
+    normalized.kind = input.kind;
+  }
+
+  if (input.refId !== undefined || input.upstreamTaskId !== undefined) {
+    normalized.refId = input.refId ?? input.upstreamTaskId ?? "";
+  }
+
+  if (input.requiredState !== undefined) {
+    normalized.requiredState = input.requiredState;
+  }
+
+  if (input.dependencyType !== undefined) {
+    normalized.dependencyType = input.dependencyType === "soft" ? "soft" : "hard";
+  }
+
+  return normalized;
+}
+
+export const taskDependencySchema = z
+  .union([taskDependencyInputSchema, legacyTaskDependencyInputSchema])
+  .transform((input) => {
+    if ("taskId" in input) {
+      return normalizeTaskDependencyInput(input);
+    }
+
+    return normalizeTaskDependencyInput({
+      taskId: input.downstreamTaskId,
+      kind: "task",
+      refId: input.upstreamTaskId,
+      dependencyType: input.dependencyType,
+    });
+  });
+
+export const taskDependencyPatchSchema = taskDependencyPatchInputSchema.transform((input) =>
+  normalizeTaskDependencyPatchInput(input),
+);
 
 export const taskBlockerSchema = z.object({
   blockedTaskId: z.string().trim().min(1),

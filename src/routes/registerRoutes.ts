@@ -118,6 +118,7 @@ import {
   evaluateTaskCompletion,
   formatTaskStatus,
 } from "../domain/workflows";
+import { isTaskWaitingOnDependencies } from "../domain/taskDependencyState";
 import {
   filterManufacturingItemsForPerson,
   filterPurchaseItemsForPerson,
@@ -237,6 +238,25 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return Boolean(requireSession(request, reply));
+  };
+
+  const isValidTaskDependencyTarget = (
+    kind: "task" | "milestone" | "part_instance" | "event",
+    refId: string,
+  ) => {
+    if (kind === "task") {
+      return getTasks().some((task) => task.id === refId);
+    }
+
+    if (kind === "milestone" || kind === "event") {
+      return getEvents().some((event) => event.id === refId);
+    }
+
+    if (kind === "part_instance") {
+      return getPartInstances().some((partInstance) => partInstance.id === refId);
+    }
+
+    return false;
   };
 
   app.get("/health", async () => {
@@ -1121,21 +1141,6 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const snapshot = getSnapshot();
-    const tasksById = new Map(snapshot.tasks.map((task) => [task.id, task] as const));
-    const blockingUpstreamIdsByDownstreamId = new Map<string, string[]>();
-    snapshot.taskDependencies.forEach((dependency) => {
-      if (dependency.dependencyType === "soft") {
-        return;
-      }
-
-      const existing = blockingUpstreamIdsByDownstreamId.get(dependency.downstreamTaskId);
-      if (existing) {
-        existing.push(dependency.upstreamTaskId);
-        return;
-      }
-
-      blockingUpstreamIdsByDownstreamId.set(dependency.downstreamTaskId, [dependency.upstreamTaskId]);
-    });
     const personId = readPersonFilter(request);
     const items = filterTasksForPerson(personId).map((task) => ({
       id: task.id,
@@ -1168,14 +1173,7 @@ export async function registerRoutes(app: FastifyInstance) {
       gate: evaluateTaskCompletion(task, snapshot),
       blockers: task.blockers,
       isBlocked: (task.blockers ?? []).length > 0,
-      isWaitingOnDependency:
-        task.status !== "complete" &&
-        (((blockingUpstreamIdsByDownstreamId.get(task.id) ?? []).some(
-          (upstreamTaskId) => tasksById.get(upstreamTaskId)?.status !== "complete",
-        )) ||
-          (task.dependencyIds ?? []).some(
-            (dependencyId) => tasksById.get(dependencyId)?.status !== "complete",
-          )),
+      isWaitingOnDependency: isTaskWaitingOnDependencies(task, snapshot),
       linkedManufacturingIds: task.linkedManufacturingIds,
       linkedPurchaseIds: task.linkedPurchaseIds,
       requiresDocumentation: task.requiresDocumentation,
@@ -1732,6 +1730,7 @@ export async function registerRoutes(app: FastifyInstance) {
       item: {
         ...createdTask,
         isBlocked: (createdTask.blockers ?? []).length > 0,
+        isWaitingOnDependency: isTaskWaitingOnDependencies(createdTask, getSnapshot()),
       },
     });
   });
@@ -1820,6 +1819,7 @@ export async function registerRoutes(app: FastifyInstance) {
           ? {
               ...updatedTask,
               isBlocked: (updatedTask.blockers ?? []).length > 0,
+              isWaitingOnDependency: isTaskWaitingOnDependencies(updatedTask, getSnapshot()),
             }
           : updatedTask,
       };
@@ -1844,6 +1844,7 @@ export async function registerRoutes(app: FastifyInstance) {
         item: {
           ...task,
           isBlocked: (task.blockers ?? []).length > 0,
+          isWaitingOnDependency: isTaskWaitingOnDependencies(task, getSnapshot()),
         },
       };
     },
@@ -1879,10 +1880,21 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    const taskIds = new Set(getTasks().map((task) => task.id));
-    if (!taskIds.has(parsed.data.upstreamTaskId) || !taskIds.has(parsed.data.downstreamTaskId)) {
+    if (!getTasks().some((task) => task.id === parsed.data.taskId)) {
       return reply.code(400).send({
-        message: "The selected dependency tasks do not exist.",
+        message: "The selected dependency task does not exist.",
+      });
+    }
+
+    if (parsed.data.kind === "task" && parsed.data.taskId === parsed.data.refId) {
+      return reply.code(400).send({
+        message: "A task cannot depend on itself.",
+      });
+    }
+
+    if (!isValidTaskDependencyTarget(parsed.data.kind, parsed.data.refId)) {
+      return reply.code(400).send({
+        message: "The selected dependency target does not exist.",
       });
     }
 
@@ -1916,17 +1928,33 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      const taskIds = new Set(getTasks().map((task) => task.id));
-      const nextUpstreamTaskId = parsed.data.upstreamTaskId ?? currentDependency.upstreamTaskId;
-      const nextDownstreamTaskId =
-        parsed.data.downstreamTaskId ?? currentDependency.downstreamTaskId;
-      if (!taskIds.has(nextUpstreamTaskId) || !taskIds.has(nextDownstreamTaskId)) {
+      const nextTaskId = parsed.data.taskId ?? currentDependency.taskId;
+      const nextKind = parsed.data.kind ?? currentDependency.kind;
+      const nextRefId = parsed.data.refId ?? currentDependency.refId;
+      if (!getTasks().some((task) => task.id === nextTaskId)) {
         return reply.code(400).send({
-          message: "The selected dependency tasks do not exist.",
+          message: "The selected dependency task does not exist.",
         });
       }
 
-      const dependency = updateTaskDependency(request.params.dependencyId, parsed.data);
+      if (nextKind === "task" && nextTaskId === nextRefId) {
+        return reply.code(400).send({
+          message: "A task cannot depend on itself.",
+        });
+      }
+
+      if (!isValidTaskDependencyTarget(nextKind, nextRefId)) {
+        return reply.code(400).send({
+          message: "The selected dependency target does not exist.",
+        });
+      }
+
+      const dependency = updateTaskDependency(request.params.dependencyId, {
+        ...parsed.data,
+        taskId: nextTaskId,
+        kind: nextKind,
+        refId: nextRefId,
+      });
       return {
         item: dependency,
       };

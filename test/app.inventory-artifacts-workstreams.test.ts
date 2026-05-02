@@ -51,9 +51,10 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
         id: string;
       }>;
       taskDependencies: Array<{
-        downstreamTaskId: string;
+        taskId: string;
+        kind: string;
+        refId: string;
         id: string;
-        upstreamTaskId: string;
       }>;
       qaReviews: Array<{
         id: string;
@@ -90,8 +91,9 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     assert.ok(
       bootstrapBody.taskDependencies.some(
         (dependency) =>
-          dependency.upstreamTaskId === "swerve-sensor-bundle" &&
-          dependency.downstreamTaskId === "vision-calibration-sweep",
+          dependency.taskId === "vision-calibration-sweep" &&
+          dependency.kind === "task" &&
+          dependency.refId === "swerve-sensor-bundle",
       ),
     );
     assert.ok(
@@ -139,9 +141,10 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
         id: string;
       }>;
       taskDependencies: Array<{
-        downstreamTaskId: string;
+        taskId: string;
+        kind: string;
+        refId: string;
         id: string;
-        upstreamTaskId: string;
       }>;
       tasks: Array<{
         id: string;
@@ -181,8 +184,8 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     );
     assert.ok(
       scopedBootstrapBody.taskDependencies.every((dependency) =>
-        scopedBootstrapBody.tasks.some((task) => task.id === dependency.upstreamTaskId) &&
-        scopedBootstrapBody.tasks.some((task) => task.id === dependency.downstreamTaskId),
+        scopedBootstrapBody.tasks.some((task) => task.id === dependency.taskId) &&
+        scopedBootstrapBody.tasks.some((task) => task.id === dependency.refId),
       ),
     );
 

@@ -94,7 +94,8 @@ export type FindingStatus = "open" | "in-progress" | "resolved";
 export type FindingSourceType = "qa" | "test";
 export type IterationStatus = "planned" | "in-progress" | "complete";
 export type ReportType = "QA" | "EventTest" | "Practice" | "Competition" | "Review";
-export type TaskDependencyType = "blocks" | "soft" | "finish_to_start";
+export type TaskDependencyKind = "task" | "milestone" | "part_instance" | "event";
+export type TaskDependencyType = "hard" | "soft";
 export type TaskBlockerType =
   | "task"
   | "event"
@@ -383,8 +384,10 @@ export interface ReportFinding {
 
 export interface TaskDependency {
   id: string;
-  upstreamTaskId: string;
-  downstreamTaskId: string;
+  taskId: string;
+  kind: TaskDependencyKind;
+  refId: string;
+  requiredState?: string;
   dependencyType: TaskDependencyType;
   createdAt: string;
 }

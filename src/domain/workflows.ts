@@ -1,9 +1,5 @@
-import {
-  PlatformSnapshot,
-  QaReview,
-  Task,
-  TaskStatus,
-} from "./types";
+import { PlatformSnapshot, QaReview, Task, TaskStatus } from "./types";
+import { isTaskWaitingOnDependencies } from "./taskDependencyState";
 
 export function evaluateTaskCompletion(task: Task, snapshot: PlatformSnapshot) {
   const workLogs = snapshot.workLogs.filter((workLog) => workLog.taskId === task.id);
@@ -35,8 +31,6 @@ export function evaluateTaskCompletion(task: Task, snapshot: PlatformSnapshot) {
 }
 
 export function buildDashboard(snapshot: PlatformSnapshot) {
-  const taskMap = new Map(snapshot.tasks.map((task) => [task.id, task]));
-
   const totalHours = snapshot.workLogs.reduce((sum, workLog) => {
     return sum + workLog.hours;
   }, 0);
@@ -48,13 +42,10 @@ export function buildDashboard(snapshot: PlatformSnapshot) {
   const blocked = snapshot.tasks.filter((task) => task.blockers.length > 0).length;
   const nextTasks = snapshot.tasks
     .filter((task) => {
-      if (task.status === "complete" || task.blockers.length > 0) {
+      if (task.status === "complete" || task.blockers.length > 0 || isTaskWaitingOnDependencies(task, snapshot)) {
         return false;
       }
-
-      return task.dependencyIds.every((dependencyId) => {
-        return taskMap.get(dependencyId)?.status === "complete";
-      });
+      return true;
     })
     .map((task) => ({
       id: task.id,

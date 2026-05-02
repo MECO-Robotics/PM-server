@@ -8,7 +8,9 @@ import type {
   TestFinding,
   TestResult,
   Task,
+  TaskDependency,
 } from "../../domain/types";
+import { isTaskWaitingOnDependencies } from "../../domain/taskDependencyState";
 import { uniqueIds } from "./taskTargets";
 
 export interface BootstrapSelection {
@@ -63,9 +65,11 @@ export interface BootstrapReportFindingRecord {
 
 export interface BootstrapTaskDependencyRecord {
   id: string;
-  upstreamTaskId: string;
-  downstreamTaskId: string;
-  dependencyType: "blocks" | "finish_to_start";
+  taskId: string;
+  kind: TaskDependency["kind"];
+  refId: string;
+  requiredState?: string;
+  dependencyType: TaskDependency["dependencyType"];
   createdAt: string;
 }
 
@@ -101,14 +105,36 @@ function isPartDefinitionActiveInSeason(
 
 function buildTaskDependencyRecords(tasks: Task[]) {
   return tasks.flatMap<BootstrapTaskDependencyRecord>((task) =>
-    uniqueIds(task.dependencyIds).map((upstreamTaskId, dependencyIndex) => ({
+    uniqueIds(task.dependencyIds).map((refId, dependencyIndex) => ({
       id: `${task.id}:dependency:${dependencyIndex + 1}`,
-      upstreamTaskId,
-      downstreamTaskId: task.id,
-      dependencyType: "finish_to_start",
+      taskId: task.id,
+      kind: "task",
+      refId,
+      requiredState: "complete",
+      dependencyType: "hard",
       createdAt: task.startDate,
     })),
   );
+}
+
+function normalizeTaskDependencyRecord(
+  dependency: Partial<TaskDependency> & {
+    upstreamTaskId?: string;
+    downstreamTaskId?: string;
+    dependencyType?: TaskDependency["dependencyType"] | "blocks" | "finish_to_start";
+  },
+): BootstrapTaskDependencyRecord {
+  const kind = dependency.kind ?? "task";
+
+  return {
+    id: dependency.id ?? "",
+    taskId: dependency.taskId ?? dependency.downstreamTaskId ?? "",
+    kind,
+    refId: dependency.refId ?? dependency.upstreamTaskId ?? "",
+    requiredState: dependency.requiredState ?? (kind === "part_instance" ? "available" : "complete"),
+    dependencyType: dependency.dependencyType === "soft" ? "soft" : "hard",
+    createdAt: dependency.createdAt ?? new Date().toISOString(),
+  };
 }
 
 function buildTaskBlockerRecords(tasks: Task[]) {
@@ -406,25 +432,40 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
 
     return true;
   });
-  const scopedExplicitTaskDependencies = snapshot.taskDependencies.filter(
-    (dependency) =>
-      scopedTaskIds.has(dependency.upstreamTaskId) &&
-      scopedTaskIds.has(dependency.downstreamTaskId),
-  );
+  const scopedExplicitTaskDependencies = snapshot.taskDependencies
+    .map((dependency) => normalizeTaskDependencyRecord(dependency as Partial<TaskDependency>))
+    .filter((dependency) => {
+      if (!scopedTaskIds.has(dependency.taskId)) {
+        return false;
+      }
+
+      if (dependency.kind === "task") {
+        return scopedTaskIds.has(dependency.refId);
+      }
+
+      if (dependency.kind === "milestone" || dependency.kind === "event") {
+        return scopedEventIds.has(dependency.refId);
+      }
+
+      if (dependency.kind === "part_instance") {
+        return scopedPartInstanceIds.has(dependency.refId);
+      }
+
+      return false;
+    });
   const explicitTaskDependencyKeys = new Set(
     scopedExplicitTaskDependencies.map(
-      (dependency) =>
-        `${dependency.upstreamTaskId}:${dependency.downstreamTaskId}:${dependency.dependencyType}`,
+      (dependency) => `${dependency.taskId}:${dependency.kind}:${dependency.refId}:${dependency.dependencyType}:${dependency.requiredState ?? ""}`,
     ),
   );
   const scopedTaskDependencies = [
     ...scopedExplicitTaskDependencies,
     ...buildTaskDependencyRecords(snapshot.tasks).filter(
       (dependency) =>
-        scopedTaskIds.has(dependency.upstreamTaskId) &&
-        scopedTaskIds.has(dependency.downstreamTaskId) &&
+        scopedTaskIds.has(dependency.taskId) &&
+        scopedTaskIds.has(dependency.refId) &&
         !explicitTaskDependencyKeys.has(
-          `${dependency.upstreamTaskId}:${dependency.downstreamTaskId}:${dependency.dependencyType}`,
+          `${dependency.taskId}:${dependency.kind}:${dependency.refId}:${dependency.dependencyType}:${dependency.requiredState ?? ""}`,
         ),
     ),
   ];
@@ -443,41 +484,12 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
         !explicitTaskBlockerKeys.has(`${blocker.blockedTaskId}:${blocker.description}`),
     ),
   ];
-  const scopedTaskBlockedFlagById = new Map<string, boolean>();
-  scopedTasks.forEach((task) => {
-    scopedTaskBlockedFlagById.set(task.id, (task.blockers ?? []).length > 0);
-  });
-  const scopedTaskWaitingFlagById = new Map<string, boolean>();
-  const blockingUpstreamIdsByDownstreamId = new Map<string, string[]>();
-  scopedTaskDependencies.forEach((dependency) => {
-    if (dependency.dependencyType === "soft") {
-      return;
-    }
-
-    const existing = blockingUpstreamIdsByDownstreamId.get(dependency.downstreamTaskId);
-    if (existing) {
-      existing.push(dependency.upstreamTaskId);
-      return;
-    }
-
-    blockingUpstreamIdsByDownstreamId.set(dependency.downstreamTaskId, [dependency.upstreamTaskId]);
-  });
-  scopedTasks.forEach((task) => {
-    if (task.status === "complete") {
-      scopedTaskWaitingFlagById.set(task.id, false);
-      return;
-    }
-
-    const blockingUpstreamIds = blockingUpstreamIdsByDownstreamId.get(task.id) ?? [];
-    const waitsOnDependencyRecord = blockingUpstreamIds.some(
-      (upstreamTaskId) => scopedTasksById.get(upstreamTaskId)?.status !== "complete",
-    );
-    const waitsOnLegacyDependencyId = (task.dependencyIds ?? []).some(
-      (dependencyId) => scopedTasksById.get(dependencyId)?.status !== "complete",
-    );
-
-    scopedTaskWaitingFlagById.set(task.id, waitsOnDependencyRecord || waitsOnLegacyDependencyId);
-  });
+  const scopedSnapshot = {
+    ...snapshot,
+    tasks: scopedTasks,
+    taskDependencies: scopedTaskDependencies,
+    taskBlockers: scopedTaskBlockers,
+  } as PlatformSnapshot;
   const scopedQaReviews = snapshot.qaReviews.filter((review) => {
     if (review.subjectType === "task") {
       return scopedTaskIds.has(review.subjectId);
@@ -527,8 +539,10 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     risks: scopedRisks,
     tasks: scopedTasks.map((task) => ({
       ...task,
-      isBlocked: scopedTaskBlockedFlagById.get(task.id) ?? false,
-      isWaitingOnDependency: scopedTaskWaitingFlagById.get(task.id) ?? false,
+      isBlocked: scopedTaskBlockers.some(
+        (blocker) => blocker.blockedTaskId === task.id && blocker.status === "open",
+      ),
+      isWaitingOnDependency: isTaskWaitingOnDependencies(task, scopedSnapshot),
     })),
     taskDependencies: scopedTaskDependencies,
     taskBlockers: scopedTaskBlockers,

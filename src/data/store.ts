@@ -2724,9 +2724,11 @@ export function createReportFinding(input: ReportFindingInput) {
 export function createTaskDependency(input: TaskDependencyInput) {
   const dependencyIds = new Set(currentSnapshot.taskDependencies.map((dependency) => dependency.id));
   const dependency: TaskDependency = {
-    id: uniqueId(`${input.downstreamTaskId}-dependency`, dependencyIds),
-    upstreamTaskId: input.upstreamTaskId,
-    downstreamTaskId: input.downstreamTaskId,
+    id: uniqueId(`${input.taskId}-dependency`, dependencyIds),
+    taskId: input.taskId,
+    kind: input.kind,
+    refId: input.refId,
+    requiredState: input.requiredState,
     dependencyType: input.dependencyType,
     createdAt: new Date().toISOString(),
   };
@@ -2735,10 +2737,10 @@ export function createTaskDependency(input: TaskDependencyInput) {
     ...currentSnapshot,
     taskDependencies: [...currentSnapshot.taskDependencies, dependency],
     tasks: currentSnapshot.tasks.map((task) =>
-      task.id === input.downstreamTaskId && input.dependencyType !== "soft"
+      task.id === input.taskId && input.kind === "task" && input.dependencyType !== "soft"
         ? {
             ...task,
-            dependencyIds: uniqueIds([...task.dependencyIds, input.upstreamTaskId]),
+            dependencyIds: uniqueIds([...task.dependencyIds, input.refId]),
           }
         : task,
     ),
@@ -2772,18 +2774,22 @@ export function updateTaskDependency(
   currentSnapshot = {
     ...currentSnapshot,
     tasks: currentSnapshot.tasks.map((task) => {
-      const dependencyIds = task.id === originalDependency.downstreamTaskId
-        ? task.dependencyIds.filter(
-            (dependencyId) => dependencyId !== originalDependency.upstreamTaskId,
-          )
-        : task.dependencyIds;
+      let dependencyIds = task.dependencyIds;
+      if (
+        task.id === originalDependency.taskId &&
+        originalDependency.kind === "task" &&
+        originalDependency.dependencyType !== "soft"
+      ) {
+        dependencyIds = dependencyIds.filter((dependencyId) => dependencyId !== originalDependency.refId);
+      }
 
       return {
         ...task,
         dependencyIds:
-          task.id === savedDependency.downstreamTaskId &&
+          task.id === savedDependency.taskId &&
+          savedDependency.kind === "task" &&
           savedDependency.dependencyType !== "soft"
-            ? uniqueIds([...dependencyIds, savedDependency.upstreamTaskId])
+            ? uniqueIds([...dependencyIds, savedDependency.refId])
             : dependencyIds,
       };
     }),
@@ -2806,11 +2812,11 @@ export function removeTaskDependency(dependencyId: string) {
       (candidate) => candidate.id !== dependencyId,
     ),
     tasks: currentSnapshot.tasks.map((task) =>
-      task.id === dependency.downstreamTaskId
+      task.id === dependency.taskId && dependency.kind === "task" && dependency.dependencyType !== "soft"
         ? {
             ...task,
             dependencyIds: task.dependencyIds.filter(
-              (candidate) => candidate !== dependency.upstreamTaskId,
+              (candidate) => candidate !== dependency.refId,
             ),
           }
         : task,
@@ -3154,8 +3160,7 @@ export function removeTask(taskId: string) {
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
     qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
     taskDependencies: currentSnapshot.taskDependencies.filter(
-      (dependency) =>
-        dependency.upstreamTaskId !== taskId && dependency.downstreamTaskId !== taskId,
+      (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
     ),
     taskBlockers: currentSnapshot.taskBlockers.filter(
       (blocker) => blocker.blockedTaskId !== taskId,

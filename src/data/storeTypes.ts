@@ -270,8 +270,10 @@ export interface ReportFindingInput {
 }
 
 export interface TaskDependencyInput {
-  upstreamTaskId: string;
-  downstreamTaskId: string;
+  taskId: string;
+  kind: "task" | "milestone" | "part_instance" | "event";
+  refId: string;
+  requiredState?: string;
   dependencyType: TaskDependencyType;
 }
 
