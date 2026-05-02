@@ -1121,6 +1121,21 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const snapshot = getSnapshot();
+    const tasksById = new Map(snapshot.tasks.map((task) => [task.id, task] as const));
+    const blockingUpstreamIdsByDownstreamId = new Map<string, string[]>();
+    snapshot.taskDependencies.forEach((dependency) => {
+      if (dependency.dependencyType === "soft") {
+        return;
+      }
+
+      const existing = blockingUpstreamIdsByDownstreamId.get(dependency.downstreamTaskId);
+      if (existing) {
+        existing.push(dependency.upstreamTaskId);
+        return;
+      }
+
+      blockingUpstreamIdsByDownstreamId.set(dependency.downstreamTaskId, [dependency.upstreamTaskId]);
+    });
     const personId = readPersonFilter(request);
     const items = filterTasksForPerson(personId).map((task) => ({
       id: task.id,
@@ -1153,6 +1168,14 @@ export async function registerRoutes(app: FastifyInstance) {
       gate: evaluateTaskCompletion(task, snapshot),
       blockers: task.blockers,
       isBlocked: (task.blockers ?? []).length > 0,
+      isWaitingOnDependency:
+        task.status !== "complete" &&
+        (((blockingUpstreamIdsByDownstreamId.get(task.id) ?? []).some(
+          (upstreamTaskId) => tasksById.get(upstreamTaskId)?.status !== "complete",
+        )) ||
+          (task.dependencyIds ?? []).some(
+            (dependencyId) => tasksById.get(dependencyId)?.status !== "complete",
+          )),
       linkedManufacturingIds: task.linkedManufacturingIds,
       linkedPurchaseIds: task.linkedPurchaseIds,
       requiresDocumentation: task.requiresDocumentation,

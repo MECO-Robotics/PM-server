@@ -447,6 +447,37 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   scopedTasks.forEach((task) => {
     scopedTaskBlockedFlagById.set(task.id, (task.blockers ?? []).length > 0);
   });
+  const scopedTaskWaitingFlagById = new Map<string, boolean>();
+  const blockingUpstreamIdsByDownstreamId = new Map<string, string[]>();
+  scopedTaskDependencies.forEach((dependency) => {
+    if (dependency.dependencyType === "soft") {
+      return;
+    }
+
+    const existing = blockingUpstreamIdsByDownstreamId.get(dependency.downstreamTaskId);
+    if (existing) {
+      existing.push(dependency.upstreamTaskId);
+      return;
+    }
+
+    blockingUpstreamIdsByDownstreamId.set(dependency.downstreamTaskId, [dependency.upstreamTaskId]);
+  });
+  scopedTasks.forEach((task) => {
+    if (task.status === "complete") {
+      scopedTaskWaitingFlagById.set(task.id, false);
+      return;
+    }
+
+    const blockingUpstreamIds = blockingUpstreamIdsByDownstreamId.get(task.id) ?? [];
+    const waitsOnDependencyRecord = blockingUpstreamIds.some(
+      (upstreamTaskId) => scopedTasksById.get(upstreamTaskId)?.status !== "complete",
+    );
+    const waitsOnLegacyDependencyId = (task.dependencyIds ?? []).some(
+      (dependencyId) => scopedTasksById.get(dependencyId)?.status !== "complete",
+    );
+
+    scopedTaskWaitingFlagById.set(task.id, waitsOnDependencyRecord || waitsOnLegacyDependencyId);
+  });
   const scopedQaReviews = snapshot.qaReviews.filter((review) => {
     if (review.subjectType === "task") {
       return scopedTaskIds.has(review.subjectId);
@@ -497,6 +528,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     tasks: scopedTasks.map((task) => ({
       ...task,
       isBlocked: scopedTaskBlockedFlagById.get(task.id) ?? false,
+      isWaitingOnDependency: scopedTaskWaitingFlagById.get(task.id) ?? false,
     })),
     taskDependencies: scopedTaskDependencies,
     taskBlockers: scopedTaskBlockers,

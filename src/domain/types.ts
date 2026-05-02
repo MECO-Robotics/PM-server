@@ -236,6 +236,7 @@ export interface Task {
   dependencyIds: string[];
   blockers: string[];
   isBlocked?: boolean;
+  isWaitingOnDependency?: boolean;
   linkedManufacturingIds: string[];
   linkedPurchaseIds: string[];
   estimatedHours: number;
