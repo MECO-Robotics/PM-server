@@ -67,9 +67,11 @@ import {
   getSeasons,
   getSubsystems,
   getTaskTargets,
+  getMilestonesForTask,
   getTasks,
   getTaskBlockers,
   getTaskDependencies,
+  getTasksForMilestone,
   getTestResults,
   getTutorialBaselineState,
   type TutorialBaselineState,
@@ -1203,6 +1205,24 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
+  app.get<{ Params: { taskId: string } }>("/api/tasks/:taskId/milestones", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const task = getTasks().find((candidate) => candidate.id === request.params.taskId);
+    if (!task) {
+      return reply.code(404).send({
+        message: "Task not found.",
+      });
+    }
+
+    return {
+      taskId: task.id,
+      items: getMilestonesForTask(task.id),
+    };
+  });
+
   app.get("/api/events", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
@@ -1213,6 +1233,24 @@ export async function registerRoutes(app: FastifyInstance) {
     return {
       items: paginated.items,
       pagination: paginated.pagination,
+    };
+  });
+
+  app.get<{ Params: { eventId: string } }>("/api/events/:eventId/milestones/tasks", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const event = findEvent(request.params.eventId);
+    if (!event) {
+      return reply.code(404).send({
+        message: "Event not found.",
+      });
+    }
+
+    return {
+      eventId: event.id,
+      items: getTasksForMilestone(event.id),
     };
   });
 

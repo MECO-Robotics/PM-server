@@ -11,10 +11,14 @@ import {
   createPartDefinition,
   createPartInstance,
   createMember,
+  createEvent,
   getSnapshot,
+  getMilestonesForTask,
+  getTasksForMilestone,
   removeMember,
   removePartDefinition,
   resetStore,
+  updateSubsystem,
   updatePartDefinition,
   updateManufacturingItem,
   updateMember,
@@ -564,4 +568,175 @@ test("removeMember clears linked references across the snapshot", () => {
     snapshot.qaReviews.find((review) => review.id === "qa-2")?.participantIds,
     ["ava"],
   );
+});
+
+test("task event requirements infer milestone matches from explicit target requirements", () => {
+  const event = createEvent({
+    title: "Drive Checkpoint",
+    type: "deadline",
+    startDateTime: "2026-06-10T10:00:00-04:00",
+    endDateTime: null,
+    isExternal: false,
+    description: "Checkpoint for drive subsystem readiness.",
+    projectIds: [],
+    relatedSubsystemIds: [],
+  });
+
+  updateSubsystem("drive", {
+    iteration: 3,
+  });
+
+  const snapshot = getSnapshot();
+  snapshot.eventRequirements = [
+    ...snapshot.eventRequirements,
+    {
+      id: "drive-check-iteration",
+      eventId: event.id,
+      targetType: "subsystem",
+      targetId: "drive",
+      conditionType: "iteration",
+      conditionValue: "iteration>=2",
+      required: true,
+      sortOrder: 1,
+      notes: "Drive subsystem must be at least iteration 2.",
+    },
+    {
+      id: "drive-check-part-state",
+      eventId: event.id,
+      targetType: "part-instance",
+      targetId: "pi-swerve-encoder-bracket-front-left",
+      conditionType: "workflow_state",
+      conditionValue: "state=INSTALLED",
+      required: true,
+      sortOrder: 2,
+      notes: "Encoder bracket part instance must be installed.",
+    },
+  ];
+
+  const matches = getMilestonesForTask("swerve-sensor-bundle");
+
+  const driveMatch = matches.find((match) => match.eventId === event.id);
+  assert.ok(driveMatch);
+  assert.equal(driveMatch.isLegacyLink, false);
+  assert.deepEqual(
+    new Set(driveMatch.matchedRequirementIds),
+    new Set(["drive-check-iteration", "drive-check-part-state"]),
+  );
+});
+
+test("project-scoped requirements match through project task target inference", () => {
+  const event = createEvent({
+    title: "Robot Scope Checkpoint",
+    type: "deadline",
+    startDateTime: "2026-06-18T09:00:00-04:00",
+    endDateTime: null,
+    isExternal: false,
+    description: "Scope requirement inferred from event project membership.",
+    projectIds: [],
+    relatedSubsystemIds: [],
+  });
+
+  const snapshot = getSnapshot();
+  snapshot.eventRequirements = [
+    ...snapshot.eventRequirements,
+    {
+      id: "robot-scope-match",
+      eventId: event.id,
+      targetType: "project",
+      targetId: "project-robot-2026",
+      conditionType: "custom",
+      conditionValue: "in_scope",
+      required: true,
+      sortOrder: 1,
+      notes: "Robot-project-scoped checkpoint.",
+    },
+  ];
+
+  const matches = getMilestonesForTask("swerve-sensor-bundle");
+  const scopeMatch = matches.find((match) => match.eventId === event.id);
+
+  assert.ok(scopeMatch);
+  assert.equal(scopeMatch.isLegacyLink, false);
+  assert.ok(scopeMatch.matchedRequirementIds.includes("robot-scope-match"));
+});
+
+test("legacy target-event links are preserved when no requirement match exists", () => {
+  const event = createEvent({
+    title: "Legacy-Only Event",
+    type: "deadline",
+    startDateTime: "2026-07-10T09:00:00-04:00",
+    endDateTime: null,
+    isExternal: false,
+    description: "Legacy-only mapping validation fixture.",
+    projectIds: [],
+    relatedSubsystemIds: [],
+  });
+
+  const updated = updateTask("outreach-kiosk-assembly", {
+    targetEventId: event.id,
+  });
+  assert.ok(updated);
+
+  const matches = getMilestonesForTask(updated.id);
+
+  const legacyMatch = matches.find((match) => match.eventId === event.id);
+  assert.ok(legacyMatch);
+  assert.equal(legacyMatch.isLegacyLink, true);
+  assert.deepEqual(legacyMatch.matchedRequirementIds, []);
+});
+
+test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
+  const event = createEvent({
+    title: "Drive Milestone",
+    type: "deadline",
+    startDateTime: "2026-08-12T11:00:00-04:00",
+    endDateTime: null,
+    isExternal: false,
+    description: "Drive milestone that supports inferred and legacy matches.",
+    projectIds: [],
+    relatedSubsystemIds: [],
+  });
+
+  updateSubsystem("drive", {
+    iteration: 2,
+  });
+
+  const snapshot = getSnapshot();
+  snapshot.eventRequirements = [
+    ...snapshot.eventRequirements,
+    {
+      id: "drive-readiness-iteration",
+      eventId: event.id,
+      targetType: "subsystem",
+      targetId: "drive",
+      conditionType: "iteration",
+      conditionValue: "iteration>=2",
+      required: true,
+      sortOrder: 1,
+      notes: "Drive subsystem must meet the first major milestone.",
+    },
+  ];
+
+  const legacyTask = updateTask("outreach-kiosk-assembly", {
+    targetEventId: event.id,
+  });
+  assert.ok(legacyTask);
+
+  const matches = getTasksForMilestone(event.id);
+
+  const inferredTask = matches.find((match) =>
+    match.taskId === "swerve-sensor-bundle",
+  );
+  const legacyTaskMatch = matches.find((match) => match.taskId === legacyTask.id);
+
+  assert.ok(inferredTask);
+  assert.equal(inferredTask.isLegacyLink, false);
+  assert.deepEqual(
+    new Set(inferredTask.matchedRequirementIds),
+    new Set(["drive-readiness-iteration"]),
+  );
+
+  assert.ok(legacyTaskMatch);
+  assert.equal(legacyTaskMatch.isLegacyLink, true);
+  assert.deepEqual(legacyTaskMatch.matchedRequirementIds, []);
 });

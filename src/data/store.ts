@@ -84,6 +84,161 @@ export type {
   WorkstreamInput,
 } from "./storeTypes";
 
+export interface MilestoneMatch {
+  eventId: string;
+  matchedRequirementIds: string[];
+  isLegacyLink: boolean;
+}
+
+export interface TaskMilestoneMatch {
+  taskId: string;
+  matchedRequirementIds: string[];
+  isLegacyLink: boolean;
+}
+
+function parseIterationCondition(conditionValue: string) {
+  const normalized = conditionValue.trim().toLowerCase();
+  const match = normalized.match(/^iteration\s*([<>]=?|==)\s*(\d+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const [, operator, iterationText] = match;
+  const parsedIteration = Number.parseInt(iterationText, 10);
+  if (!Number.isFinite(parsedIteration)) {
+    return null;
+  }
+
+  return {
+    operator: operator === "==" ? "=" : operator,
+    iteration: Math.max(1, Math.trunc(parsedIteration)),
+  };
+}
+
+function normalizeStateValue(value: string) {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+}
+
+function extractComparableState(targetType: EventRequirement["targetType"], targetId: string) {
+  if (targetType === "artifact") {
+    const artifact = currentSnapshot.artifacts.find((candidate) => candidate.id === targetId);
+    if (!artifact) {
+      return null;
+    }
+
+    return normalizeStateValue(artifact.status);
+  }
+
+  if (targetType === "part-instance") {
+    const partInstance = currentSnapshot.partInstances.find(
+      (candidate) => candidate.id === targetId,
+    );
+    if (!partInstance) {
+      return null;
+    }
+
+    return normalizeStateValue(partInstance.status);
+  }
+
+  return null;
+}
+
+function extractComparableIteration(targetType: EventRequirement["targetType"], targetId: string) {
+  if (targetType === "subsystem") {
+    const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === targetId);
+    return subsystem?.iteration;
+  }
+
+  if (targetType === "mechanism") {
+    const mechanism = currentSnapshot.mechanisms.find((candidate) => candidate.id === targetId);
+    return mechanism?.iteration;
+  }
+
+  return undefined;
+}
+
+function isConditionSatisfied({
+  targetType,
+  targetId,
+  conditionType,
+  conditionValue,
+}: Pick<EventRequirement, "targetType" | "targetId" | "conditionType" | "conditionValue">) {
+  if (conditionType === "custom") {
+    return conditionValue.trim().toLowerCase() === "in_scope";
+  }
+
+  if (conditionType === "iteration") {
+    const parsed = parseIterationCondition(conditionValue);
+    if (!parsed) {
+      return false;
+    }
+
+    const actualIteration = extractComparableIteration(targetType, targetId);
+    if (typeof actualIteration !== "number") {
+      return false;
+    }
+
+    if (parsed.operator === "=") {
+      return actualIteration === parsed.iteration;
+    }
+    if (parsed.operator === ">=") {
+      return actualIteration >= parsed.iteration;
+    }
+    if (parsed.operator === ">") {
+      return actualIteration > parsed.iteration;
+    }
+    if (parsed.operator === "<=") {
+      return actualIteration <= parsed.iteration;
+    }
+    if (parsed.operator === "<") {
+      return actualIteration < parsed.iteration;
+    }
+
+    return false;
+  }
+
+  const parsedState = normalizeStateValue(conditionValue.replace(/^state\s*=\s*/i, ""));
+  if (!parsedState.length || parsedState === "STATE") {
+    return false;
+  }
+
+  const actualState = extractComparableState(targetType, targetId);
+  if (!actualState) {
+    return false;
+  }
+
+  const stateAliases: Record<string, string[]> = {
+    COMPLETE: ["COMPLETE", "DONE", "PASS", "PASSED", "OK", "PUBLISHED", "INSTALLED"],
+    IN_REVIEW: ["IN_REVIEW", "REVIEW", "UNDER_REVIEW", "REVIEWING"],
+    QA_PASSED: ["QA_PASSED", "PASSED", "APPROVED", "COMPLETE", "PUBLISHED"],
+  };
+
+  return (
+    actualState === parsedState ||
+    (stateAliases[parsedState] ?? []).includes(actualState)
+  );
+}
+
+function matchesEventRequirement({
+  eventRequirement,
+  targetType,
+  targetId,
+}: {
+  eventRequirement: EventRequirement;
+  targetType: string;
+  targetId: string;
+}) {
+  if (eventRequirement.targetType !== targetType || eventRequirement.targetId !== targetId) {
+    return false;
+  }
+
+  if (eventRequirement.conditionType === "custom") {
+    return true;
+  }
+
+  return isConditionSatisfied(eventRequirement);
+}
+
 function normalizeMemberSeasonMembership(
   member: Member,
   fallbackSeasonId: string,
@@ -513,6 +668,7 @@ export interface FindingListItem {
 }
 
 export type TaskTargetType =
+  | "project"
   | "workstream"
   | "subsystem"
   | "mechanism"
@@ -533,6 +689,17 @@ export interface TaskTargetLink {
 
 function flattenTaskTargets(task: Task): TaskTargetLink[] {
   const links: TaskTargetLink[] = [];
+
+  links.push({
+    id: `${task.id}:project:${task.projectId}`,
+    taskId: task.id,
+    taskTitle: task.title,
+    projectId: task.projectId,
+    workstreamId: task.workstreamId,
+    subsystemId: task.subsystemId,
+    targetType: "project",
+    targetId: task.projectId,
+  });
 
   const workstreamIds = uniqueIds([...task.workstreamIds, task.workstreamId]);
   for (const workstreamId of workstreamIds) {
@@ -1370,6 +1537,110 @@ export function getFindings(): FindingListItem[] {
 
 export function getTaskTargets() {
   return currentSnapshot.tasks.flatMap((task) => flattenTaskTargets(task));
+}
+
+export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (!task) {
+    return [];
+  }
+
+  const taskTargets = flattenTaskTargets(task);
+  const matchedEventIds = new Map<string, Set<string>>();
+  const hasLegacyEventTarget = new Set(
+    taskTargets
+      .filter((target) => target.targetType === "event")
+      .map((target) => target.targetId),
+  );
+  const requirements = getEventRequirements();
+
+  for (const target of taskTargets) {
+    for (const requirement of requirements) {
+      if (!matchesEventRequirement({ eventRequirement: requirement, targetType: target.targetType, targetId: target.targetId })) {
+        continue;
+      }
+
+      const previous = matchedEventIds.get(requirement.eventId) ?? new Set<string>();
+      previous.add(requirement.id);
+      matchedEventIds.set(requirement.eventId, previous);
+    }
+  }
+
+  for (const eventId of hasLegacyEventTarget) {
+    if (!matchedEventIds.has(eventId)) {
+      matchedEventIds.set(eventId, new Set<string>());
+    }
+  }
+
+  const eventOrder = new Map(
+    currentSnapshot.events.map((event, index) => [event.id, index] as const),
+  );
+
+  return Array.from(matchedEventIds.entries())
+    .sort(([left], [right]) => {
+      return (eventOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
+        (eventOrder.get(right) ?? Number.MAX_SAFE_INTEGER);
+    })
+    .map(([eventId, requirementIds]) => ({
+      eventId,
+      matchedRequirementIds: Array.from(requirementIds),
+      isLegacyLink: hasLegacyEventTarget.has(eventId),
+    }));
+}
+
+export function getTasksForMilestone(eventId: string): TaskMilestoneMatch[] {
+  const requirements = getEventRequirements().filter((requirement) => requirement.eventId === eventId);
+  if (requirements.length === 0) {
+    return currentSnapshot.tasks
+      .filter((task) =>
+        flattenTaskTargets(task).some(
+          (target) => target.targetType === "event" && target.targetId === eventId,
+        ),
+      )
+      .map((task) => ({
+        taskId: task.id,
+        matchedRequirementIds: [],
+        isLegacyLink: true,
+      }));
+  }
+
+  const matches = currentSnapshot.tasks
+    .map((task) => {
+      const taskTargets = flattenTaskTargets(task);
+      const matchedRequirementIds = new Set<string>();
+      let isLegacyLink = false;
+
+      for (const target of taskTargets) {
+        if (target.targetType === "event" && target.targetId === eventId) {
+          isLegacyLink = true;
+        }
+
+        for (const requirement of requirements) {
+          if (
+            matchesEventRequirement({
+              eventRequirement: requirement,
+              targetType: target.targetType,
+              targetId: target.targetId,
+            })
+          ) {
+            matchedRequirementIds.add(requirement.id);
+          }
+        }
+      }
+
+      if (matchedRequirementIds.size > 0 || isLegacyLink) {
+        return {
+          taskId: task.id,
+          matchedRequirementIds: Array.from(matchedRequirementIds),
+          isLegacyLink,
+        };
+      }
+
+      return null;
+    })
+    .filter((match): match is TaskMilestoneMatch => match !== null);
+
+  return matches;
 }
 
 export function getRisks() {

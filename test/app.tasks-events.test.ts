@@ -337,5 +337,43 @@ test("task and event endpoints support mobile and multi-target payloads", async 
       mobileSubsystemDeleteResponse.json().item.id,
       mobileSubsystemCreatedBody.item.id,
     );
+
+    resetLimits();
+
+    const inferredTasksResponse = await app.inject({
+      method: "GET",
+      url: `/api/events/${createdEventBody.item.id}/milestones/tasks`,
+    });
+    assert.equal(inferredTasksResponse.statusCode, 200);
+    const inferredTasksBody = inferredTasksResponse.json() as {
+      eventId: string;
+      items: Array<{
+        taskId: string;
+        matchedRequirementIds: string[];
+        isLegacyLink: boolean;
+      }>;
+    };
+    assert.equal(inferredTasksBody.eventId, createdEventBody.item.id);
+    assert.ok(
+      inferredTasksBody.items.some((item) => item.taskId === "outreach-kiosk-assembly"),
+    );
+
+    resetLimits();
+
+    const taskMilestonesResponse = await app.inject({
+      method: "GET",
+      url: "/api/tasks/outreach-kiosk-assembly/milestones",
+    });
+    assert.equal(taskMilestonesResponse.statusCode, 200);
+    const taskMilestonesBody = taskMilestonesResponse.json() as {
+      taskId: string;
+      items: Array<{ eventId: string; matchedRequirementIds: string[]; isLegacyLink: boolean }>;
+    };
+    assert.equal(taskMilestonesBody.taskId, "outreach-kiosk-assembly");
+    assert.ok(
+      taskMilestonesBody.items.some((item) =>
+        ["outreach-milestone-may-05", createdEventBody.item.id].includes(item.eventId),
+      ),
+    );
   });
 });
