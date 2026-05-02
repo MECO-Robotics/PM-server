@@ -67,6 +67,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
       url: "/api/part-definitions",
       payload: {
         name: "Auto Serial Part",
+        isHardware: true,
         revision: "A",
         iteration: 1,
         type: "custom",
@@ -78,7 +79,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     });
 
     assert.equal(autoPartDefinitionResponse.statusCode, 201);
-    assert.match(autoPartDefinitionResponse.json().item.partNumber, /^P-\d{3}$/);
+    assert.match(autoPartDefinitionResponse.json().item.partNumber, /^H-\d{3}$/);
 
     resetLimits();
 

@@ -436,10 +436,13 @@ function getNextPartNumberForPrefix(prefixInput: string) {
   return `${prefix}-${String(nextSerial).padStart(3, "0")}`;
 }
 
-function resolvePartNumberForNewPartDefinition(requestedPartNumber: string | undefined) {
+function resolvePartNumberForNewPartDefinition(
+  requestedPartNumber: string | undefined,
+  isHardware: boolean,
+) {
   const trimmed = (requestedPartNumber ?? "").trim();
   if (!trimmed) {
-    return getNextPartNumberForPrefix("P");
+    return getNextPartNumberForPrefix(isHardware ? "H" : "P");
   }
 
   const normalized = trimmed.toUpperCase();
@@ -1821,13 +1824,17 @@ export function createPartDefinition(input: PartDefinitionInput) {
   const partDefinitionIds = new Set(
     currentSnapshot.partDefinitions.map((partDefinition) => partDefinition.id),
   );
-  const partNumber = resolvePartNumberForNewPartDefinition(input.partNumber);
+  const partNumber = resolvePartNumberForNewPartDefinition(
+    input.partNumber,
+    input.isHardware ?? false,
+  );
   const partDefinition: PartDefinition = {
     id: uniqueId(toSlug(input.name) || "part-definition", partDefinitionIds),
     seasonId,
     activeSeasonIds: activeSeasonIds.length > 0 ? activeSeasonIds : [seasonId],
     name: input.name,
     partNumber,
+    isHardware: input.isHardware ?? false,
     revision: input.revision,
     iteration: normalizeIteration(input.iteration),
     isArchived: input.isArchived ?? false,

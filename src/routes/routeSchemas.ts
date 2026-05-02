@@ -246,6 +246,7 @@ export const partDefinitionSchema = z.object({
   name: z.string().trim().min(2),
   // When omitted/blank, the platform assigns the next available part number.
   partNumber: z.string().trim().optional().default(""),
+  isHardware: z.boolean().default(false),
   revision: z.string().trim().min(1),
   iteration: iterationSchema,
   isArchived: z.boolean().default(false),
@@ -261,6 +262,7 @@ export const partDefinitionPatchSchema = z.object({
   activeSeasonIds: z.array(z.string().trim().min(1)).optional(),
   name: z.string().trim().min(2).optional(),
   partNumber: z.string().trim().min(1).optional(),
+  isHardware: z.boolean().optional(),
   revision: z.string().trim().min(1).optional(),
   iteration: iterationSchema.optional(),
   isArchived: z.boolean().optional(),

@@ -157,6 +157,7 @@ export interface PartDefinition {
   activeSeasonIds?: string[];
   name: string;
   partNumber: string;
+  isHardware?: boolean;
   revision: string;
   iteration: number;
   isArchived: boolean;
