@@ -28,7 +28,7 @@ services:
     command: >-
       sh -c "if [ -z \"$${DATABASE_URL:-}\" ]; then
       export DATABASE_URL=\"postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}?schema=public\";
-      fi; npm run prisma:normalize-event-types && npm run prisma:deploy:accept-data-loss && npm run start"
+      fi; npm run prisma:deploy:accept-data-loss && npm run prisma:normalize-event-types && npm run start"
     ports:
       - "${PUBLIC_PORT:-8080}:8080"
     cap_drop:
