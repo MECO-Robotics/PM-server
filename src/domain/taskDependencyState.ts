@@ -1,4 +1,4 @@
-import type { PlatformSnapshot, Task, TaskDependency } from "./types";
+import type { MilestoneStatus, PlatformSnapshot, Task, TaskDependency } from "./types";
 
 type LegacyTaskDependencyRecord = {
   id: string;
@@ -10,12 +10,18 @@ type LegacyTaskDependencyRecord = {
 
 type DependencyLike = TaskDependency | LegacyTaskDependencyRecord | Partial<TaskDependency & LegacyTaskDependencyRecord>;
 
-const PART_INSTANCE_STATUS_ORDER: Record<string, number> = {
-  planned: 0,
-  needed: 1,
-  available: 2,
-  installed: 3,
-  retired: 4,
+const MILESTONE_STATUS_ORDER: Record<MilestoneStatus, number> = {
+  "not ready": 0,
+  blocked: 1,
+  qa: 2,
+  ready: 3,
+};
+
+const PART_INSTANCE_STATUS_ORDER: Record<MilestoneStatus, number> = {
+  "not ready": 0,
+  blocked: 1,
+  qa: 2,
+  ready: 3,
 };
 
 function uniqueIds(values: Array<string | null | undefined>) {
@@ -44,8 +50,8 @@ function normalizeDependencyRecord(dependency: DependencyLike, index: number): T
     taskId,
     kind,
     refId,
-    requiredState:
-      dependencyRecord.requiredState ?? (kind === "part_instance" ? "available" : "complete"),
+      requiredState:
+      dependencyRecord.requiredState ?? (kind === "part_instance" ? "ready" : "complete"),
     dependencyType,
     createdAt: dependencyRecord.createdAt ?? new Date().toISOString(),
   };
@@ -107,37 +113,62 @@ function getTaskById(snapshot: PlatformSnapshot, taskId: string) {
   return snapshot.tasks.find((task) => task.id === taskId) ?? null;
 }
 
-function getEventById(snapshot: PlatformSnapshot, eventId: string) {
-  return snapshot.events.find((event) => event.id === eventId) ?? null;
+function getMilestoneById(snapshot: PlatformSnapshot, milestoneId: string) {
+  return snapshot.milestones.find((milestone) => milestone.id === milestoneId) ?? null;
 }
 
 function getPartInstanceById(snapshot: PlatformSnapshot, partInstanceId: string) {
   return snapshot.partInstances.find((partInstance) => partInstance.id === partInstanceId) ?? null;
 }
 
-function isEventDependencySatisfied(
+function normalizeMilestoneRequiredState(requiredState: string | undefined) {
+  const normalized = (requiredState ?? "ready").trim().toLowerCase();
+  if (
+    normalized === "started" ||
+    normalized === "available" ||
+    normalized === "installed" ||
+    normalized === "complete"
+  ) {
+    return "ready" as const;
+  }
+
+  if (normalized === "not-ready" || normalized === "not_ready") {
+    return "not ready" as const;
+  }
+
+  if (normalized === "planned" || normalized === "retired") {
+    return "not ready" as const;
+  }
+
+  if (normalized === "needed") {
+    return "blocked" as const;
+  }
+
+  if (normalized === "in-qa" || normalized === "waiting-for-qa") {
+    return "qa" as const;
+  }
+
+  if (normalized === "in-progress") {
+    return "blocked" as const;
+  }
+
+  return normalized as MilestoneStatus;
+}
+
+function isMilestoneDependencySatisfied(
   snapshot: PlatformSnapshot,
-  eventId: string,
+  milestoneId: string,
   requiredState: string | undefined,
-  now: Date,
 ) {
-  const event = getEventById(snapshot, eventId);
-  if (!event) {
+  const milestone = getMilestoneById(snapshot, milestoneId);
+  if (!milestone) {
     return false;
   }
 
-  const startDate = new Date(event.startDateTime);
-  const endDate = event.endDateTime ? new Date(event.endDateTime) : startDate;
+  const requiredOrder = MILESTONE_STATUS_ORDER[normalizeMilestoneRequiredState(requiredState)];
+  const targetOrder = MILESTONE_STATUS_ORDER[normalizeMilestoneRequiredState(milestone.status ?? "not ready")];
 
-  if (requiredState === "started" || requiredState === "available") {
-    return Number.isNaN(startDate.getTime()) ? false : now.getTime() >= startDate.getTime();
-  }
-
-  if (Number.isNaN(endDate.getTime())) {
-    return false;
-  }
-
-  return now.getTime() >= endDate.getTime();
+  return targetOrder >= requiredOrder;
 }
 
 function isPartInstanceDependencySatisfied(
@@ -150,11 +181,11 @@ function isPartInstanceDependencySatisfied(
     return false;
   }
 
-  const requiredOrder = PART_INSTANCE_STATUS_ORDER[requiredState ?? "available"];
+  const requiredOrder = PART_INSTANCE_STATUS_ORDER[normalizeMilestoneRequiredState(requiredState)];
   const targetOrder = PART_INSTANCE_STATUS_ORDER[partInstance.status];
 
   if (requiredOrder === undefined || targetOrder === undefined) {
-    return partInstance.status === (requiredState ?? "available");
+    return partInstance.status === normalizeMilestoneRequiredState(requiredState);
   }
 
   return targetOrder >= requiredOrder;
@@ -173,8 +204,8 @@ function isTaskDependencySatisfied(dependency: TaskDependency, snapshot: Platfor
     return isPartInstanceDependencySatisfied(snapshot, dependency.refId, dependency.requiredState);
   }
 
-  if (dependency.kind === "milestone" || dependency.kind === "event") {
-    return isEventDependencySatisfied(snapshot, dependency.refId, dependency.requiredState, now);
+  if (dependency.kind === "milestone") {
+    return isMilestoneDependencySatisfied(snapshot, dependency.refId, dependency.requiredState);
   }
 
   return false;

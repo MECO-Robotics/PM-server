@@ -3,9 +3,9 @@ import type {
   Artifact,
   DesignIteration,
   Discipline,
-  EventRequirement,
-  Event,
-  EventStatus,
+  MilestoneRequirement,
+  Milestone,
+  MilestoneStatus,
   ManufacturingItem,
   Material,
   Mechanism,
@@ -36,7 +36,7 @@ import {
 } from "../domain/taskDisciplines";
 import type {
   ArtifactInput,
-  EventInput,
+  MilestoneInput,
   ManufacturingItemInput,
   MaterialInput,
   MechanismInput,
@@ -61,7 +61,7 @@ import type {
 
 export type {
   ArtifactInput,
-  EventInput,
+  MilestoneInput,
   ManufacturingItemInput,
   MaterialInput,
   MechanismInput,
@@ -85,7 +85,7 @@ export type {
 } from "./storeTypes";
 
 export interface MilestoneMatch {
-  eventId: string;
+  milestoneId: string;
   matchedRequirementIds: string[];
   isLegacyLink: boolean;
 }
@@ -119,7 +119,7 @@ function normalizeStateValue(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
 }
 
-function extractComparableState(targetType: EventRequirement["targetType"], targetId: string) {
+function extractComparableState(targetType: MilestoneRequirement["targetType"], targetId: string) {
   if (targetType === "artifact") {
     const artifact = currentSnapshot.artifacts.find((candidate) => candidate.id === targetId);
     if (!artifact) {
@@ -143,7 +143,7 @@ function extractComparableState(targetType: EventRequirement["targetType"], targ
   return null;
 }
 
-function extractComparableIteration(targetType: EventRequirement["targetType"], targetId: string) {
+function extractComparableIteration(targetType: MilestoneRequirement["targetType"], targetId: string) {
   if (targetType === "subsystem") {
     const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === targetId);
     return subsystem?.iteration;
@@ -162,7 +162,7 @@ function isConditionSatisfied({
   targetId,
   conditionType,
   conditionValue,
-}: Pick<EventRequirement, "targetType" | "targetId" | "conditionType" | "conditionValue">) {
+}: Pick<MilestoneRequirement, "targetType" | "targetId" | "conditionType" | "conditionValue">) {
   if (conditionType === "custom") {
     return conditionValue.trim().toLowerCase() === "in_scope";
   }
@@ -219,24 +219,24 @@ function isConditionSatisfied({
   );
 }
 
-function matchesEventRequirement({
-  eventRequirement,
+function matchesMilestoneRequirement({
+  milestoneRequirement,
   targetType,
   targetId,
 }: {
-  eventRequirement: EventRequirement;
+  milestoneRequirement: MilestoneRequirement;
   targetType: string;
   targetId: string;
 }) {
-  if (eventRequirement.targetType !== targetType || eventRequirement.targetId !== targetId) {
+  if (milestoneRequirement.targetType !== targetType || milestoneRequirement.targetId !== targetId) {
     return false;
   }
 
-  if (eventRequirement.conditionType === "custom") {
+  if (milestoneRequirement.conditionType === "custom") {
     return true;
   }
 
-  return isConditionSatisfied(eventRequirement);
+  return isConditionSatisfied(milestoneRequirement);
 }
 
 function normalizeMemberSeasonMembership(
@@ -416,50 +416,51 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
   const fallbackSeasonId = clonedSnapshot.seasons[0]?.id ?? "default-season";
   const projectsById = new Map(clonedSnapshot.projects.map((project) => [project.id, project] as const));
 
-  const normalizeEventSeasonId = (event: Event) => {
-    if (event.seasonId) {
-      return event.seasonId;
+  const normalizeMilestoneSeasonId = (milestone: Milestone) => {
+    if (milestone.seasonId) {
+      return milestone.seasonId;
     }
 
     const projectSeasonId =
-      (event.projectIds ?? [])
+      (milestone.projectIds ?? [])
         .map((projectId) => projectsById.get(projectId)?.seasonId ?? null)
         .find((seasonId): seasonId is string => Boolean(seasonId)) ?? null;
 
     return projectSeasonId ?? fallbackSeasonId;
   };
 
-  const normalizeEventStatus = (status: EventStatus | undefined): EventStatus =>
-    status === "not-started" || status === "in-progress" || status === "waiting-for-qa" || status === "complete"
-      ? status
-      : "not-started";
-
-  const normalizedEvents = clonedSnapshot.events.map((event) => ({
-    ...event,
-    seasonId: normalizeEventSeasonId(event),
-    status: normalizeEventStatus(event.status),
-    isBlocked: event.isBlocked ?? false,
-    blockedReason: event.blockedReason ?? null,
-    blockedByType: event.blockedByType ?? null,
-    blockedById: event.blockedById ?? null,
-    photoUrl: typeof event.photoUrl === "string" ? event.photoUrl : "",
+  const normalizedMilestones = clonedSnapshot.milestones.map((milestone) => ({
+    ...milestone,
+    seasonId: normalizeMilestoneSeasonId(milestone),
+    status: normalizeMilestoneStatus(milestone.status),
+    isBlocked: milestone.isBlocked ?? false,
+    blockedReason: milestone.blockedReason ?? null,
+    blockedByType: milestone.blockedByType ?? null,
+    blockedById: milestone.blockedById ?? null,
+    photoUrl: typeof milestone.photoUrl === "string" ? milestone.photoUrl : "",
   }));
 
-  const buildLegacyScopeRequirements = (events: Event[]): EventRequirement[] => {
-    const requirements: EventRequirement[] = [];
+  const normalizedPartInstances = clonedSnapshot.partInstances.map((partInstance) => ({
+    ...partInstance,
+    status: normalizePartInstanceStatus(partInstance.status),
+    photoUrl: typeof partInstance.photoUrl === "string" ? partInstance.photoUrl : "",
+  }));
+
+  const buildLegacyScopeRequirements = (milestones: Milestone[]): MilestoneRequirement[] => {
+    const requirements: MilestoneRequirement[] = [];
     const seen = new Set<string>();
 
-    for (const event of events) {
+    for (const milestone of milestones) {
       let sortOrder = 1;
-      for (const projectId of uniqueIds(event.projectIds ?? [])) {
-        const id = `${event.id}:scope:project:${projectId}`;
+      for (const projectId of uniqueIds(milestone.projectIds ?? [])) {
+        const id = `${milestone.id}:scope:project:${projectId}`;
         if (seen.has(id)) {
           continue;
         }
         seen.add(id);
         requirements.push({
           id,
-          eventId: event.id,
+          milestoneId: milestone.id,
           targetType: "project",
           targetId: projectId,
           conditionType: "custom",
@@ -470,15 +471,15 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
         });
       }
 
-      for (const subsystemId of uniqueIds(event.relatedSubsystemIds ?? [])) {
-        const id = `${event.id}:scope:subsystem:${subsystemId}`;
+      for (const subsystemId of uniqueIds(milestone.relatedSubsystemIds ?? [])) {
+        const id = `${milestone.id}:scope:subsystem:${subsystemId}`;
         if (seen.has(id)) {
           continue;
         }
         seen.add(id);
         requirements.push({
           id,
-          eventId: event.id,
+          milestoneId: milestone.id,
           targetType: "subsystem",
           targetId: subsystemId,
           conditionType: "custom",
@@ -493,10 +494,10 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     return requirements;
   };
 
-  const normalizedEventRequirements =
-    clonedSnapshot.eventRequirements && Array.isArray(clonedSnapshot.eventRequirements)
-      ? clonedSnapshot.eventRequirements
-      : buildLegacyScopeRequirements(normalizedEvents);
+  const normalizedMilestoneRequirements =
+    clonedSnapshot.milestoneRequirements && Array.isArray(clonedSnapshot.milestoneRequirements)
+      ? clonedSnapshot.milestoneRequirements
+      : buildLegacyScopeRequirements(normalizedMilestones);
 
   return normalizeSnapshotTaskSerials({
     ...clonedSnapshot,
@@ -506,8 +507,9 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     partDefinitions: clonedSnapshot.partDefinitions.map((partDefinition) =>
       normalizePartDefinitionSeasonMembership(partDefinition, fallbackSeasonId),
     ),
-    events: normalizedEvents,
-    eventRequirements: normalizedEventRequirements,
+    milestones: normalizedMilestones,
+    partInstances: normalizedPartInstances,
+    milestoneRequirements: normalizedMilestoneRequirements,
   });
 }
 
@@ -559,6 +561,54 @@ function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value))),
   );
+}
+
+function normalizeMilestoneStatus(
+  status: MilestoneStatus | "not-started" | "in-progress" | "waiting-for-qa" | "complete" | undefined,
+): MilestoneStatus {
+  if (status === "not ready" || status === "blocked" || status === "qa" || status === "ready") {
+    return status;
+  }
+
+  if (status === "not-started") {
+    return "not ready";
+  }
+
+  if (status === "in-progress") {
+    return "blocked";
+  }
+
+  if (status === "waiting-for-qa") {
+    return "qa";
+  }
+
+  if (status === "complete") {
+    return "ready";
+  }
+
+  return "not ready";
+}
+
+function normalizePartInstanceStatus(
+  status: PartInstance["status"] | "planned" | "needed" | "available" | "installed" | "retired" | undefined,
+): PartInstance["status"] {
+  if (status === "not ready" || status === "blocked" || status === "qa" || status === "ready") {
+    return status;
+  }
+
+  if (status === "planned" || status === "retired") {
+    return "not ready";
+  }
+
+  if (status === "needed") {
+    return "blocked";
+  }
+
+  if (status === "available" || status === "installed") {
+    return "ready";
+  }
+
+  return "not ready";
 }
 
 function escapeRegExp(value: string) {
@@ -662,7 +712,7 @@ export interface FindingListItem {
   partInstanceId: string | null;
   artifactId: string | null;
   taskId: string | null;
-  eventId: string | null;
+  milestoneId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -674,7 +724,7 @@ export type TaskTargetType =
   | "mechanism"
   | "part-instance"
   | "artifact"
-  | "event";
+  | "milestone";
 
 export interface TaskTargetLink {
   id: string;
@@ -771,16 +821,16 @@ function flattenTaskTargets(task: Task): TaskTargetLink[] {
     });
   }
 
-  if (task.targetEventId) {
+  if (task.targetMilestoneId) {
     links.push({
-      id: `${task.id}:event:${task.targetEventId}`,
+      id: `${task.id}:milestone:${task.targetMilestoneId}`,
       taskId: task.id,
       taskTitle: task.title,
       projectId: task.projectId,
       workstreamId: task.workstreamId,
       subsystemId: task.subsystemId,
-      targetType: "event",
-      targetId: task.targetEventId,
+      targetType: "milestone",
+      targetId: task.targetMilestoneId,
     });
   }
 
@@ -801,7 +851,7 @@ const DEFAULT_SEASON_PROJECTS: Array<{
 ];
 
 const TUTORIAL_SEASON_ID = "default-season";
-const TUTORIAL_SEASON_NAME = "Tutorial season";
+const TUTORIAL_SEASON_NAME = "Default Season";
 const EXPECTED_TUTORIAL_PROJECT_NAMES = [
   "Tutorial Robot 2026",
   "Media",
@@ -955,7 +1005,7 @@ function createMechanismWiringTask(mechanism: Mechanism): Task | null {
     partInstanceIds: [],
     artifactId: null,
     artifactIds: [],
-    targetEventId: null,
+    targetMilestoneId: null,
     ownerId: subsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([subsystem.responsibleEngineerId]),
     mentorId: subsystem.mentorIds[0] ?? null,
@@ -1018,7 +1068,7 @@ function createSubsystemIntegrationTask(subsystem: Subsystem): Task | null {
     partInstanceIds: [],
     artifactId: null,
     artifactIds: [],
-    targetEventId: null,
+    targetMilestoneId: null,
     ownerId: parentSubsystem.responsibleEngineerId,
     assigneeIds: uniqueIds([parentSubsystem.responsibleEngineerId]),
     mentorId: parentSubsystem.mentorIds[0] ?? null,
@@ -1330,12 +1380,12 @@ export function getTasks() {
   return currentSnapshot.tasks;
 }
 
-export function getEvents() {
-  return currentSnapshot.events;
+export function getMilestones() {
+  return currentSnapshot.milestones;
 }
 
-export function getEventRequirements() {
-  return currentSnapshot.eventRequirements ?? [];
+export function getMilestoneRequirements() {
+  return currentSnapshot.milestoneRequirements ?? [];
 }
 
 export function getTaskDependencies() {
@@ -1377,7 +1427,7 @@ function reportFromQaReport(report: QaReport): Report | null {
     reportType: "QA",
     projectId: task.projectId,
     taskId: report.taskId,
-    eventId: null,
+    milestoneId: null,
     workstreamId: task.workstreamId,
     createdByMemberId: null,
     result: report.result,
@@ -1393,25 +1443,25 @@ function reportFromQaReport(report: QaReport): Report | null {
 }
 
 function reportFromTestResult(result: TestResult): Report | null {
-  const event = currentSnapshot.events.find((candidate) => candidate.id === result.eventId);
-  const projectId = event?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? null;
+  const milestone = currentSnapshot.milestones.find((candidate) => candidate.id === result.milestoneId);
+  const projectId = milestone?.projectIds[0] ?? currentSnapshot.projects[0]?.id ?? null;
   if (!projectId) {
     return null;
   }
 
   return {
     id: result.id,
-    reportType: "EventTest",
+    reportType: "MilestoneTest",
     projectId,
     taskId: null,
-    eventId: result.eventId,
+    milestoneId: result.milestoneId,
     workstreamId: null,
     createdByMemberId: null,
     result: result.status,
     summary: result.title,
     notes: result.findings.join("\n"),
     photoUrl: result.photoUrl,
-    createdAt: event?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    createdAt: milestone?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     title: result.title,
     status: result.status,
     findings: result.findings,
@@ -1478,7 +1528,7 @@ function reportFindingFromTestFinding(finding: TestFinding): ReportFinding | nul
     workstreamId: finding.workstreamId,
     subsystemId: finding.subsystemId,
     taskId: finding.taskId,
-    eventId: finding.eventId,
+    milestoneId: finding.milestoneId,
     createdAt: finding.createdAt,
     updatedAt: finding.updatedAt,
   };
@@ -1507,7 +1557,7 @@ export function getFindings(): FindingListItem[] {
     partInstanceId: finding.partInstanceId,
     artifactId: finding.artifactId,
     taskId: finding.taskId,
-    eventId: null,
+    milestoneId: null,
     createdAt: finding.createdAt,
     updatedAt: finding.updatedAt,
   }));
@@ -1527,7 +1577,7 @@ export function getFindings(): FindingListItem[] {
     partInstanceId: finding.partInstanceId,
     artifactId: finding.artifactId,
     taskId: finding.taskId,
-    eventId: finding.eventId,
+    milestoneId: finding.milestoneId,
     createdAt: finding.createdAt,
     updatedAt: finding.updatedAt,
   }));
@@ -1546,55 +1596,61 @@ export function getMilestonesForTask(taskId: string): MilestoneMatch[] {
   }
 
   const taskTargets = flattenTaskTargets(task);
-  const matchedEventIds = new Map<string, Set<string>>();
-  const hasLegacyEventTarget = new Set(
+  const matchedMilestoneIds = new Map<string, Set<string>>();
+  const hasLegacyMilestoneTarget = new Set(
     taskTargets
-      .filter((target) => target.targetType === "event")
+      .filter((target) => target.targetType === "milestone")
       .map((target) => target.targetId),
   );
-  const requirements = getEventRequirements();
+  const requirements = getMilestoneRequirements();
 
   for (const target of taskTargets) {
     for (const requirement of requirements) {
-      if (!matchesEventRequirement({ eventRequirement: requirement, targetType: target.targetType, targetId: target.targetId })) {
+      if (
+        !matchesMilestoneRequirement({
+          milestoneRequirement: requirement,
+          targetType: target.targetType,
+          targetId: target.targetId,
+        })
+      ) {
         continue;
       }
 
-      const previous = matchedEventIds.get(requirement.eventId) ?? new Set<string>();
+      const previous = matchedMilestoneIds.get(requirement.milestoneId) ?? new Set<string>();
       previous.add(requirement.id);
-      matchedEventIds.set(requirement.eventId, previous);
+      matchedMilestoneIds.set(requirement.milestoneId, previous);
     }
   }
 
-  for (const eventId of hasLegacyEventTarget) {
-    if (!matchedEventIds.has(eventId)) {
-      matchedEventIds.set(eventId, new Set<string>());
+  for (const milestoneId of hasLegacyMilestoneTarget) {
+    if (!matchedMilestoneIds.has(milestoneId)) {
+      matchedMilestoneIds.set(milestoneId, new Set<string>());
     }
   }
 
-  const eventOrder = new Map(
-    currentSnapshot.events.map((event, index) => [event.id, index] as const),
+  const milestoneOrder = new Map(
+    currentSnapshot.milestones.map((milestone, index) => [milestone.id, index] as const),
   );
 
-  return Array.from(matchedEventIds.entries())
+  return Array.from(matchedMilestoneIds.entries())
     .sort(([left], [right]) => {
-      return (eventOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
-        (eventOrder.get(right) ?? Number.MAX_SAFE_INTEGER);
+      return (milestoneOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
+        (milestoneOrder.get(right) ?? Number.MAX_SAFE_INTEGER);
     })
-    .map(([eventId, requirementIds]) => ({
-      eventId,
+    .map(([milestoneId, requirementIds]) => ({
+      milestoneId,
       matchedRequirementIds: Array.from(requirementIds),
-      isLegacyLink: hasLegacyEventTarget.has(eventId),
+      isLegacyLink: hasLegacyMilestoneTarget.has(milestoneId),
     }));
 }
 
-export function getTasksForMilestone(eventId: string): TaskMilestoneMatch[] {
-  const requirements = getEventRequirements().filter((requirement) => requirement.eventId === eventId);
+export function getTasksForMilestone(milestoneId: string): TaskMilestoneMatch[] {
+  const requirements = getMilestoneRequirements().filter((requirement) => requirement.milestoneId === milestoneId);
   if (requirements.length === 0) {
     return currentSnapshot.tasks
       .filter((task) =>
         flattenTaskTargets(task).some(
-          (target) => target.targetType === "event" && target.targetId === eventId,
+          (target) => target.targetType === "milestone" && target.targetId === milestoneId,
         ),
       )
       .map((task) => ({
@@ -1611,14 +1667,14 @@ export function getTasksForMilestone(eventId: string): TaskMilestoneMatch[] {
       let isLegacyLink = false;
 
       for (const target of taskTargets) {
-        if (target.targetType === "event" && target.targetId === eventId) {
+        if (target.targetType === "milestone" && target.targetId === milestoneId) {
           isLegacyLink = true;
         }
 
         for (const requirement of requirements) {
           if (
-            matchesEventRequirement({
-              eventRequirement: requirement,
+            matchesMilestoneRequirement({
+              milestoneRequirement: requirement,
               targetType: target.targetType,
               targetId: target.targetId,
             })
@@ -2033,9 +2089,9 @@ export function removeSubsystem(subsystemId: string) {
     workLogs: currentSnapshot.workLogs.filter(
       (workLog) => !taskIdsToRemove.has(workLog.taskId),
     ),
-    events: currentSnapshot.events.map((event) => ({
-      ...event,
-      relatedSubsystemIds: event.relatedSubsystemIds.filter(
+    milestones: currentSnapshot.milestones.map((milestone) => ({
+      ...milestone,
+      relatedSubsystemIds: milestone.relatedSubsystemIds.filter(
         (relatedSubsystemId) => !subsystemIdsToRemove.has(relatedSubsystemId),
       ),
     })),
@@ -2255,7 +2311,7 @@ export function createPartInstance(input: PartInstanceInput) {
     name: input.name,
     quantity: input.quantity,
     trackIndividually: input.trackIndividually,
-    status: input.status,
+    status: normalizePartInstanceStatus(input.status),
     photoUrl: input.photoUrl ?? "",
   };
 
@@ -2300,6 +2356,10 @@ export function updatePartInstance(
         ...input,
         subsystemId: nextSubsystemId,
         mechanismId: nextMechanismId,
+        status:
+          input.status === undefined
+            ? partInstance.status
+            : normalizePartInstanceStatus(input.status),
       };
 
       return updatedPartInstance;
@@ -2472,7 +2532,7 @@ export function createTask(input: TaskInput) {
     partInstanceIds: input.partInstanceIds,
     artifactId: input.artifactId,
     artifactIds: input.artifactIds,
-    targetEventId: input.targetEventId,
+    targetMilestoneId: input.targetMilestoneId,
     photoUrl: input.photoUrl ?? "",
     ownerId: input.ownerId,
     assigneeIds: input.assigneeIds,
@@ -2501,18 +2561,18 @@ export function createTask(input: TaskInput) {
   return currentSnapshot.tasks.find((task) => task.id === normalizedTask.id) ?? normalizedTask;
 }
 
-function buildScopeRequirementsForEvent(input: {
-  eventId: string;
+function buildScopeRequirementsForMilestone(input: {
+  milestoneId: string;
   projectIds: string[];
   relatedSubsystemIds: string[];
 }) {
-  const requirements: EventRequirement[] = [];
+  const requirements: MilestoneRequirement[] = [];
   let sortOrder = 1;
 
   for (const projectId of uniqueIds(input.projectIds)) {
     requirements.push({
-      id: `${input.eventId}:scope:project:${projectId}`,
-      eventId: input.eventId,
+      id: `${input.milestoneId}:scope:project:${projectId}`,
+      milestoneId: input.milestoneId,
       targetType: "project",
       targetId: projectId,
       conditionType: "custom",
@@ -2525,8 +2585,8 @@ function buildScopeRequirementsForEvent(input: {
 
   for (const subsystemId of uniqueIds(input.relatedSubsystemIds)) {
     requirements.push({
-      id: `${input.eventId}:scope:subsystem:${subsystemId}`,
-      eventId: input.eventId,
+      id: `${input.milestoneId}:scope:subsystem:${subsystemId}`,
+      milestoneId: input.milestoneId,
       targetType: "subsystem",
       targetId: subsystemId,
       conditionType: "custom",
@@ -2540,16 +2600,16 @@ function buildScopeRequirementsForEvent(input: {
   return requirements;
 }
 
-export function createEvent(input: EventInput) {
-  const eventIds = new Set(currentSnapshot.events.map((event) => event.id));
+export function createMilestone(input: MilestoneInput) {
+  const milestoneIds = new Set(currentSnapshot.milestones.map((milestone) => milestone.id));
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const seasonId =
     input.projectIds
       .map((projectId) => findProject(projectId)?.seasonId ?? null)
       .find((candidate): candidate is string => Boolean(candidate)) ??
     fallbackSeasonId;
-  const event: Event = {
-    id: uniqueId(toSlug(`${input.title} ${input.startDateTime.slice(0, 10)}`) || "event", eventIds),
+  const milestone: Milestone = {
+    id: uniqueId(toSlug(`${input.title} ${input.startDateTime.slice(0, 10)}`) || "milestone", milestoneIds),
     seasonId,
     title: input.title,
     type: input.type,
@@ -2559,7 +2619,7 @@ export function createEvent(input: EventInput) {
     description: input.description,
     projectIds: input.projectIds,
     relatedSubsystemIds: input.relatedSubsystemIds,
-    status: "not-started",
+    status: normalizeMilestoneStatus(input.status),
     isBlocked: false,
     blockedReason: null,
     blockedByType: null,
@@ -2569,18 +2629,18 @@ export function createEvent(input: EventInput) {
 
   currentSnapshot = {
     ...currentSnapshot,
-    events: [...currentSnapshot.events, event],
-    eventRequirements: [
-      ...(currentSnapshot.eventRequirements ?? []),
-      ...buildScopeRequirementsForEvent({
-        eventId: event.id,
-        projectIds: event.projectIds ?? [],
-        relatedSubsystemIds: event.relatedSubsystemIds ?? [],
+    milestones: [...currentSnapshot.milestones, milestone],
+    milestoneRequirements: [
+      ...(currentSnapshot.milestoneRequirements ?? []),
+      ...buildScopeRequirementsForMilestone({
+        milestoneId: milestone.id,
+        projectIds: milestone.projectIds ?? [],
+        relatedSubsystemIds: milestone.relatedSubsystemIds ?? [],
       }),
     ],
   };
 
-  return event;
+  return milestone;
 }
 
 export function createQaReport(input: QaReportInput) {
@@ -2607,8 +2667,8 @@ export function createQaReport(input: QaReportInput) {
 export function createTestResult(input: TestResultInput) {
   const resultIds = new Set(currentSnapshot.testResults.map((result) => result.id));
   const testResult: TestResult = {
-    id: uniqueId(toSlug(`${input.title} ${input.eventId}`) || "test-result", resultIds),
-    eventId: input.eventId,
+    id: uniqueId(toSlug(`${input.title} ${input.milestoneId}`) || "test-result", resultIds),
+    milestoneId: input.milestoneId,
     title: input.title,
     status: input.status,
     findings: input.findings,
@@ -2645,12 +2705,12 @@ export function createReport(input: ReportInput) {
     return reportFromQaReport(report);
   }
 
-  if (!input.eventId) {
+  if (!input.milestoneId) {
     return null;
   }
 
   const testResult = createTestResult({
-    eventId: input.eventId,
+    milestoneId: input.milestoneId,
     title: input.title ?? input.summary,
     status: input.status ?? (input.result === "fail" || input.result === "blocked" ? input.result : "pass"),
     findings: uniqueIds(input.findings ?? input.notes.split("\n")),
@@ -2698,7 +2758,7 @@ export function createReportFinding(input: ReportFindingInput) {
   const finding: TestFinding = {
     id: uniqueId(toSlug(input.issueType) || "test-finding", findingIds),
     testResultId: input.reportId,
-    eventId: report.eventId,
+    milestoneId: report.milestoneId,
     taskId: input.spawnedTaskId ?? report.taskId,
     projectId: report.projectId,
     workstreamId: report.workstreamId,
@@ -2923,60 +2983,64 @@ export function removeTaskBlocker(blockerId: string) {
   return blocker;
 }
 
-export function updateEvent(eventId: string, input: Partial<EventInput>) {
-  const currentEvent = currentSnapshot.events.find((event) => event.id === eventId);
-  if (!currentEvent) {
+export function updateMilestone(milestoneId: string, input: Partial<MilestoneInput>) {
+  const currentMilestone = currentSnapshot.milestones.find((milestone) => milestone.id === milestoneId);
+  if (!currentMilestone) {
     return null;
   }
 
-  let updatedEvent: Event | null = null;
+  let updatedMilestone: Milestone | null = null;
   const desiredProjectIds = input.projectIds === undefined ? undefined : uniqueIds(input.projectIds);
   const desiredRelatedSubsystemIds =
     input.relatedSubsystemIds === undefined ? undefined : uniqueIds(input.relatedSubsystemIds);
-  const nextProjectIds = desiredProjectIds ?? (currentEvent.projectIds ?? []);
+  const nextProjectIds = desiredProjectIds ?? (currentMilestone.projectIds ?? []);
   const nextRelatedSubsystemIds =
-    desiredRelatedSubsystemIds ?? (currentEvent.relatedSubsystemIds ?? []);
+    desiredRelatedSubsystemIds ?? (currentMilestone.relatedSubsystemIds ?? []);
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const nextSeasonId =
     nextProjectIds
       .map((projectId) => findProject(projectId)?.seasonId ?? null)
       .find((candidate): candidate is string => Boolean(candidate)) ??
-    currentEvent.seasonId ??
+    currentMilestone.seasonId ??
     fallbackSeasonId;
 
-  updatedEvent = {
-    ...currentEvent,
+  updatedMilestone = {
+    ...currentMilestone,
     ...input,
     seasonId: nextSeasonId,
     projectIds: nextProjectIds,
     relatedSubsystemIds: nextRelatedSubsystemIds,
-    photoUrl: input.photoUrl === undefined ? currentEvent.photoUrl : input.photoUrl,
+    status:
+      input.status === undefined
+        ? currentMilestone.status
+        : normalizeMilestoneStatus(input.status),
+    photoUrl: input.photoUrl === undefined ? currentMilestone.photoUrl : input.photoUrl,
   };
 
   currentSnapshot = {
     ...currentSnapshot,
-    events: currentSnapshot.events.map((event) =>
-      event.id === eventId ? updatedEvent! : event,
+    milestones: currentSnapshot.milestones.map((milestone) =>
+      milestone.id === milestoneId ? updatedMilestone! : milestone,
     ),
   };
 
-  if (updatedEvent) {
+  if (updatedMilestone) {
     const desiredScopeRequirementIds = new Set(
-      buildScopeRequirementsForEvent({
-        eventId: updatedEvent.id,
-        projectIds: updatedEvent.projectIds ?? [],
-        relatedSubsystemIds: updatedEvent.relatedSubsystemIds ?? [],
+      buildScopeRequirementsForMilestone({
+        milestoneId: updatedMilestone.id,
+        projectIds: updatedMilestone.projectIds ?? [],
+        relatedSubsystemIds: updatedMilestone.relatedSubsystemIds ?? [],
       }).map((req) => req.id),
     );
 
-    const existing = currentSnapshot.eventRequirements ?? [];
+    const existing = currentSnapshot.milestoneRequirements ?? [];
     const retained = existing.filter((req) => {
-      if (req.eventId !== updatedEvent!.id) {
+      if (req.milestoneId !== updatedMilestone!.id) {
         return true;
       }
 
       // Keep non-scope requirements untouched. Scope requirements are synced to legacy fields.
-      if (!req.id.startsWith(`${updatedEvent!.id}:scope:`)) {
+      if (!req.id.startsWith(`${updatedMilestone!.id}:scope:`)) {
         return true;
       }
 
@@ -2984,45 +3048,45 @@ export function updateEvent(eventId: string, input: Partial<EventInput>) {
     });
 
     const retainedIds = new Set(retained.map((req) => req.id));
-    const additions = buildScopeRequirementsForEvent({
-      eventId: updatedEvent.id,
-      projectIds: updatedEvent.projectIds ?? [],
-      relatedSubsystemIds: updatedEvent.relatedSubsystemIds ?? [],
+    const additions = buildScopeRequirementsForMilestone({
+      milestoneId: updatedMilestone.id,
+      projectIds: updatedMilestone.projectIds ?? [],
+      relatedSubsystemIds: updatedMilestone.relatedSubsystemIds ?? [],
     }).filter((req) => !retainedIds.has(req.id));
 
     currentSnapshot = {
       ...currentSnapshot,
-      eventRequirements: [...retained, ...additions],
+      milestoneRequirements: [...retained, ...additions],
     };
   }
 
-  return updatedEvent;
+  return updatedMilestone;
 }
 
-export function removeEvent(eventId: string) {
-  const event = currentSnapshot.events.find((candidate) => candidate.id === eventId);
-  if (!event) {
+export function removeMilestone(milestoneId: string) {
+  const milestone = currentSnapshot.milestones.find((candidate) => candidate.id === milestoneId);
+  if (!milestone) {
     return null;
   }
 
   currentSnapshot = {
     ...currentSnapshot,
-    events: currentSnapshot.events.filter((candidate) => candidate.id !== eventId),
-    eventRequirements: (currentSnapshot.eventRequirements ?? []).filter(
-      (requirement) => requirement.eventId !== eventId,
+    milestones: currentSnapshot.milestones.filter((candidate) => candidate.id !== milestoneId),
+    milestoneRequirements: (currentSnapshot.milestoneRequirements ?? []).filter(
+      (requirement) => requirement.milestoneId !== milestoneId,
     ),
-    testResults: currentSnapshot.testResults.filter((result) => result.eventId !== eventId),
+    testResults: currentSnapshot.testResults.filter((result) => result.milestoneId !== milestoneId),
     tasks: currentSnapshot.tasks.map((task) =>
-      task.targetEventId === eventId
+      task.targetMilestoneId === milestoneId
         ? {
             ...task,
-            targetEventId: null,
+            targetMilestoneId: null,
           }
         : task,
     ),
   };
 
-  return event;
+  return milestone;
 }
 
 export function createWorkLog(input: WorkLogInput) {
@@ -3469,8 +3533,8 @@ export function findSubsystem(subsystemId: string): Subsystem | undefined {
   return currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId);
 }
 
-export function findEvent(eventId: string): Event | undefined {
-  return currentSnapshot.events.find((event) => event.id === eventId);
+export function findMilestone(milestoneId: string): Milestone | undefined {
+  return currentSnapshot.milestones.find((milestone) => milestone.id === milestoneId);
 }
 
 export function findDiscipline(disciplineId: string): Discipline | undefined {

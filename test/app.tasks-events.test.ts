@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
-test("task and event endpoints support mobile and multi-target payloads", async () => {
+test("task and milestone endpoints support mobile and multi-target payloads", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const mobileMemberCreateResponse = await app.inject({
       method: "POST",
@@ -64,7 +64,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         requirementId: null,
         mechanismId: null,
         partInstanceId: null,
-        targetEventId: null,
+        targetMilestoneId: null,
         ownerId: mobileMemberCreatedBody.item.id,
         assigneeIds: [mobileMemberCreatedBody.item.id, "ava"],
         mentorId: "riley",
@@ -122,7 +122,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         disciplineId: "design",
         mechanismId: "pit-board",
         partInstanceId: "pi-pit-board-frame",
-        targetEventId: "pit-freeze-apr-28",
+        targetMilestoneId: "pit-freeze-apr-28",
         ownerId: "sofia",
         mentorId: "marco",
         dueDate: "2026-05-01",
@@ -157,7 +157,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         disciplineId: "design",
         mechanismIds: ["swerve-module", "auto-safety"],
         partInstanceIds: ["pi-swerve-encoder-bracket-front-left"],
-        targetEventId: null,
+        targetMilestoneId: null,
         ownerId: mobileMemberCreatedBody.item.id,
         mentorId: "riley",
         dueDate: "2026-05-08",
@@ -213,9 +213,9 @@ test("task and event endpoints support mobile and multi-target payloads", async 
 
     resetLimits();
 
-    const createEventResponse = await app.inject({
+    const createMilestoneResponse = await app.inject({
       method: "POST",
-      url: "/api/events",
+      url: "/api/milestones",
       payload: {
         title: "Cross Project Demo",
         type: "demo",
@@ -225,12 +225,12 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         description: "Milestone shared across robot and operations work.",
         projectIds: ["project-robot-2026", "project-operations-2026"],
         relatedSubsystemIds: ["drive", "operations"],
-        photoUrl: "https://cdn.example.test/forms/event-demo.png",
+        photoUrl: "https://cdn.example.test/forms/milestone-demo.png",
       },
     });
 
-    assert.equal(createEventResponse.statusCode, 201);
-    const createdEventBody = createEventResponse.json() as {
+    assert.equal(createMilestoneResponse.statusCode, 201);
+    const createdMilestoneBody = createMilestoneResponse.json() as {
       item: {
         id: string;
         projectIds: string[];
@@ -238,48 +238,48 @@ test("task and event endpoints support mobile and multi-target payloads", async 
         photoUrl: string;
       };
     };
-    assert.deepEqual(createdEventBody.item.projectIds, [
+    assert.deepEqual(createdMilestoneBody.item.projectIds, [
       "project-robot-2026",
       "project-operations-2026",
     ]);
-    assert.deepEqual(createdEventBody.item.relatedSubsystemIds, ["drive", "operations"]);
+    assert.deepEqual(createdMilestoneBody.item.relatedSubsystemIds, ["drive", "operations"]);
     assert.equal(
-      createdEventBody.item.photoUrl,
-      "https://cdn.example.test/forms/event-demo.png",
+      createdMilestoneBody.item.photoUrl,
+      "https://cdn.example.test/forms/milestone-demo.png",
     );
 
     resetLimits();
 
-    const updateEventResponse = await app.inject({
+    const updateMilestoneResponse = await app.inject({
       method: "PATCH",
-      url: `/api/events/${createdEventBody.item.id}`,
+      url: `/api/milestones/${createdMilestoneBody.item.id}`,
       payload: {
         projectIds: ["project-outreach-2026"],
         relatedSubsystemIds: ["outreach"],
-        photoUrl: "https://cdn.example.test/forms/event-demo-v2.png",
+        photoUrl: "https://cdn.example.test/forms/milestone-demo-v2.png",
       },
     });
 
-    assert.equal(updateEventResponse.statusCode, 200);
-    const updatedEventBody = updateEventResponse.json() as {
+    assert.equal(updateMilestoneResponse.statusCode, 200);
+    const updatedMilestoneBody = updateMilestoneResponse.json() as {
       item: {
         projectIds: string[];
         relatedSubsystemIds: string[];
         photoUrl: string;
       };
     };
-    assert.deepEqual(updatedEventBody.item.projectIds, ["project-outreach-2026"]);
-    assert.deepEqual(updatedEventBody.item.relatedSubsystemIds, ["outreach"]);
+    assert.deepEqual(updatedMilestoneBody.item.projectIds, ["project-outreach-2026"]);
+    assert.deepEqual(updatedMilestoneBody.item.relatedSubsystemIds, ["outreach"]);
     assert.equal(
-      updatedEventBody.item.photoUrl,
-      "https://cdn.example.test/forms/event-demo-v2.png",
+      updatedMilestoneBody.item.photoUrl,
+      "https://cdn.example.test/forms/milestone-demo-v2.png",
     );
 
     resetLimits();
 
     const unknownProjectResponse = await app.inject({
       method: "POST",
-      url: "/api/events",
+      url: "/api/milestones",
       payload: {
         title: "Unknown Project Demo",
         type: "demo",
@@ -299,7 +299,7 @@ test("task and event endpoints support mobile and multi-target payloads", async 
 
     const mismatchedSubsystemResponse = await app.inject({
       method: "POST",
-      url: "/api/events",
+      url: "/api/milestones",
       payload: {
         title: "Mismatched Subsystem Demo",
         type: "demo",
@@ -342,18 +342,18 @@ test("task and event endpoints support mobile and multi-target payloads", async 
 
     const inferredTasksResponse = await app.inject({
       method: "GET",
-      url: `/api/events/${createdEventBody.item.id}/milestones/tasks`,
+      url: `/api/milestones/${createdMilestoneBody.item.id}/tasks`,
     });
     assert.equal(inferredTasksResponse.statusCode, 200);
     const inferredTasksBody = inferredTasksResponse.json() as {
-      eventId: string;
+      milestoneId: string;
       items: Array<{
         taskId: string;
         matchedRequirementIds: string[];
         isLegacyLink: boolean;
       }>;
     };
-    assert.equal(inferredTasksBody.eventId, createdEventBody.item.id);
+    assert.equal(inferredTasksBody.milestoneId, createdMilestoneBody.item.id);
     assert.ok(
       inferredTasksBody.items.some((item) => item.taskId === "outreach-kiosk-assembly"),
     );
@@ -367,12 +367,12 @@ test("task and event endpoints support mobile and multi-target payloads", async 
     assert.equal(taskMilestonesResponse.statusCode, 200);
     const taskMilestonesBody = taskMilestonesResponse.json() as {
       taskId: string;
-      items: Array<{ eventId: string; matchedRequirementIds: string[]; isLegacyLink: boolean }>;
+      items: Array<{ milestoneId: string; matchedRequirementIds: string[]; isLegacyLink: boolean }>;
     };
     assert.equal(taskMilestonesBody.taskId, "outreach-kiosk-assembly");
     assert.ok(
       taskMilestonesBody.items.some((item) =>
-        ["outreach-milestone-may-05", createdEventBody.item.id].includes(item.eventId),
+        ["outreach-milestone-may-05", createdMilestoneBody.item.id].includes(item.milestoneId),
       ),
     );
   });

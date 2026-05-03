@@ -1,7 +1,7 @@
 import type {
   ArtifactKind,
   ArtifactStatus,
-  Event,
+  Milestone,
   ManufacturingProcess,
   ManufacturingStatus,
   MaterialCategory,
@@ -38,7 +38,7 @@ export interface TaskInput {
   partInstanceIds: string[];
   artifactId: string | null;
   artifactIds: string[];
-  targetEventId: string | null;
+  targetMilestoneId: string | null;
   photoUrl?: string;
   ownerId: string | null;
   assigneeIds: string[];
@@ -206,9 +206,10 @@ export interface PartInstanceInput {
   photoUrl?: string;
 }
 
-export interface EventInput {
+export interface MilestoneInput {
   title: string;
-  type: Event["type"];
+  type: Milestone["type"];
+  status?: Milestone["status"];
   startDateTime: string;
   endDateTime: string | null;
   isExternal: boolean;
@@ -229,7 +230,7 @@ export interface QaReportInput {
 }
 
 export interface TestResultInput {
-  eventId: string;
+  milestoneId: string;
   title: string;
   status: TestResultStatus;
   findings: string[];
@@ -240,7 +241,7 @@ export interface ReportInput {
   reportType: ReportType;
   projectId: string;
   taskId: string | null;
-  eventId: string | null;
+  milestoneId: string | null;
   workstreamId: string | null;
   createdByMemberId: string | null;
   result: string;
@@ -271,7 +272,7 @@ export interface ReportFindingInput {
 
 export interface TaskDependencyInput {
   taskId: string;
-  kind: "task" | "milestone" | "part_instance" | "event";
+  kind: "task" | "milestone" | "part_instance";
   refId: string;
   requiredState?: string;
   dependencyType: TaskDependencyType;

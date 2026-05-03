@@ -35,12 +35,19 @@ enum DisciplineCode {
   QA_TEST
 }
 
-enum EventType {
+enum MilestoneType {
   PRACTICE
   COMPETITION
   DEADLINE
   INTERNAL_REVIEW
   DEMO
+}
+
+enum MilestoneStatus {
+  NOT_READY
+  BLOCKED
+  QA
+  READY
 }
 
 enum MoscowPriority {
@@ -76,6 +83,13 @@ enum ManufacturingStatus {
   IN_PROGRESS
   QA
   COMPLETE
+}
+
+enum PartInstanceStatus {
+  NOT_READY
+  BLOCKED
+  QA
+  READY
 }
 
 enum PurchaseStatus {
@@ -207,6 +221,7 @@ model PartInstance {
   name              String
   quantity          Int            @default(1)
   trackIndividually Boolean        @default(false)
+  status            PartInstanceStatus @default(NOT_READY)
   partDefinition    PartDefinition @relation(fields: [partDefinitionId], references: [id])
   subsystem         Subsystem      @relation(fields: [subsystemId], references: [id])
   mechanism         Mechanism?     @relation(fields: [mechanismId], references: [id])
@@ -249,7 +264,7 @@ model Task {
   requirementId           String?
   mechanismId             String?
   partInstanceId          String?
-  targetEventId           String?
+  targetMilestoneId         String?
   ownerId                 String
   assigneeIds             String[]
   mentorId                String
@@ -259,7 +274,7 @@ model Task {
   requirement             Requirement?          @relation(fields: [requirementId], references: [id])
   mechanism               Mechanism?            @relation(fields: [mechanismId], references: [id])
   partInstance            PartInstance?         @relation(fields: [partInstanceId], references: [id])
-  targetEvent             Event?                @relation(fields: [targetEventId], references: [id])
+  targetMilestone           Milestone?            @relation(fields: [targetMilestoneId], references: [id])
   owner                   Member                @relation("TaskOwner", fields: [ownerId], references: [id])
   mentor                  Member                @relation("TaskMentor", fields: [mentorId], references: [id])
   parentTask              Task?                 @relation("TaskIterations", fields: [parentTaskId], references: [id])
@@ -276,10 +291,11 @@ model Task {
   updatedAt               DateTime              @updatedAt
 }
 
-model Event {
+model Milestone {
   id                 String    @id @default(cuid())
   title              String
-  type               EventType
+  type               MilestoneType
+  status             MilestoneStatus @default(NOT_READY)
   startDateTime      DateTime
   endDateTime        DateTime?
   isExternal         Boolean   @default(false)

@@ -18,8 +18,8 @@ export {
 
 export {
   validateArtifactLinks,
-  validateEventProjectLinks,
-  validateEventSubsystemLinks,
+  validateMilestoneProjectLinks,
+  validateMilestoneSubsystemLinks,
   validateManufacturingItemLinks,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,

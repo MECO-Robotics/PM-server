@@ -113,7 +113,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         name: "Route test part instance",
         quantity: 2,
         trackIndividually: true,
-        status: "available",
+        status: "ready",
         photoUrl: "https://cdn.example.test/parts/route-test-instance.png",
       },
     });
@@ -129,7 +129,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
     };
     assert.equal(partInstanceBody.item.mechanismId, "swerve-module");
     assert.equal(partInstanceBody.item.subsystemId, "drive");
-    assert.equal(partInstanceBody.item.status, "available");
+    assert.equal(partInstanceBody.item.status, "ready");
     assert.equal(
       partInstanceBody.item.photoUrl,
       "https://cdn.example.test/parts/route-test-instance.png",
@@ -147,7 +147,7 @@ test("planning entity endpoints round-trip hierarchy and archive defaults", asyn
         name: "Invalid relationship",
         quantity: 1,
         trackIndividually: false,
-        status: "planned",
+        status: "not ready",
         photoUrl: "https://cdn.example.test/parts/invalid.png",
       },
     });

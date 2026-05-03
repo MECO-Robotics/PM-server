@@ -36,7 +36,7 @@ function makeTask(overrides: Partial<Task> = {}) {
     partInstanceIds: [],
     artifactId: null,
     artifactIds: [],
-    targetEventId: null,
+    targetMilestoneId: null,
     ownerId: "ava",
     assigneeIds: ["ava"],
     mentorId: "jordan",
@@ -149,7 +149,7 @@ function makeWorkflowSnapshot() {
       name: "Drive shaft assembly",
       quantity: 1,
       trackIndividually: true,
-      status: "installed",
+      status: "ready",
     },
   ];
 

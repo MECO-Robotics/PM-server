@@ -15,7 +15,7 @@ import {
 } from "../auth/authService";
 import {
   createArtifact,
-  createEvent,
+  createMilestone,
   createManufacturingItem,
   createMaterial,
   createMember,
@@ -37,12 +37,12 @@ import {
   createWorkLog,
   createWorkstream,
   findDiscipline,
-  findEvent,
+  findMilestone,
   findArtifact,
   findMaterial,
   findProject,
   getDesignIterations,
-  getEvents,
+  getMilestones,
   getFindings,
   findMechanism,
   findPartDefinition,
@@ -76,7 +76,7 @@ import {
   getTutorialBaselineState,
   type TutorialBaselineState,
   getWorkstreams,
-  removeEvent,
+  removeMilestone,
   removeArtifact,
   removeMaterial,
   removeMember,
@@ -98,7 +98,7 @@ import {
   updateMaterial,
   updateMember,
   updateMechanism,
-  updateEvent,
+  updateMilestone,
   updatePartDefinition,
   updatePartInstance,
   updateProject,
@@ -132,8 +132,8 @@ import {
   resolveWorkstreamId,
   uniqueIds,
   validateArtifactLinks,
-  validateEventProjectLinks,
-  validateEventSubsystemLinks,
+  validateMilestoneProjectLinks,
+  validateMilestoneSubsystemLinks,
   validateManufacturingItemLinks,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
@@ -157,8 +157,8 @@ import {
   artifactSchema,
   emailSignInRequestSchema,
   emailSignInVerifySchema,
-  eventPatchSchema,
-  eventSchema,
+  milestonePatchSchema,
+  milestoneSchema,
   manufacturingItemPatchSchema,
   manufacturingItemSchema,
   materialPatchSchema,
@@ -241,15 +241,15 @@ export async function registerRoutes(app: FastifyInstance) {
   };
 
   const isValidTaskDependencyTarget = (
-    kind: "task" | "milestone" | "part_instance" | "event",
+    kind: "task" | "milestone" | "part_instance",
     refId: string,
   ) => {
     if (kind === "task") {
       return getTasks().some((task) => task.id === refId);
     }
 
-    if (kind === "milestone" || kind === "event") {
-      return getEvents().some((event) => event.id === refId);
+    if (kind === "milestone") {
+      return getMilestones().some((milestone) => milestone.id === refId);
     }
 
     if (kind === "part_instance") {
@@ -750,9 +750,9 @@ export async function registerRoutes(app: FastifyInstance) {
               participantIds: parsed.data.participantIds ?? [],
             })
           : "The selected task does not exist."
-        : parsed.data.eventId
-          ? validateTestResultLinks({ eventId: parsed.data.eventId })
-          : "The selected event does not exist.";
+        : parsed.data.milestoneId
+          ? validateTestResultLinks({ milestoneId: parsed.data.milestoneId })
+          : "The selected milestone does not exist.";
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
@@ -1158,7 +1158,7 @@ export async function registerRoutes(app: FastifyInstance) {
       partInstanceIds: task.partInstanceIds,
       artifactId: task.artifactId,
       artifactIds: task.artifactIds,
-      targetEventId: task.targetEventId,
+      targetMilestoneId: task.targetMilestoneId,
       ownerId: task.ownerId,
       assigneeIds: task.assigneeIds ?? [],
       mentorId: task.mentorId,
@@ -1244,12 +1244,12 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get("/api/events", async (request, reply) => {
+  app.get("/api/milestones", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    const paginated = paginateItems(getEvents(), request.query);
+    const paginated = paginateItems(getMilestones(), request.query);
 
     return {
       items: paginated.items,
@@ -1257,33 +1257,33 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get<{ Params: { eventId: string } }>("/api/events/:eventId/milestones/tasks", async (request, reply) => {
+  app.get<{ Params: { milestoneId: string } }>("/api/milestones/:milestoneId/tasks", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    const event = findEvent(request.params.eventId);
-    if (!event) {
+    const milestone = findMilestone(request.params.milestoneId);
+    if (!milestone) {
       return reply.code(404).send({
-        message: "Event not found.",
+        message: "Milestone not found.",
       });
     }
 
     return {
-      eventId: event.id,
-      items: getTasksForMilestone(event.id),
+      milestoneId: milestone.id,
+      items: getTasksForMilestone(milestone.id),
     };
   });
 
-  app.post<{ Body: unknown }>("/api/events", async (request, reply) => {
+  app.post<{ Body: unknown }>("/api/milestones", async (request, reply) => {
     if (!requireApiSessionIfEnabled(request, reply)) {
       return;
     }
 
-    const parsed = eventSchema.safeParse(request.body);
+    const parsed = milestoneSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
-        message: "Event payload is invalid.",
+        message: "Milestone payload is invalid.",
         issues: parsed.error.flatten(),
       });
     }
@@ -1291,15 +1291,15 @@ export async function registerRoutes(app: FastifyInstance) {
     const projectIds = Array.from(new Set(parsed.data.projectIds));
     const relatedSubsystemIds = Array.from(new Set(parsed.data.relatedSubsystemIds));
     const validationError =
-      validateEventSubsystemLinks(relatedSubsystemIds) ??
-      validateEventProjectLinks(projectIds, relatedSubsystemIds);
+      validateMilestoneSubsystemLinks(relatedSubsystemIds) ??
+      validateMilestoneProjectLinks(projectIds, relatedSubsystemIds);
     if (validationError) {
       return reply.code(400).send({
         message: validationError,
       });
     }
 
-    const event = createEvent({
+    const milestone = createMilestone({
       ...parsed.data,
       endDateTime: parsed.data.endDateTime ?? null,
       description: parsed.data.description ?? "",
@@ -1309,90 +1309,90 @@ export async function registerRoutes(app: FastifyInstance) {
     });
 
     return reply.code(201).send({
-      item: event,
+      item: milestone,
     });
   });
 
-  app.patch<{ Body: unknown; Params: { eventId: string } }>(
-    "/api/events/:eventId",
+  app.patch<{ Body: unknown; Params: { milestoneId: string } }>(
+    "/api/milestones/:milestoneId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
 
-      const parsed = eventPatchSchema.safeParse(request.body);
+      const parsed = milestonePatchSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({
-          message: "Event update payload is invalid.",
+          message: "Milestone update payload is invalid.",
           issues: parsed.error.flatten(),
         });
       }
 
-      const currentEvent = findEvent(request.params.eventId);
-      if (!currentEvent) {
+      const currentMilestone = findMilestone(request.params.milestoneId);
+      if (!currentMilestone) {
         return reply.code(404).send({
-          message: "Event not found.",
+          message: "Milestone not found.",
         });
       }
 
       const nextRelatedSubsystemIds =
         parsed.data.relatedSubsystemIds === undefined
-          ? currentEvent.relatedSubsystemIds
+          ? currentMilestone.relatedSubsystemIds
           : Array.from(new Set(parsed.data.relatedSubsystemIds));
       const nextProjectIds =
         parsed.data.projectIds === undefined
-          ? currentEvent.projectIds ?? []
+          ? currentMilestone.projectIds ?? []
           : Array.from(new Set(parsed.data.projectIds));
 
       const validationError =
-        validateEventSubsystemLinks(nextRelatedSubsystemIds) ??
-        validateEventProjectLinks(nextProjectIds, nextRelatedSubsystemIds);
+        validateMilestoneSubsystemLinks(nextRelatedSubsystemIds) ??
+        validateMilestoneProjectLinks(nextProjectIds, nextRelatedSubsystemIds);
       if (validationError) {
         return reply.code(400).send({
           message: validationError,
         });
       }
 
-      const event = updateEvent(request.params.eventId, {
+      const milestone = updateMilestone(request.params.milestoneId, {
         ...parsed.data,
         endDateTime:
           parsed.data.endDateTime === undefined
-            ? currentEvent.endDateTime
+            ? currentMilestone.endDateTime
             : parsed.data.endDateTime,
         description:
           parsed.data.description === undefined
-            ? currentEvent.description
+            ? currentMilestone.description
             : parsed.data.description,
         projectIds: nextProjectIds,
         relatedSubsystemIds: nextRelatedSubsystemIds,
         photoUrl:
           parsed.data.photoUrl === undefined
-            ? currentEvent.photoUrl
+            ? currentMilestone.photoUrl
             : parsed.data.photoUrl,
       });
 
       return {
-        item: event,
+        item: milestone,
       };
     },
   );
 
-  app.delete<{ Params: { eventId: string } }>(
-    "/api/events/:eventId",
+  app.delete<{ Params: { milestoneId: string } }>(
+    "/api/milestones/:milestoneId",
     async (request, reply) => {
       if (!requireApiSessionIfEnabled(request, reply)) {
         return;
       }
 
-      const event = removeEvent(request.params.eventId);
-      if (!event) {
+      const milestone = removeMilestone(request.params.milestoneId);
+      if (!milestone) {
         return reply.code(404).send({
-          message: "Event not found.",
+          message: "Milestone not found.",
         });
       }
 
       return {
-        item: event,
+        item: milestone,
       };
     },
   );
@@ -1787,10 +1787,10 @@ export async function registerRoutes(app: FastifyInstance) {
             ? currentTask.assigneeIds ?? []
             : uniqueIds(parsed.data.assigneeIds),
         disciplineId: parsed.data.disciplineId ?? currentTask.disciplineId,
-        targetEventId:
-          parsed.data.targetEventId === undefined
-            ? currentTask.targetEventId
-            : parsed.data.targetEventId,
+        targetMilestoneId:
+          parsed.data.targetMilestoneId === undefined
+            ? currentTask.targetMilestoneId
+            : parsed.data.targetMilestoneId,
       };
 
       const taskValidationError = validateTaskLinks(nextTaskShape);

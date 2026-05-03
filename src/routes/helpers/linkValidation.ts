@@ -1,7 +1,7 @@
 import {
   findArtifact,
   findDiscipline,
-  findEvent,
+  findMilestone,
   findMaterial,
   findMechanism,
   findPartDefinition,
@@ -9,7 +9,7 @@ import {
   findProject,
   findSubsystem,
   findWorkstream,
-  getEvents,
+  getMilestones,
   getMembers,
   getQaReports,
   getTasks,
@@ -65,9 +65,9 @@ export function validateQaReportLinks(input: {
   return null;
 }
 
-export function validateTestResultLinks(input: { eventId: string }) {
-  if (!findEvent(input.eventId)) {
-    return "The selected event does not exist.";
+export function validateTestResultLinks(input: { milestoneId: string }) {
+  if (!findMilestone(input.milestoneId)) {
+    return "The selected milestone does not exist.";
   }
 
   return null;
@@ -139,7 +139,7 @@ export function validateTaskLinks(input: {
   partInstanceIds?: string[];
   artifactId?: string | null;
   artifactIds?: string[];
-  targetEventId?: string | null;
+  targetMilestoneId?: string | null;
   assigneeIds?: string[];
 }) {
   const project = findProject(input.projectId);
@@ -243,10 +243,10 @@ export function validateTaskLinks(input: {
     }
   }
 
-  if (input.targetEventId) {
-    const event = getEvents().find((candidate) => candidate.id === input.targetEventId);
-    if (!event) {
-      return "The selected event does not exist.";
+  if (input.targetMilestoneId) {
+    const milestone = getMilestones().find((candidate) => candidate.id === input.targetMilestoneId);
+    if (!milestone) {
+      return "The selected milestone does not exist.";
     }
   }
 
@@ -271,7 +271,7 @@ export function validateTaskBlockerLinks(input: {
   blockedTaskId: string;
   blockerType:
     | "task"
-    | "event"
+    | "milestone"
     | "workstream"
     | "mechanism"
     | "part_instance"
@@ -296,10 +296,10 @@ export function validateTaskBlockerLinks(input: {
       return getTasks().some((task) => task.id === input.blockerId)
         ? null
         : "The selected blocker task does not exist.";
-    case "event":
-      return findEvent(input.blockerId)
+    case "milestone":
+      return findMilestone(input.blockerId)
         ? null
-        : "The selected blocker event does not exist.";
+        : "The selected blocker milestone does not exist.";
     case "workstream":
       return findWorkstream(input.blockerId)
         ? null
@@ -521,7 +521,7 @@ export function wouldCreateSubsystemCycle(
   return false;
 }
 
-export function validateEventSubsystemLinks(relatedSubsystemIds: string[]) {
+export function validateMilestoneSubsystemLinks(relatedSubsystemIds: string[]) {
   const unknownSubsystemId = relatedSubsystemIds.find(
     (subsystemId) => !findSubsystem(subsystemId),
   );
@@ -533,7 +533,7 @@ export function validateEventSubsystemLinks(relatedSubsystemIds: string[]) {
   return null;
 }
 
-export function validateEventProjectLinks(projectIds: string[], relatedSubsystemIds: string[]) {
+export function validateMilestoneProjectLinks(projectIds: string[], relatedSubsystemIds: string[]) {
   const unknownProjectId = projectIds.find((projectId) => !findProject(projectId));
 
   if (unknownProjectId) {

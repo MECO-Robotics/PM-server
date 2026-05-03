@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
-test("qa report and event report endpoints support create flows with link validation", async () => {
+test("qa report and milestone report endpoints support create flows with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     const qaReportCreateResponse = await app.inject({
       method: "POST",
@@ -66,22 +66,22 @@ test("qa report and event report endpoints support create flows with link valida
 
     resetLimits();
 
-    const eventReportCreateResponse = await app.inject({
+    const milestoneReportCreateResponse = await app.inject({
       method: "POST",
       url: "/api/test-results",
       payload: {
-        eventId: "outreach-milestone-may-05",
-        title: "Event report route test",
+        milestoneId: "outreach-milestone-may-05",
+        title: "Milestone report route test",
         status: "pass",
         findings: ["Drive team aligned", "Drive team aligned", "Checklist complete"],
-        photoUrl: "https://cdn.example.test/forms/event-report.png",
+        photoUrl: "https://cdn.example.test/forms/milestone-report.png",
       },
     });
 
-    assert.equal(eventReportCreateResponse.statusCode, 201);
-    const eventReportCreatedBody = eventReportCreateResponse.json() as {
+    assert.equal(milestoneReportCreateResponse.statusCode, 201);
+    const milestoneReportCreatedBody = milestoneReportCreateResponse.json() as {
       item: {
-        eventId: string;
+        milestoneId: string;
         findings: string[];
         id: string;
         status: string;
@@ -89,36 +89,36 @@ test("qa report and event report endpoints support create flows with link valida
         photoUrl: string;
       };
     };
-    assert.equal(eventReportCreatedBody.item.eventId, "outreach-milestone-may-05");
-    assert.equal(eventReportCreatedBody.item.title, "Event report route test");
-    assert.equal(eventReportCreatedBody.item.status, "pass");
+    assert.equal(milestoneReportCreatedBody.item.milestoneId, "outreach-milestone-may-05");
+    assert.equal(milestoneReportCreatedBody.item.title, "Milestone report route test");
+    assert.equal(milestoneReportCreatedBody.item.status, "pass");
     assert.equal(
-      eventReportCreatedBody.item.photoUrl,
-      "https://cdn.example.test/forms/event-report.png",
+      milestoneReportCreatedBody.item.photoUrl,
+      "https://cdn.example.test/forms/milestone-report.png",
     );
-    assert.deepEqual(eventReportCreatedBody.item.findings, [
+    assert.deepEqual(milestoneReportCreatedBody.item.findings, [
       "Drive team aligned",
       "Checklist complete",
     ]);
 
     resetLimits();
 
-    const eventReportInvalidEventResponse = await app.inject({
+    const milestoneReportInvalidMilestoneResponse = await app.inject({
       method: "POST",
       url: "/api/test-results",
       payload: {
-        eventId: "missing-event",
-        title: "Invalid event linkage",
+        milestoneId: "missing-milestone",
+        title: "Invalid milestone linkage",
         status: "blocked",
-        findings: ["No event match"],
-        photoUrl: "https://cdn.example.test/forms/event-report-invalid.png",
+        findings: ["No milestone match"],
+        photoUrl: "https://cdn.example.test/forms/milestone-report-invalid.png",
       },
     });
 
-    assert.equal(eventReportInvalidEventResponse.statusCode, 400);
+    assert.equal(milestoneReportInvalidMilestoneResponse.statusCode, 400);
     assert.equal(
-      eventReportInvalidEventResponse.json().message,
-      "The selected event does not exist.",
+      milestoneReportInvalidMilestoneResponse.json().message,
+      "The selected milestone does not exist.",
     );
   });
 });
@@ -132,7 +132,7 @@ test("web report and task planning contract endpoints persist records", async ()
         reportType: "QA",
         projectId: "project-robot-2026",
         taskId: "swerve-sensor-bundle",
-        eventId: null,
+        milestoneId: null,
         workstreamId: null,
         createdByMemberId: "ava",
         result: "minor-fix",
@@ -166,7 +166,7 @@ test("web report and task planning contract endpoints persist records", async ()
         reportType: "Practice",
         projectId: "project-robot-2026",
         taskId: null,
-        eventId: "drive-practice-apr-30",
+        milestoneId: "drive-practice-apr-30",
         workstreamId: null,
         createdByMemberId: "ava",
         result: "pass",

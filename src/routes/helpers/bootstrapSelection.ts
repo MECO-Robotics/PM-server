@@ -1,6 +1,6 @@
 import type {
-  Event,
-  EventRequirement,
+  Milestone,
+  MilestoneRequirement,
   Member,
   PlatformSnapshot,
   QaFinding,
@@ -21,10 +21,10 @@ export interface BootstrapSelection {
 
 export interface BootstrapReportRecord {
   id: string;
-  reportType: "QA" | "EventTest";
+  reportType: "QA" | "MilestoneTest";
   projectId: string;
   taskId: string | null;
-  eventId: string | null;
+  milestoneId: string | null;
   workstreamId: string | null;
   createdByMemberId: string | null;
   result: string;
@@ -58,7 +58,7 @@ export interface BootstrapReportFindingRecord {
   workstreamId?: string | null;
   subsystemId?: string | null;
   taskId?: string | null;
-  eventId?: string | null;
+  milestoneId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -131,7 +131,7 @@ function normalizeTaskDependencyRecord(
     taskId: dependency.taskId ?? dependency.downstreamTaskId ?? "",
     kind,
     refId: dependency.refId ?? dependency.upstreamTaskId ?? "",
-    requiredState: dependency.requiredState ?? (kind === "part_instance" ? "available" : "complete"),
+    requiredState: dependency.requiredState ?? (kind === "part_instance" ? "ready" : "complete"),
     dependencyType: dependency.dependencyType === "soft" ? "soft" : "hard",
     createdAt: dependency.createdAt ?? new Date().toISOString(),
   };
@@ -158,7 +158,7 @@ function buildReports(args: {
   qaReports: QaReport[];
   tasksById: Map<string, Task>;
   testResults: TestResult[];
-  eventsById: Map<string, Event>;
+  milestonesById: Map<string, Milestone>;
   activeProjectIds: Set<string>;
 }) {
   const qaReports = args.qaReports
@@ -173,7 +173,7 @@ function buildReports(args: {
         reportType: "QA",
         projectId: task.projectId,
         taskId: report.taskId,
-        eventId: null,
+        milestoneId: null,
         workstreamId: task.workstreamId,
         createdByMemberId: null,
         result: report.result,
@@ -188,12 +188,12 @@ function buildReports(args: {
     })
     .filter((report): report is BootstrapReportRecord => report !== null);
 
-  const eventTestReports = args.testResults
+  const milestoneTestReports = args.testResults
     .map<BootstrapReportRecord | null>((result) => {
-      const event = args.eventsById.get(result.eventId);
+      const milestone = args.milestonesById.get(result.milestoneId);
       const projectId =
-        event?.projectIds.find((candidate) => args.activeProjectIds.has(candidate)) ??
-        event?.projectIds[0] ??
+        milestone?.projectIds.find((candidate) => args.activeProjectIds.has(candidate)) ??
+        milestone?.projectIds[0] ??
         null;
       if (!projectId || !args.activeProjectIds.has(projectId)) {
         return null;
@@ -201,16 +201,16 @@ function buildReports(args: {
 
       return {
         id: result.id,
-        reportType: "EventTest",
+        reportType: "MilestoneTest",
         projectId,
         taskId: null,
-        eventId: result.eventId,
+        milestoneId: result.milestoneId,
         workstreamId: null,
         createdByMemberId: null,
         result: result.status,
         summary: result.title,
         notes: result.findings.join("\n"),
-        createdAt: event?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+        createdAt: milestone?.startDateTime.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
         title: result.title,
         status: result.status,
         findings: result.findings,
@@ -218,7 +218,7 @@ function buildReports(args: {
     })
     .filter((report): report is BootstrapReportRecord => report !== null);
 
-  return [...qaReports, ...eventTestReports];
+  return [...qaReports, ...milestoneTestReports];
 }
 
 function buildReportFindings(args: {
@@ -282,7 +282,7 @@ function buildReportFindings(args: {
         workstreamId: finding.workstreamId,
         subsystemId: finding.subsystemId,
         taskId: finding.taskId,
-        eventId: finding.eventId,
+        milestoneId: finding.milestoneId,
         createdAt: finding.createdAt,
         updatedAt: finding.updatedAt,
       };
@@ -328,21 +328,21 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   const scopedPartInstanceIds = new Set(
     scopedPartInstances.map((partInstance) => partInstance.id),
   );
-  const scopedEvents = snapshot.events.filter((event) => {
-    const eventProjectIds = event.projectIds ?? [];
-    if (eventProjectIds.length > 0) {
-      return eventProjectIds.some((projectId) => activeProjectIds.has(projectId));
+  const scopedMilestones = snapshot.milestones.filter((milestone) => {
+    const milestoneProjectIds = milestone.projectIds ?? [];
+    if (milestoneProjectIds.length > 0) {
+      return milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
     }
 
     return (
-      event.relatedSubsystemIds.length === 0 ||
-      event.relatedSubsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId))
+      milestone.relatedSubsystemIds.length === 0 ||
+      milestone.relatedSubsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId))
     );
   });
-  const scopedEventIds = new Set(scopedEvents.map((event) => event.id));
-  const scopedEventsById = new Map(scopedEvents.map((event) => [event.id, event] as const));
-  const scopedEventRequirements = (snapshot.eventRequirements ?? []).filter((requirement) => {
-    if (!scopedEventIds.has(requirement.eventId)) {
+  const scopedMilestoneIds = new Set(scopedMilestones.map((milestone) => milestone.id));
+  const scopedMilestonesById = new Map(scopedMilestones.map((milestone) => [milestone.id, milestone] as const));
+  const scopedMilestoneRequirements = (snapshot.milestoneRequirements ?? []).filter((requirement) => {
+    if (!scopedMilestoneIds.has(requirement.milestoneId)) {
       return false;
     }
 
@@ -393,14 +393,14 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     return Boolean(task);
   });
   const scopedTestResults = snapshot.testResults.filter((result) => {
-    const event = scopedEventsById.get(result.eventId);
-    return Boolean(event);
+    const milestone = scopedMilestonesById.get(result.milestoneId);
+    return Boolean(milestone);
   });
   const scopedReports = buildReports({
     qaReports: scopedQaReports,
     tasksById: scopedTasksById,
     testResults: scopedTestResults,
-    eventsById: scopedEventsById,
+    milestonesById: scopedMilestonesById,
     activeProjectIds,
   });
   const scopedReportIds = new Set(scopedReports.map((report) => report.id));
@@ -443,8 +443,8 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
         return scopedTaskIds.has(dependency.refId);
       }
 
-      if (dependency.kind === "milestone" || dependency.kind === "event") {
-        return scopedEventIds.has(dependency.refId);
+      if (dependency.kind === "milestone") {
+        return scopedMilestoneIds.has(dependency.refId);
       }
 
       if (dependency.kind === "part_instance") {
@@ -530,8 +530,8 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     artifacts: scopedArtifacts,
     partDefinitions: scopedPartDefinitions,
     partInstances: scopedPartInstances,
-    events: scopedEvents,
-    eventRequirements: scopedEventRequirements as EventRequirement[],
+    milestones: scopedMilestones,
+    milestoneRequirements: scopedMilestoneRequirements as MilestoneRequirement[],
     reports: scopedReports,
     reportFindings: scopedReportFindings,
     qaReports: scopedQaReports,

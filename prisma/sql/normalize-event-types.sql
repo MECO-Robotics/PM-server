@@ -1,3 +1,3 @@
-UPDATE "Event"
-SET "type" = 'PRACTICE'::"EventType"
+UPDATE "Milestone"
+SET "type" = 'PRACTICE'::"MilestoneType"
 WHERE "type"::text = 'DRIVE_PRACTICE';

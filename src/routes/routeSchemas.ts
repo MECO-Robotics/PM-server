@@ -49,7 +49,7 @@ export const taskSchema = z.object({
   partInstanceIds: z.array(z.string().trim().min(1)).optional(),
   artifactId: z.string().trim().min(1).nullable().optional(),
   artifactIds: z.array(z.string().trim().min(1)).optional(),
-  targetEventId: z.string().trim().min(1).nullable(),
+  targetMilestoneId: z.string().trim().min(1).nullable(),
   photoUrl: z.string().trim().default(""),
   ownerId: z.string().trim().min(1).nullable(),
   assigneeIds: z.array(z.string().trim().min(1)).default([]),
@@ -70,7 +70,7 @@ export const taskSchema = z.object({
 
 export const taskPatchSchema = taskSchema.partial();
 
-export const eventSchema = z.object({
+export const milestoneSchema = z.object({
   title: z.string().trim().min(2),
   type: z.enum([
     "practice",
@@ -79,6 +79,7 @@ export const eventSchema = z.object({
     "internal-review",
     "demo",
   ]),
+  status: z.enum(["not ready", "blocked", "qa", "ready"]).default("not ready"),
   startDateTime: z.string().trim().min(1),
   endDateTime: z.string().trim().min(1).nullable(),
   isExternal: z.boolean().default(false),
@@ -88,11 +89,12 @@ export const eventSchema = z.object({
   photoUrl: z.string().trim().default(""),
 });
 
-export const eventPatchSchema = z.object({
+export const milestonePatchSchema = z.object({
   title: z.string().trim().min(2).optional(),
   type: z
     .enum(["practice", "competition", "deadline", "internal-review", "demo"])
     .optional(),
+  status: z.enum(["not ready", "blocked", "qa", "ready"]).optional(),
   startDateTime: z.string().trim().min(1).optional(),
   endDateTime: z.string().trim().min(1).nullable().optional(),
   isExternal: z.boolean().optional(),
@@ -113,7 +115,7 @@ export const qaReportSchema = z.object({
 });
 
 export const testResultSchema = z.object({
-  eventId: z.string().trim().min(1),
+  milestoneId: z.string().trim().min(1),
   title: z.string().trim().min(2),
   status: z.enum(["pass", "fail", "blocked"]),
   findings: z.array(z.string().trim().min(1)).default([]),
@@ -121,10 +123,10 @@ export const testResultSchema = z.object({
 });
 
 export const reportSchema = z.object({
-  reportType: z.enum(["QA", "EventTest"]),
+  reportType: z.enum(["QA", "MilestoneTest"]),
   projectId: z.string().trim().min(1),
   taskId: z.string().trim().min(1).nullable(),
-  eventId: z.string().trim().min(1).nullable(),
+  milestoneId: z.string().trim().min(1).nullable(),
   workstreamId: z.string().trim().min(1).nullable(),
   createdByMemberId: z.string().trim().min(1).nullable(),
   result: z.string().trim().min(1),
@@ -153,7 +155,7 @@ export const reportFindingSchema = z.object({
   spawnedRiskId: z.string().trim().min(1).nullable(),
 });
 
-const taskDependencyKindSchema = z.enum(["task", "milestone", "part_instance", "event"]);
+const taskDependencyKindSchema = z.enum(["task", "milestone", "part_instance"]);
 const taskDependencyTypeSchema = z.enum(["hard", "soft"]);
 const legacyTaskDependencyTypeSchema = z.enum(["blocks", "soft", "finish_to_start"]);
 
@@ -183,7 +185,7 @@ const taskDependencyPatchInputSchema = z.object({
 
 function normalizeTaskDependencyInput(input: {
   taskId?: string;
-  kind?: "task" | "milestone" | "part_instance" | "event";
+  kind?: "task" | "milestone" | "part_instance";
   refId?: string;
   requiredState?: string;
   dependencyType?: "hard" | "soft" | "blocks" | "finish_to_start";
@@ -194,7 +196,7 @@ function normalizeTaskDependencyInput(input: {
     taskId: input.taskId ?? input.downstreamTaskId ?? "",
     kind: input.kind ?? "task",
     refId: input.refId ?? input.upstreamTaskId ?? "",
-    requiredState: input.requiredState ?? (input.kind === "part_instance" ? "available" : "complete"),
+    requiredState: input.requiredState ?? (input.kind === "part_instance" ? "ready" : "complete"),
     dependencyType:
       input.dependencyType === "soft"
         ? "soft"
@@ -204,7 +206,7 @@ function normalizeTaskDependencyInput(input: {
 
 function normalizeTaskDependencyPatchInput(input: {
   taskId?: string;
-  kind?: "task" | "milestone" | "part_instance" | "event";
+  kind?: "task" | "milestone" | "part_instance";
   refId?: string;
   requiredState?: string;
   dependencyType?: "hard" | "soft" | "blocks" | "finish_to_start";
@@ -213,7 +215,7 @@ function normalizeTaskDependencyPatchInput(input: {
 }) {
   const normalized: Partial<{
     taskId: string;
-    kind: "task" | "milestone" | "part_instance" | "event";
+    kind: "task" | "milestone" | "part_instance";
     refId: string;
     requiredState: string;
     dependencyType: "hard" | "soft";
@@ -265,7 +267,7 @@ export const taskBlockerSchema = z.object({
   blockedTaskId: z.string().trim().min(1),
   blockerType: z.enum([
     "task",
-    "event",
+    "milestone",
     "workstream",
     "mechanism",
     "part_instance",
@@ -380,7 +382,7 @@ export const partInstanceSchema = z.object({
   name: z.string().trim().min(2),
   quantity: z.coerce.number().min(1),
   trackIndividually: z.boolean().default(false),
-  status: z.enum(["planned", "needed", "available", "installed", "retired"]),
+  status: z.enum(["not ready", "blocked", "qa", "ready"]),
   photoUrl: z.string().trim().default(""),
 });
 

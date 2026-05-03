@@ -1,5 +1,5 @@
 export type MemberRole = "student" | "lead" | "mentor" | "admin" | "external";
-export type EventType =
+export type MilestoneType =
   | "practice"
   | "competition"
   | "deadline"
@@ -41,13 +41,11 @@ export type TaskStatus =
   | "waiting-for-qa"
   | "complete";
 
-// Milestones are represented as Events in the current platform API.
-// EventStatus matches the high-level TaskStatus vocabulary for consistency.
-export type EventStatus = TaskStatus;
+export type MilestoneStatus = "not ready" | "blocked" | "qa" | "ready";
 
-export type EventBlockedByType =
+export type MilestoneBlockedByType =
   | "task"
-  | "event"
+  | "milestone"
   | "artifact"
   | "subsystem"
   | "mechanism"
@@ -78,11 +76,10 @@ export type PurchaseStatus =
   | "shipped"
   | "delivered";
 export type PartInstanceStatus =
-  | "planned"
-  | "needed"
-  | "available"
-  | "installed"
-  | "retired";
+  | "not ready"
+  | "blocked"
+  | "qa"
+  | "ready";
 export type QaResult = "pass" | "minor-fix" | "iteration-worthy";
 export type SeasonType = "season" | "offseason" | "initiative";
 export type ProjectType = "robot" | "operations" | "outreach" | "other";
@@ -93,12 +90,12 @@ export type RiskAttachmentType = "project" | "workstream" | "mechanism" | "part-
 export type FindingStatus = "open" | "in-progress" | "resolved";
 export type FindingSourceType = "qa" | "test";
 export type IterationStatus = "planned" | "in-progress" | "complete";
-export type ReportType = "QA" | "EventTest" | "Practice" | "Competition" | "Review";
-export type TaskDependencyKind = "task" | "milestone" | "part_instance" | "event";
+export type ReportType = "QA" | "MilestoneTest" | "Practice" | "Competition" | "Review";
+export type TaskDependencyKind = "task" | "milestone" | "part_instance";
 export type TaskDependencyType = "hard" | "soft";
 export type TaskBlockerType =
   | "task"
-  | "event"
+  | "milestone"
   | "workstream"
   | "mechanism"
   | "part_instance"
@@ -225,7 +222,7 @@ export interface Task {
   partInstanceIds: string[];
   artifactId: string | null;
   artifactIds: string[];
-  targetEventId: string | null;
+  targetMilestoneId: string | null;
   photoUrl?: string;
   ownerId: string | null;
   assigneeIds: string[];
@@ -266,27 +263,27 @@ export interface Meeting {
   openSignIns: number;
 }
 
-export interface Event {
+export interface Milestone {
   id: string;
   // Required in the milestone model, optional for legacy seeds.
   seasonId?: string;
   title: string;
-  type: EventType;
+  type: MilestoneType;
   startDateTime: string;
   endDateTime: string | null;
   isExternal: boolean;
   description: string;
   projectIds: string[];
   relatedSubsystemIds: string[];
-  status?: EventStatus;
+  status?: MilestoneStatus;
   isBlocked?: boolean;
   blockedReason?: string | null;
-  blockedByType?: EventBlockedByType | null;
+  blockedByType?: MilestoneBlockedByType | null;
   blockedById?: string | null;
   photoUrl?: string;
 }
 
-export type EventRequirementTargetType =
+export type MilestoneRequirementTargetType =
   | "project"
   | "workflow"
   | "artifact"
@@ -294,15 +291,15 @@ export type EventRequirementTargetType =
   | "mechanism"
   | "part-instance";
 
-export type EventRequirementConditionType = "iteration" | "workflow_state" | "custom";
+export type MilestoneRequirementConditionType = "iteration" | "workflow_state" | "custom";
 
-// Generalized milestone requirements: "What condition must be true by this event?"
-export interface EventRequirement {
+// Generalized milestone requirements: "What condition must be true by this milestone?"
+export interface MilestoneRequirement {
   id: string;
-  eventId: string;
-  targetType: EventRequirementTargetType;
+  milestoneId: string;
+  targetType: MilestoneRequirementTargetType;
   targetId: string;
-  conditionType: EventRequirementConditionType;
+  conditionType: MilestoneRequirementConditionType;
   // Stored as a compact string so we can iterate on semantics without migrations in the seed store.
   // Examples: "iteration>=2", "state=COMPLETE", "state=QA_PASSED", "in_scope"
   conditionValue: string;
@@ -342,7 +339,7 @@ export interface Report {
   reportType: ReportType;
   projectId: string;
   taskId: string | null;
-  eventId: string | null;
+  milestoneId: string | null;
   workstreamId: string | null;
   createdByMemberId: string | null;
   result: string;
@@ -377,7 +374,7 @@ export interface ReportFinding {
   workstreamId?: string | null;
   subsystemId?: string | null;
   taskId?: string | null;
-  eventId?: string | null;
+  milestoneId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -459,7 +456,7 @@ export interface QaReport {
 
 export interface TestResult {
   id: string;
-  eventId: string;
+  milestoneId: string;
   title: string;
   status: TestResultStatus;
   findings: string[];
@@ -487,7 +484,7 @@ export interface QaFinding {
 export interface TestFinding {
   id: string;
   testResultId: string | null;
-  eventId: string | null;
+  milestoneId: string | null;
   taskId: string | null;
   projectId: string;
   workstreamId: string | null;
@@ -638,9 +635,9 @@ export interface PlatformSnapshot {
   partDefinitions: PartDefinition[];
   partInstances: PartInstance[];
   tasks: Task[];
-  events: Event[];
+  milestones: Milestone[];
   // Optional for legacy snapshots; normalized in the store on load.
-  eventRequirements?: EventRequirement[];
+  milestoneRequirements?: MilestoneRequirement[];
   taskDependencies: TaskDependency[];
   taskBlockers: TaskBlocker[];
   qaReports: QaReport[];

@@ -11,8 +11,9 @@ import {
   createPartDefinition,
   createPartInstance,
   createMember,
-  createEvent,
+  createMilestone,
   getSnapshot,
+  getTutorialBaselineState,
   getMilestonesForTask,
   getTasksForMilestone,
   removeMember,
@@ -171,15 +172,22 @@ test("seeded training records belong to the Training project", () => {
   );
 });
 
+test("tutorial baseline keeps the canonical visible season name", () => {
+  const baseline = getTutorialBaselineState();
+
+  assert.equal(baseline.seasonId, "default-season");
+  assert.equal(baseline.seasonName, "Default Season");
+});
+
 test("seed data includes an Outreach milestone linked to the outreach subsystem", () => {
   const snapshot = getSnapshot();
-  const event = snapshot.events.find((candidate) => candidate.id === "outreach-milestone-may-05");
+  const milestone = snapshot.milestones.find((candidate) => candidate.id === "outreach-milestone-may-05");
 
-  assert.ok(event);
-  assert.equal(event.title, "Outreach Milestone");
-  assert.equal(event.type, "demo");
-  assert.equal(event.isExternal, true);
-  assert.deepEqual(event.relatedSubsystemIds, ["outreach"]);
+  assert.ok(milestone);
+  assert.equal(milestone.title, "Outreach Milestone");
+  assert.equal(milestone.type, "demo");
+  assert.equal(milestone.isExternal, true);
+  assert.deepEqual(milestone.relatedSubsystemIds, ["outreach"]);
 });
 
 test("createMember generates unique slugs for repeated names", () => {
@@ -493,7 +501,7 @@ test("removePartDefinition clears linked part instances and task references", ()
     name: "Temporary test part instance",
     quantity: 1,
     trackIndividually: false,
-    status: "planned",
+    status: "not ready",
   });
 
   updateTask("swerve-sensor-bundle", {
@@ -570,8 +578,8 @@ test("removeMember clears linked references across the snapshot", () => {
   );
 });
 
-test("task event requirements infer milestone matches from explicit target requirements", () => {
-  const event = createEvent({
+test("task milestone requirements infer milestone matches from explicit target requirements", () => {
+  const milestone = createMilestone({
     title: "Drive Checkpoint",
     type: "deadline",
     startDateTime: "2026-06-10T10:00:00-04:00",
@@ -587,11 +595,11 @@ test("task event requirements infer milestone matches from explicit target requi
   });
 
   const snapshot = getSnapshot();
-  snapshot.eventRequirements = [
-    ...snapshot.eventRequirements,
+  snapshot.milestoneRequirements = [
+    ...snapshot.milestoneRequirements,
     {
       id: "drive-check-iteration",
-      eventId: event.id,
+      milestoneId: milestone.id,
       targetType: "subsystem",
       targetId: "drive",
       conditionType: "iteration",
@@ -602,20 +610,20 @@ test("task event requirements infer milestone matches from explicit target requi
     },
     {
       id: "drive-check-part-state",
-      eventId: event.id,
+      milestoneId: milestone.id,
       targetType: "part-instance",
       targetId: "pi-swerve-encoder-bracket-front-left",
       conditionType: "workflow_state",
-      conditionValue: "state=INSTALLED",
+      conditionValue: "state=READY",
       required: true,
       sortOrder: 2,
-      notes: "Encoder bracket part instance must be installed.",
+      notes: "Encoder bracket part instance must be ready.",
     },
   ];
 
   const matches = getMilestonesForTask("swerve-sensor-bundle");
 
-  const driveMatch = matches.find((match) => match.eventId === event.id);
+  const driveMatch = matches.find((match) => match.milestoneId === milestone.id);
   assert.ok(driveMatch);
   assert.equal(driveMatch.isLegacyLink, false);
   assert.deepEqual(
@@ -625,23 +633,23 @@ test("task event requirements infer milestone matches from explicit target requi
 });
 
 test("project-scoped requirements match through project task target inference", () => {
-  const event = createEvent({
+  const milestone = createMilestone({
     title: "Robot Scope Checkpoint",
     type: "deadline",
     startDateTime: "2026-06-18T09:00:00-04:00",
     endDateTime: null,
     isExternal: false,
-    description: "Scope requirement inferred from event project membership.",
+    description: "Scope requirement inferred from milestone project membership.",
     projectIds: [],
     relatedSubsystemIds: [],
   });
 
   const snapshot = getSnapshot();
-  snapshot.eventRequirements = [
-    ...snapshot.eventRequirements,
+  snapshot.milestoneRequirements = [
+    ...snapshot.milestoneRequirements,
     {
       id: "robot-scope-match",
-      eventId: event.id,
+      milestoneId: milestone.id,
       targetType: "project",
       targetId: "project-robot-2026",
       conditionType: "custom",
@@ -653,16 +661,16 @@ test("project-scoped requirements match through project task target inference", 
   ];
 
   const matches = getMilestonesForTask("swerve-sensor-bundle");
-  const scopeMatch = matches.find((match) => match.eventId === event.id);
+  const scopeMatch = matches.find((match) => match.milestoneId === milestone.id);
 
   assert.ok(scopeMatch);
   assert.equal(scopeMatch.isLegacyLink, false);
   assert.ok(scopeMatch.matchedRequirementIds.includes("robot-scope-match"));
 });
 
-test("legacy target-event links are preserved when no requirement match exists", () => {
-  const event = createEvent({
-    title: "Legacy-Only Event",
+test("legacy target-milestone links are preserved when no requirement match exists", () => {
+  const milestone = createMilestone({
+    title: "Legacy-Only Milestone",
     type: "deadline",
     startDateTime: "2026-07-10T09:00:00-04:00",
     endDateTime: null,
@@ -673,20 +681,20 @@ test("legacy target-event links are preserved when no requirement match exists",
   });
 
   const updated = updateTask("outreach-kiosk-assembly", {
-    targetEventId: event.id,
+    targetMilestoneId: milestone.id,
   });
   assert.ok(updated);
 
   const matches = getMilestonesForTask(updated.id);
 
-  const legacyMatch = matches.find((match) => match.eventId === event.id);
+  const legacyMatch = matches.find((match) => match.milestoneId === milestone.id);
   assert.ok(legacyMatch);
   assert.equal(legacyMatch.isLegacyLink, true);
   assert.deepEqual(legacyMatch.matchedRequirementIds, []);
 });
 
 test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
-  const event = createEvent({
+  const milestone = createMilestone({
     title: "Drive Milestone",
     type: "deadline",
     startDateTime: "2026-08-12T11:00:00-04:00",
@@ -702,11 +710,11 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
   });
 
   const snapshot = getSnapshot();
-  snapshot.eventRequirements = [
-    ...snapshot.eventRequirements,
+  snapshot.milestoneRequirements = [
+    ...snapshot.milestoneRequirements,
     {
       id: "drive-readiness-iteration",
-      eventId: event.id,
+      milestoneId: milestone.id,
       targetType: "subsystem",
       targetId: "drive",
       conditionType: "iteration",
@@ -718,11 +726,11 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
   ];
 
   const legacyTask = updateTask("outreach-kiosk-assembly", {
-    targetEventId: event.id,
+    targetMilestoneId: milestone.id,
   });
   assert.ok(legacyTask);
 
-  const matches = getTasksForMilestone(event.id);
+  const matches = getTasksForMilestone(milestone.id);
 
   const inferredTask = matches.find((match) =>
     match.taskId === "swerve-sensor-bundle",
