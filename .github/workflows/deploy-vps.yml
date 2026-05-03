@@ -71,9 +71,32 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Validate deploy secrets
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+        run: |
+          set -euo pipefail
+
+          missing=()
+          for key in VPS_HOST VPS_USER VPS_SSH_KEY PRODUCTION_ENV_FILE; do
+            if [[ -z "${!key:-}" ]]; then
+              missing+=("$key")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required deploy secret(s): %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
       - name: Configure SSH
         shell: bash
         run: |
+          set -euo pipefail
           install -m 700 -d ~/.ssh
           printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -82,11 +105,13 @@ jobs:
       - name: Ensure remote directory exists
         shell: bash
         run: |
+          set -euo pipefail
           ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "mkdir -p ${REMOTE_PATH}"
 
       - name: Sync repository to VPS
         shell: bash
         run: |
+          set -euo pipefail
           rsync -az --delete \
             --exclude '.git' \
             --exclude 'node_modules' \
@@ -108,6 +133,7 @@ jobs:
           AUTH_EMAIL_SMTP_FROM: ${{ secrets.AUTH_EMAIL_SMTP_FROM }}
           AUTH_EMAIL_FROM: ${{ secrets.AUTH_EMAIL_FROM }}
         run: |
+          set -euo pipefail
           umask 077
           append_secret_env() {
             local key="$1"

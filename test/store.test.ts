@@ -176,7 +176,7 @@ test("tutorial baseline keeps the canonical visible season name", () => {
   const baseline = getTutorialBaselineState();
 
   assert.equal(baseline.seasonId, "default-season");
-  assert.equal(baseline.seasonName, "Default Season");
+  assert.equal(baseline.seasonName, "Tutorial Season");
 });
 
 test("seed data includes an Outreach milestone linked to the outreach subsystem", () => {
@@ -596,7 +596,7 @@ test("task milestone requirements infer milestone matches from explicit target r
 
   const snapshot = getSnapshot();
   snapshot.milestoneRequirements = [
-    ...snapshot.milestoneRequirements,
+    ...(snapshot.milestoneRequirements ?? []),
     {
       id: "drive-check-iteration",
       milestoneId: milestone.id,
@@ -646,7 +646,7 @@ test("project-scoped requirements match through project task target inference", 
 
   const snapshot = getSnapshot();
   snapshot.milestoneRequirements = [
-    ...snapshot.milestoneRequirements,
+    ...(snapshot.milestoneRequirements ?? []),
     {
       id: "robot-scope-match",
       milestoneId: milestone.id,
@@ -711,7 +711,7 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
 
   const snapshot = getSnapshot();
   snapshot.milestoneRequirements = [
-    ...snapshot.milestoneRequirements,
+    ...(snapshot.milestoneRequirements ?? []),
     {
       id: "drive-readiness-iteration",
       milestoneId: milestone.id,

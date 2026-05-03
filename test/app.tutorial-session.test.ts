@@ -49,7 +49,7 @@ test("tutorial baseline reset restores canonical season/projects and is idempote
     assert.equal(firstResetBody.mode, "baseline");
     assert.equal(firstResetBody.restored, true);
     assert.equal(firstResetBody.tutorial.seasonId, "default-season");
-    assert.equal(firstResetBody.tutorial.seasonName, "Tutorial season");
+    assert.equal(firstResetBody.tutorial.seasonName, "Tutorial Season");
     assert.deepEqual(firstResetBody.tutorial.expectedProjectNames, [
       "Tutorial Robot 2026",
       "Media",

@@ -294,6 +294,21 @@ function readRepoFile(relativePath: string) {
   return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
 
+function assertIncludesAll(source: string, snippets: string[], label: string) {
+  for (const snippet of snippets) {
+    assert.ok(source.includes(snippet), `${label} is missing: ${snippet}`);
+  }
+}
+
+function assertOrdered(source: string, earlier: string, later: string, label: string) {
+  const earlierIndex = source.indexOf(earlier);
+  const laterIndex = source.indexOf(later);
+
+  assert.ok(earlierIndex >= 0, `${label} is missing: ${earlier}`);
+  assert.ok(laterIndex >= 0, `${label} is missing: ${later}`);
+  assert.ok(earlierIndex < laterIndex, `${label} has unexpected order: ${earlier} then ${later}`);
+}
+
 test("evaluateTaskCompletion reports missing gate conditions and a passing path", () => {
   const snapshot = makeWorkflowSnapshot();
   const task = snapshot.tasks.find((candidate) => candidate.id === "task-a");
@@ -418,27 +433,86 @@ test("formatTaskStatus renders the public labels", () => {
 
 test("deploy workflow keeps schema push ahead of milestone normalization", () => {
   const composeFile = readRepoFile("docker-compose.prod.yml");
-  const deployIndex = composeFile.indexOf("npm run prisma:deploy:accept-data-loss");
-  const normalizeIndex = composeFile.indexOf("npm run prisma:normalize-event-types");
-
-  assert.ok(deployIndex >= 0);
-  assert.ok(normalizeIndex >= 0);
-  assert.ok(deployIndex < normalizeIndex);
+  assertOrdered(
+    composeFile,
+    "npm run prisma:deploy:accept-data-loss",
+    "npm run prisma:normalize-event-types",
+    "deploy compose command",
+  );
+  assertIncludesAll(
+    composeFile,
+    [
+      'sh -c "if [ -z \\"$${DATABASE_URL:-}\\" ]; then',
+      'export DATABASE_URL=\\"postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}?schema=public\\"',
+      'wget -qO- http://127.0.0.1:8080/health || exit 1',
+    ],
+    "production compose file",
+  );
 });
 
-test("deploy workflow retains the app health gate", () => {
+test("deploy workflow validates secrets and retains the app health gate", () => {
   const deployWorkflow = readRepoFile(".github/workflows/deploy-vps.yml");
 
-  assert.ok(deployWorkflow.includes("curl --fail --silent http://127.0.0.1:8080/health"));
-  assert.ok(deployWorkflow.includes("Health check passed."));
-  assert.ok(deployWorkflow.includes("Application never became healthy."));
+  assertIncludesAll(
+    deployWorkflow,
+    [
+      "needs: validate",
+      "environment:",
+      "name: production",
+      "Validate deploy secrets",
+      "Missing required deploy secret(s):",
+      "set -euo pipefail",
+      "curl --fail --silent http://127.0.0.1:8080/health",
+      "Health check passed.",
+      "Application never became healthy.",
+      "docker compose --env-file .env.production -f docker-compose.prod.yml logs app --tail=200 || true",
+      "docker compose --env-file .env.production -f docker-compose.prod.yml ps",
+    ],
+    "deploy workflow",
+  );
 });
 
-test("ci workflow watches deploy artifacts that can change startup behavior", () => {
+test("deploy bootstrap script guards Linux-only execution and installs prerequisites", () => {
+  const bootstrapScript = readRepoFile("deploy/bootstrap-vps.sh");
+
+  assertIncludesAll(
+    bootstrapScript,
+    [
+      "set -euo pipefail",
+      'if [[ "$(uname -s)" != "Linux" ]]; then',
+      "This bootstrap script is intended for Ubuntu on the VPS.",
+      "apt-get install -y ca-certificates curl gnupg rsync",
+      "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+      'if [[ "${EUID}" -ne 0 ]]; then',
+      'usermod -aG docker "$USER"',
+    ],
+    "bootstrap script",
+  );
+});
+
+test("ci workflow watches deploy artifacts and runs the full validation matrix", () => {
   const ciWorkflow = readRepoFile(".github/workflows/ci.yml");
 
-  assert.ok(ciWorkflow.includes('".github/workflows/deploy-vps.yml"'));
-  assert.ok(ciWorkflow.includes('"docker-compose.prod.yml"'));
-  assert.ok(ciWorkflow.includes('"Dockerfile"'));
-  assert.ok(ciWorkflow.includes('".dockerignore"'));
+  assertIncludesAll(
+    ciWorkflow,
+    [
+      "workflow_dispatch:",
+      "pull_request:",
+      "branches-ignore:",
+      "- main",
+      "push:",
+      '".github/workflows/deploy-vps.yml"',
+      '"deploy/**"',
+      '"docker-compose.prod.yml"',
+      '"Dockerfile"',
+      '".dockerignore"',
+      '"tsconfig.test.json"',
+      '"test/**"',
+      "npm ci",
+      "npm run typecheck:test",
+      "npm run verify",
+      "npx prisma validate",
+    ],
+    "ci workflow",
+  );
 });

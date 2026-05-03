@@ -191,7 +191,7 @@ const snapshotSeed: Omit<
   seasons: [
     {
       id: "default-season",
-      name: "Default Season",
+      name: "Tutorial Season",
       type: "season",
       startDate: "2026-01-06",
       endDate: "2026-04-30",

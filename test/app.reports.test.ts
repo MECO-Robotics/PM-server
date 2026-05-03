@@ -257,6 +257,44 @@ test("web report and task planning contract endpoints persist records", async ()
 
     resetLimits();
 
+    const legacyDependencyCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/task-dependencies",
+      payload: {
+        upstreamTaskId: "intake-guard",
+        downstreamTaskId: "swerve-sensor-bundle",
+        dependencyType: "blocks",
+      },
+    });
+
+    assert.equal(legacyDependencyCreateResponse.statusCode, 201);
+    const legacyDependencyBody = legacyDependencyCreateResponse.json() as {
+      item: {
+        id: string;
+        dependencyType: string;
+        refId: string;
+        taskId: string;
+      };
+    };
+    assert.equal(legacyDependencyBody.item.taskId, "swerve-sensor-bundle");
+    assert.equal(legacyDependencyBody.item.refId, "intake-guard");
+    assert.equal(legacyDependencyBody.item.dependencyType, "hard");
+
+    resetLimits();
+
+    const legacyDependencyUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/task-dependencies/${legacyDependencyBody.item.id}`,
+      payload: {
+        dependencyType: "finish_to_start",
+      },
+    });
+
+    assert.equal(legacyDependencyUpdateResponse.statusCode, 200);
+    assert.equal(legacyDependencyUpdateResponse.json().item.dependencyType, "hard");
+
+    resetLimits();
+
     const invalidBlockerCreateResponse = await app.inject({
       method: "POST",
       url: "/api/task-blockers",
@@ -386,6 +424,15 @@ test("web report and task planning contract endpoints persist records", async ()
           dependency.taskId === "pit-bin-labeling" &&
           dependency.refId === "pit-board-refresh" &&
           dependency.dependencyType === "soft",
+      ),
+    );
+    assert.ok(
+      bootstrapBody.taskDependencies.some(
+        (dependency) =>
+          dependency.id === legacyDependencyBody.item.id &&
+          dependency.taskId === "swerve-sensor-bundle" &&
+          dependency.refId === "intake-guard" &&
+          dependency.dependencyType === "hard",
       ),
     );
     assert.ok(
@@ -568,5 +615,315 @@ test("risk endpoints support create, update, and delete with link validation", a
 
     assert.equal(missingRiskResponse.statusCode, 404);
     assert.equal(missingRiskResponse.json().message, "Risk not found.");
+  });
+});
+
+test("seeded list endpoints and auth fallbacks stay healthy on mock data", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    const seasonsResponse = await app.inject({
+      method: "GET",
+      url: "/api/seasons?pageSize=60",
+    });
+    assert.equal(seasonsResponse.statusCode, 200);
+    const seasonsBody = seasonsResponse.json() as {
+      items: Array<{ id: string; name: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(seasonsBody.pagination.pageSize, 60);
+    assert.ok(seasonsBody.items.some((season) => season.id === "default-season"));
+
+    resetLimits();
+
+    const membersResponse = await app.inject({
+      method: "GET",
+      url: "/api/members?pageSize=60",
+    });
+    assert.equal(membersResponse.statusCode, 200);
+    const membersBody = membersResponse.json() as {
+      items: Array<{ id: string; name: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(membersBody.pagination.pageSize, 60);
+    assert.ok(membersBody.items.some((member) => member.id === "ava"));
+
+    resetLimits();
+
+    const materialsResponse = await app.inject({
+      method: "GET",
+      url: "/api/materials?pageSize=60",
+    });
+    assert.equal(materialsResponse.statusCode, 200);
+    const materialsBody = materialsResponse.json() as {
+      items: Array<{ id: string; name: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(materialsBody.pagination.pageSize, 60);
+    assert.ok(materialsBody.items.some((material) => material.id === "mat-onyx-filament"));
+
+    resetLimits();
+
+    const partDefinitionsResponse = await app.inject({
+      method: "GET",
+      url: "/api/part-definitions?pageSize=60",
+    });
+    assert.equal(partDefinitionsResponse.statusCode, 200);
+    const partDefinitionsBody = partDefinitionsResponse.json() as {
+      items: Array<{ id: string; name: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(partDefinitionsBody.pagination.pageSize, 60);
+    assert.ok(
+      partDefinitionsBody.items.some((partDefinition) => partDefinition.id === "pd-swerve-encoder-bracket"),
+    );
+
+    resetLimits();
+
+    const partInstancesResponse = await app.inject({
+      method: "GET",
+      url: "/api/part-instances?pageSize=60",
+    });
+    assert.equal(partInstancesResponse.statusCode, 200);
+    const partInstancesBody = partInstancesResponse.json() as {
+      items: Array<{ id: string; name: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(partInstancesBody.pagination.pageSize, 60);
+    assert.ok(
+      partInstancesBody.items.some((partInstance) => partInstance.id === "pi-swerve-encoder-bracket-front-left"),
+    );
+
+    resetLimits();
+
+    const milestonesResponse = await app.inject({
+      method: "GET",
+      url: "/api/milestones?pageSize=60",
+    });
+    assert.equal(milestonesResponse.statusCode, 200);
+    const milestonesBody = milestonesResponse.json() as {
+      items: Array<{ id: string; title: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(milestonesBody.pagination.pageSize, 60);
+    assert.ok(milestonesBody.items.some((milestone) => milestone.id === "outreach-milestone-may-05"));
+
+    resetLimits();
+
+    const reportsResponse = await app.inject({
+      method: "GET",
+      url: "/api/reports?pageSize=60",
+    });
+    assert.equal(reportsResponse.statusCode, 200);
+    const reportsBody = reportsResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(reportsBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(reportsBody.items));
+
+    resetLimits();
+
+    const reportFindingsResponse = await app.inject({
+      method: "GET",
+      url: "/api/report-findings?pageSize=60",
+    });
+    assert.equal(reportFindingsResponse.statusCode, 200);
+    const reportFindingsBody = reportFindingsResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(reportFindingsBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(reportFindingsBody.items));
+
+    resetLimits();
+
+    const testResultsResponse = await app.inject({
+      method: "GET",
+      url: "/api/test-results?pageSize=60",
+    });
+    assert.equal(testResultsResponse.statusCode, 200);
+    const testResultsBody = testResultsResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(testResultsBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(testResultsBody.items));
+
+    resetLimits();
+
+    const risksResponse = await app.inject({
+      method: "GET",
+      url: "/api/risks?pageSize=60",
+    });
+    assert.equal(risksResponse.statusCode, 200);
+    const risksBody = risksResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(risksBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(risksBody.items));
+
+    resetLimits();
+
+    const iterationsResponse = await app.inject({
+      method: "GET",
+      url: "/api/iterations?pageSize=60",
+    });
+    assert.equal(iterationsResponse.statusCode, 200);
+    const iterationsBody = iterationsResponse.json() as {
+      items: Array<{ id: string; iteration: number }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(iterationsBody.pagination.pageSize, 60);
+    assert.ok(iterationsBody.items.length > 0);
+
+    resetLimits();
+
+    const findingsResponse = await app.inject({
+      method: "GET",
+      url: "/api/findings?pageSize=60",
+    });
+    assert.equal(findingsResponse.statusCode, 200);
+    const findingsBody = findingsResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(findingsBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(findingsBody.items));
+
+    resetLimits();
+
+    const taskTargetsResponse = await app.inject({
+      method: "GET",
+      url: "/api/task-targets?pageSize=60",
+    });
+    assert.equal(taskTargetsResponse.statusCode, 200);
+    const taskTargetsBody = taskTargetsResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(taskTargetsBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(taskTargetsBody.items));
+
+    resetLimits();
+
+    const manufacturingResponse = await app.inject({
+      method: "GET",
+      url: "/api/manufacturing?pageSize=60",
+    });
+    assert.equal(manufacturingResponse.statusCode, 200);
+    const manufacturingBody = manufacturingResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(manufacturingBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(manufacturingBody.items));
+
+    resetLimits();
+
+    const purchasesResponse = await app.inject({
+      method: "GET",
+      url: "/api/purchases?pageSize=60",
+    });
+    assert.equal(purchasesResponse.statusCode, 200);
+    const purchasesBody = purchasesResponse.json() as {
+      items: Array<{ id: string }>;
+      pagination: { pageSize: number };
+    };
+    assert.equal(purchasesBody.pagination.pageSize, 60);
+    assert.ok(Array.isArray(purchasesBody.items));
+
+    resetLimits();
+
+    const meetingsResponse = await app.inject({
+      method: "GET",
+      url: "/api/meetings",
+    });
+    assert.equal(meetingsResponse.statusCode, 200);
+    const meetingsBody = meetingsResponse.json() as {
+      attendance: Array<{ id: string }>;
+      meetings: Array<{ id: string }>;
+      workLogs: Array<{ id: string }>;
+    };
+    assert.ok(meetingsBody.meetings.length > 0);
+    assert.ok(meetingsBody.attendance.length > 0);
+    assert.ok(meetingsBody.workLogs.length > 0);
+
+    resetLimits();
+
+    const qaResponse = await app.inject({
+      method: "GET",
+      url: "/api/qa",
+    });
+    assert.equal(qaResponse.statusCode, 200);
+    const qaBody = qaResponse.json() as {
+      mentorBackedPasses: number;
+      reviews: Array<{ id: string }>;
+    };
+    assert.ok(qaBody.reviews.length > 0);
+    assert.ok(qaBody.mentorBackedPasses >= 0);
+
+    resetLimits();
+
+    const metricsResponse = await app.inject({
+      method: "GET",
+      url: "/api/metrics",
+    });
+    assert.equal(metricsResponse.statusCode, 200);
+    const metricsBody = metricsResponse.json() as {
+      attendanceHours: number;
+      completionRate: number;
+      mechanismMetrics: Array<unknown>;
+      subsystemMetrics: Array<unknown>;
+    };
+    assert.equal(typeof metricsBody.completionRate, "number");
+    assert.equal(typeof metricsBody.attendanceHours, "number");
+    assert.ok(metricsBody.subsystemMetrics.length > 0);
+    assert.ok(metricsBody.mechanismMetrics.length > 0);
+
+    resetLimits();
+
+    const googleAuthResponse = await app.inject({
+      method: "POST",
+      url: "/api/auth/google",
+      payload: {
+        credential: "mock-google-credential",
+      },
+    });
+    assert.equal(googleAuthResponse.statusCode, 503);
+    assert.equal(
+      googleAuthResponse.json().message,
+      "Google sign-in is not configured on the server yet.",
+    );
+
+    resetLimits();
+
+    const emailStartResponse = await app.inject({
+      method: "POST",
+      url: "/api/auth/email/start",
+      payload: {
+        email: "tester@mecorobotics.org",
+      },
+    });
+    assert.equal(emailStartResponse.statusCode, 503);
+    assert.equal(
+      emailStartResponse.json().message,
+      "Email sign-in is not configured on the server yet.",
+    );
+
+    resetLimits();
+
+    const emailVerifyResponse = await app.inject({
+      method: "POST",
+      url: "/api/auth/email/verify",
+      payload: {
+        email: "tester@mecorobotics.org",
+        code: "123456",
+      },
+    });
+    assert.equal(emailVerifyResponse.statusCode, 503);
+    assert.equal(
+      emailVerifyResponse.json().message,
+      "Email sign-in is not configured on the server yet.",
+    );
   });
 });

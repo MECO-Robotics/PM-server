@@ -851,7 +851,7 @@ const DEFAULT_SEASON_PROJECTS: Array<{
 ];
 
 const TUTORIAL_SEASON_ID = "default-season";
-const TUTORIAL_SEASON_NAME = "Default Season";
+const TUTORIAL_SEASON_NAME = "Tutorial Season";
 const EXPECTED_TUTORIAL_PROJECT_NAMES = [
   "Tutorial Robot 2026",
   "Media",

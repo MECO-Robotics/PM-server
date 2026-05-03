@@ -74,6 +74,8 @@ test("buildApp serves health and public auth config without auth enabled", async
 
     const homeBody = homeResponse.json() as {
       slackEnabled: boolean;
+      slackConnected: boolean;
+      slackError: string | null;
       userEmail: string | null;
       alertUsergroupHandles: string[];
       channels: Array<{

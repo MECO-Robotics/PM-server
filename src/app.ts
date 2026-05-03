@@ -2,9 +2,13 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 
 import { corsConfig, env } from "./config/env";
+import { resetStore } from "./data/store";
 import { registerRoutes } from "./routes/registerRoutes";
 
 export async function buildApp() {
+  // Always start from the checked-in seed snapshot so deploys regenerate tutorial state.
+  resetStore();
+
   const app = Fastify({
     logger: true,
     bodyLimit: 64 * 1024,
