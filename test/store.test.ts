@@ -190,6 +190,17 @@ test("seed data includes an Outreach milestone linked to the outreach subsystem"
   assert.deepEqual(milestone.relatedSubsystemIds, ["outreach"]);
 });
 
+test("tutorial season seed includes milestone events", () => {
+  const snapshot = getSnapshot();
+  const tutorialMilestones = snapshot.milestones.filter(
+    (milestone) => milestone.seasonId === "default-season",
+  );
+
+  assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-season-kickoff-jan-10"));
+  assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-robot-checkpoint-feb-21"));
+  assert.ok(tutorialMilestones.some((milestone) => milestone.id === "tutorial-training-showcase-mar-21"));
+});
+
 test("createMember generates unique slugs for repeated names", () => {
   const first = createMember({
     name: "Ava Chen",
