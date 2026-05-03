@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { snapshot as initialSnapshot } from "../src/data/mockData";
@@ -289,6 +290,10 @@ function makeWorkflowSnapshot() {
   return snapshot;
 }
 
+function readRepoFile(relativePath: string) {
+  return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
+}
+
 test("evaluateTaskCompletion reports missing gate conditions and a passing path", () => {
   const snapshot = makeWorkflowSnapshot();
   const task = snapshot.tasks.find((candidate) => candidate.id === "task-a");
@@ -409,4 +414,31 @@ test("formatTaskStatus renders the public labels", () => {
   assert.equal(formatTaskStatus("in-progress"), "In Progress");
   assert.equal(formatTaskStatus("waiting-for-qa"), "QA");
   assert.equal(formatTaskStatus("complete"), "Complete");
+});
+
+test("deploy workflow keeps schema push ahead of milestone normalization", () => {
+  const composeFile = readRepoFile("docker-compose.prod.yml");
+  const deployIndex = composeFile.indexOf("npm run prisma:deploy:accept-data-loss");
+  const normalizeIndex = composeFile.indexOf("npm run prisma:normalize-event-types");
+
+  assert.ok(deployIndex >= 0);
+  assert.ok(normalizeIndex >= 0);
+  assert.ok(deployIndex < normalizeIndex);
+});
+
+test("deploy workflow retains the app health gate", () => {
+  const deployWorkflow = readRepoFile(".github/workflows/deploy-vps.yml");
+
+  assert.ok(deployWorkflow.includes("curl --fail --silent http://127.0.0.1:8080/health"));
+  assert.ok(deployWorkflow.includes("Health check passed."));
+  assert.ok(deployWorkflow.includes("Application never became healthy."));
+});
+
+test("ci workflow watches deploy artifacts that can change startup behavior", () => {
+  const ciWorkflow = readRepoFile(".github/workflows/ci.yml");
+
+  assert.ok(ciWorkflow.includes('".github/workflows/deploy-vps.yml"'));
+  assert.ok(ciWorkflow.includes('"docker-compose.prod.yml"'));
+  assert.ok(ciWorkflow.includes('"Dockerfile"'));
+  assert.ok(ciWorkflow.includes('".dockerignore"'));
 });
