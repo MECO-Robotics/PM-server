@@ -207,7 +207,7 @@ test("artifact and workstream endpoints preserve seeded, paginated, and CRUD con
     assert.ok(
       artifactsBody.items.some(
         (artifact) =>
-          artifact.id === "artifact-event-volunteer-guide" &&
+          artifact.id === "artifact-milestone-volunteer-guide" &&
           artifact.projectId === "project-operations-2026" &&
           artifact.kind === "document",
       ),
