@@ -98,19 +98,19 @@ export interface TaskMilestoneMatch {
 
 function parseIterationCondition(conditionValue: string) {
   const normalized = conditionValue.trim().toLowerCase();
-  const match = normalized.match(/^iteration\s*([<>]=?|==)\s*(\d+)$/);
+  const match = normalized.match(/^iteration\s*(?:([<>]=?|==|=)\s*)?(\d+)$/);
   if (!match) {
     return null;
   }
 
-  const [, operator, iterationText] = match;
+  const [, rawOperator, iterationText] = match;
   const parsedIteration = Number.parseInt(iterationText, 10);
   if (!Number.isFinite(parsedIteration)) {
     return null;
   }
 
   return {
-    operator: operator === "==" ? "=" : operator,
+    operator: rawOperator === "==" || rawOperator === "=" || rawOperator === undefined ? "=" : rawOperator,
     iteration: Math.max(1, Math.trunc(parsedIteration)),
   };
 }
