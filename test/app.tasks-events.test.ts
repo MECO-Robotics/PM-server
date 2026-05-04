@@ -224,7 +224,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         isExternal: true,
         description: "Milestone shared across robot and operations work.",
         projectIds: ["project-robot-2026", "project-operations-2026"],
-        relatedSubsystemIds: ["drive", "operations"],
         photoUrl: "https://cdn.example.test/forms/milestone-demo.png",
       },
     });
@@ -234,7 +233,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       item: {
         id: string;
         projectIds: string[];
-        relatedSubsystemIds: string[];
         photoUrl: string;
       };
     };
@@ -242,7 +240,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       "project-robot-2026",
       "project-operations-2026",
     ]);
-    assert.deepEqual(createdMilestoneBody.item.relatedSubsystemIds, ["drive", "operations"]);
     assert.equal(
       createdMilestoneBody.item.photoUrl,
       "https://cdn.example.test/forms/milestone-demo.png",
@@ -255,7 +252,6 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
       url: `/api/milestones/${createdMilestoneBody.item.id}`,
       payload: {
         projectIds: ["project-outreach-2026"],
-        relatedSubsystemIds: ["outreach"],
         photoUrl: "https://cdn.example.test/forms/milestone-demo-v2.png",
       },
     });
@@ -264,12 +260,10 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
     const updatedMilestoneBody = updateMilestoneResponse.json() as {
       item: {
         projectIds: string[];
-        relatedSubsystemIds: string[];
         photoUrl: string;
       };
     };
     assert.deepEqual(updatedMilestoneBody.item.projectIds, ["project-outreach-2026"]);
-    assert.deepEqual(updatedMilestoneBody.item.relatedSubsystemIds, ["outreach"]);
     assert.equal(
       updatedMilestoneBody.item.photoUrl,
       "https://cdn.example.test/forms/milestone-demo-v2.png",
@@ -288,32 +282,10 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
         isExternal: true,
         description: "",
         projectIds: ["missing-project"],
-        relatedSubsystemIds: [],
         photoUrl: "https://cdn.example.test/forms/invalid.png",
       },
     });
-
     assert.equal(unknownProjectResponse.statusCode, 400);
-
-    resetLimits();
-
-    const mismatchedSubsystemResponse = await app.inject({
-      method: "POST",
-      url: "/api/milestones",
-      payload: {
-        title: "Mismatched Subsystem Demo",
-        type: "demo",
-        startDateTime: "2026-05-16T18:00:00-04:00",
-        endDateTime: null,
-        isExternal: true,
-        description: "",
-        projectIds: ["project-outreach-2026"],
-        relatedSubsystemIds: ["drive"],
-        photoUrl: "https://cdn.example.test/forms/invalid-subsystem.png",
-      },
-    });
-
-    assert.equal(mismatchedSubsystemResponse.statusCode, 400);
 
     resetLimits();
 

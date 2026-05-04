@@ -19,7 +19,6 @@ export {
 export {
   validateArtifactLinks,
   validateMilestoneProjectLinks,
-  validateMilestoneSubsystemLinks,
   validateManufacturingItemLinks,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,

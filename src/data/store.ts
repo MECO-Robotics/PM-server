@@ -429,16 +429,18 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     return projectSeasonId ?? fallbackSeasonId;
   };
 
-  const normalizedMilestones = clonedSnapshot.milestones.map((milestone) => ({
-    ...milestone,
-    seasonId: normalizeMilestoneSeasonId(milestone),
-    status: normalizeMilestoneStatus(milestone.status),
-    isBlocked: milestone.isBlocked ?? false,
-    blockedReason: milestone.blockedReason ?? null,
-    blockedByType: milestone.blockedByType ?? null,
-    blockedById: milestone.blockedById ?? null,
-    photoUrl: typeof milestone.photoUrl === "string" ? milestone.photoUrl : "",
-  }));
+  const normalizedMilestones = clonedSnapshot.milestones.map((milestone) => {
+    return {
+      ...milestone,
+      seasonId: normalizeMilestoneSeasonId(milestone),
+      status: normalizeMilestoneStatus(milestone.status),
+      isBlocked: milestone.isBlocked ?? false,
+      blockedReason: milestone.blockedReason ?? null,
+      blockedByType: milestone.blockedByType ?? null,
+      blockedById: milestone.blockedById ?? null,
+      photoUrl: typeof milestone.photoUrl === "string" ? milestone.photoUrl : "",
+    };
+  });
 
   const normalizedPartInstances = clonedSnapshot.partInstances.map((partInstance) => ({
     ...partInstance,
@@ -463,25 +465,6 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
           milestoneId: milestone.id,
           targetType: "project",
           targetId: projectId,
-          conditionType: "custom",
-          conditionValue: "in_scope",
-          required: true,
-          sortOrder: sortOrder++,
-          notes: "",
-        });
-      }
-
-      for (const subsystemId of uniqueIds(milestone.relatedSubsystemIds ?? [])) {
-        const id = `${milestone.id}:scope:subsystem:${subsystemId}`;
-        if (seen.has(id)) {
-          continue;
-        }
-        seen.add(id);
-        requirements.push({
-          id,
-          milestoneId: milestone.id,
-          targetType: "subsystem",
-          targetId: subsystemId,
           conditionType: "custom",
           conditionValue: "in_scope",
           required: true,
@@ -2089,12 +2072,7 @@ export function removeSubsystem(subsystemId: string) {
     workLogs: currentSnapshot.workLogs.filter(
       (workLog) => !taskIdsToRemove.has(workLog.taskId),
     ),
-    milestones: currentSnapshot.milestones.map((milestone) => ({
-      ...milestone,
-      relatedSubsystemIds: milestone.relatedSubsystemIds.filter(
-        (relatedSubsystemId) => !subsystemIdsToRemove.has(relatedSubsystemId),
-      ),
-    })),
+    milestones: currentSnapshot.milestones.map((milestone) => milestone),
     qaReports: currentSnapshot.qaReports.filter(
       (report) => !taskIdsToRemove.has(report.taskId),
     ),
@@ -2564,7 +2542,6 @@ export function createTask(input: TaskInput) {
 function buildScopeRequirementsForMilestone(input: {
   milestoneId: string;
   projectIds: string[];
-  relatedSubsystemIds: string[];
 }) {
   const requirements: MilestoneRequirement[] = [];
   let sortOrder = 1;
@@ -2575,20 +2552,6 @@ function buildScopeRequirementsForMilestone(input: {
       milestoneId: input.milestoneId,
       targetType: "project",
       targetId: projectId,
-      conditionType: "custom",
-      conditionValue: "in_scope",
-      required: true,
-      sortOrder: sortOrder++,
-      notes: "",
-    });
-  }
-
-  for (const subsystemId of uniqueIds(input.relatedSubsystemIds)) {
-    requirements.push({
-      id: `${input.milestoneId}:scope:subsystem:${subsystemId}`,
-      milestoneId: input.milestoneId,
-      targetType: "subsystem",
-      targetId: subsystemId,
       conditionType: "custom",
       conditionValue: "in_scope",
       required: true,
@@ -2618,7 +2581,6 @@ export function createMilestone(input: MilestoneInput) {
     isExternal: input.isExternal,
     description: input.description,
     projectIds: input.projectIds,
-    relatedSubsystemIds: input.relatedSubsystemIds,
     status: normalizeMilestoneStatus(input.status),
     isBlocked: false,
     blockedReason: null,
@@ -2635,7 +2597,6 @@ export function createMilestone(input: MilestoneInput) {
       ...buildScopeRequirementsForMilestone({
         milestoneId: milestone.id,
         projectIds: milestone.projectIds ?? [],
-        relatedSubsystemIds: milestone.relatedSubsystemIds ?? [],
       }),
     ],
   };
@@ -2991,11 +2952,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
 
   let updatedMilestone: Milestone | null = null;
   const desiredProjectIds = input.projectIds === undefined ? undefined : uniqueIds(input.projectIds);
-  const desiredRelatedSubsystemIds =
-    input.relatedSubsystemIds === undefined ? undefined : uniqueIds(input.relatedSubsystemIds);
   const nextProjectIds = desiredProjectIds ?? (currentMilestone.projectIds ?? []);
-  const nextRelatedSubsystemIds =
-    desiredRelatedSubsystemIds ?? (currentMilestone.relatedSubsystemIds ?? []);
   const fallbackSeasonId = currentSnapshot.seasons[0]?.id ?? "default-season";
   const nextSeasonId =
     nextProjectIds
@@ -3009,7 +2966,6 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
     ...input,
     seasonId: nextSeasonId,
     projectIds: nextProjectIds,
-    relatedSubsystemIds: nextRelatedSubsystemIds,
     status:
       input.status === undefined
         ? currentMilestone.status
@@ -3029,7 +2985,6 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       buildScopeRequirementsForMilestone({
         milestoneId: updatedMilestone.id,
         projectIds: updatedMilestone.projectIds ?? [],
-        relatedSubsystemIds: updatedMilestone.relatedSubsystemIds ?? [],
       }).map((req) => req.id),
     );
 
@@ -3051,7 +3006,6 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
     const additions = buildScopeRequirementsForMilestone({
       milestoneId: updatedMilestone.id,
       projectIds: updatedMilestone.projectIds ?? [],
-      relatedSubsystemIds: updatedMilestone.relatedSubsystemIds ?? [],
     }).filter((req) => !retainedIds.has(req.id));
 
     currentSnapshot = {

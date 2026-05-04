@@ -330,14 +330,9 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
   );
   const scopedMilestones = snapshot.milestones.filter((milestone) => {
     const milestoneProjectIds = milestone.projectIds ?? [];
-    if (milestoneProjectIds.length > 0) {
-      return milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
-    }
-
-    return (
-      milestone.relatedSubsystemIds.length === 0 ||
-      milestone.relatedSubsystemIds.some((subsystemId) => scopedSubsystemIds.has(subsystemId))
-    );
+    return milestoneProjectIds.length === 0
+      ? true
+      : milestoneProjectIds.some((projectId) => activeProjectIds.has(projectId));
   });
   const scopedMilestoneIds = new Set(scopedMilestones.map((milestone) => milestone.id));
   const scopedMilestonesById = new Map(scopedMilestones.map((milestone) => [milestone.id, milestone] as const));

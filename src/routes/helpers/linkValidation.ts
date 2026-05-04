@@ -521,37 +521,11 @@ export function wouldCreateSubsystemCycle(
   return false;
 }
 
-export function validateMilestoneSubsystemLinks(relatedSubsystemIds: string[]) {
-  const unknownSubsystemId = relatedSubsystemIds.find(
-    (subsystemId) => !findSubsystem(subsystemId),
-  );
-
-  if (unknownSubsystemId) {
-    return "One or more related subsystems do not exist.";
-  }
-
-  return null;
-}
-
-export function validateMilestoneProjectLinks(projectIds: string[], relatedSubsystemIds: string[]) {
+export function validateMilestoneProjectLinks(projectIds: string[]) {
   const unknownProjectId = projectIds.find((projectId) => !findProject(projectId));
 
   if (unknownProjectId) {
     return "One or more related projects do not exist.";
-  }
-
-  if (projectIds.length === 0) {
-    return null;
-  }
-
-  const selectedProjectIds = new Set(projectIds);
-  const mismatchedSubsystemId = relatedSubsystemIds.find((subsystemId) => {
-    const subsystem = findSubsystem(subsystemId);
-    return subsystem ? !selectedProjectIds.has(subsystem.projectId) : false;
-  });
-
-  if (mismatchedSubsystemId) {
-    return "Related subsystems must belong to the selected projects.";
   }
 
   return null;

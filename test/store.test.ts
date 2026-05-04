@@ -187,7 +187,7 @@ test("seed data includes an Outreach milestone linked to the outreach subsystem"
   assert.equal(milestone.title, "Outreach Milestone");
   assert.equal(milestone.type, "demo");
   assert.equal(milestone.isExternal, true);
-  assert.deepEqual(milestone.relatedSubsystemIds, ["outreach"]);
+  assert.deepEqual(milestone.projectIds, ["project-outreach-2026"]);
 });
 
 test("tutorial season seed includes milestone events", () => {
@@ -598,7 +598,6 @@ test("task milestone requirements infer milestone matches from explicit target r
     isExternal: false,
     description: "Checkpoint for drive subsystem readiness.",
     projectIds: [],
-    relatedSubsystemIds: [],
   });
 
   updateSubsystem("drive", {
@@ -652,7 +651,6 @@ test("project-scoped requirements match through project task target inference", 
     isExternal: false,
     description: "Scope requirement inferred from milestone project membership.",
     projectIds: [],
-    relatedSubsystemIds: [],
   });
 
   const snapshot = getSnapshot();
@@ -688,7 +686,6 @@ test("legacy target-milestone links are preserved when no requirement match exis
     isExternal: false,
     description: "Legacy-only mapping validation fixture.",
     projectIds: [],
-    relatedSubsystemIds: [],
   });
 
   const updated = updateTask("outreach-kiosk-assembly", {
@@ -713,7 +710,6 @@ test("getTasksForMilestone aggregates inferred and legacy task matches", () => {
     isExternal: false,
     description: "Drive milestone that supports inferred and legacy matches.",
     projectIds: [],
-    relatedSubsystemIds: [],
   });
 
   updateSubsystem("drive", {

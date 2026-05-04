@@ -132,14 +132,13 @@ import {
   resolveWorkstreamId,
   uniqueIds,
   validateArtifactLinks,
-  validateMilestoneProjectLinks,
-  validateMilestoneSubsystemLinks,
   validateManufacturingItemLinks,
   validatePartDefinitionMaterialId,
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
   validateQaReportLinks,
   validateRiskLinks,
+  validateMilestoneProjectLinks,
   validateSubsystemPeople,
   validateTaskBlockerLinks,
   validateTaskLinks,
@@ -1289,13 +1288,10 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const projectIds = Array.from(new Set(parsed.data.projectIds));
-    const relatedSubsystemIds = Array.from(new Set(parsed.data.relatedSubsystemIds));
-    const validationError =
-      validateMilestoneSubsystemLinks(relatedSubsystemIds) ??
-      validateMilestoneProjectLinks(projectIds, relatedSubsystemIds);
-    if (validationError) {
+    const milestoneProjectValidation = validateMilestoneProjectLinks(projectIds);
+    if (milestoneProjectValidation) {
       return reply.code(400).send({
-        message: validationError,
+        message: milestoneProjectValidation,
       });
     }
 
@@ -1304,7 +1300,6 @@ export async function registerRoutes(app: FastifyInstance) {
       endDateTime: parsed.data.endDateTime ?? null,
       description: parsed.data.description ?? "",
       projectIds,
-      relatedSubsystemIds,
       photoUrl: parsed.data.photoUrl ?? "",
     });
 
@@ -1335,21 +1330,14 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      const nextRelatedSubsystemIds =
-        parsed.data.relatedSubsystemIds === undefined
-          ? currentMilestone.relatedSubsystemIds
-          : Array.from(new Set(parsed.data.relatedSubsystemIds));
       const nextProjectIds =
         parsed.data.projectIds === undefined
           ? currentMilestone.projectIds ?? []
           : Array.from(new Set(parsed.data.projectIds));
-
-      const validationError =
-        validateMilestoneSubsystemLinks(nextRelatedSubsystemIds) ??
-        validateMilestoneProjectLinks(nextProjectIds, nextRelatedSubsystemIds);
-      if (validationError) {
+      const milestoneProjectValidation = validateMilestoneProjectLinks(nextProjectIds);
+      if (milestoneProjectValidation) {
         return reply.code(400).send({
-          message: validationError,
+          message: milestoneProjectValidation,
         });
       }
 
@@ -1364,7 +1352,6 @@ export async function registerRoutes(app: FastifyInstance) {
             ? currentMilestone.description
             : parsed.data.description,
         projectIds: nextProjectIds,
-        relatedSubsystemIds: nextRelatedSubsystemIds,
         photoUrl:
           parsed.data.photoUrl === undefined
             ? currentMilestone.photoUrl

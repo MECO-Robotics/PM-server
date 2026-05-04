@@ -85,7 +85,6 @@ export const milestoneSchema = z.object({
   isExternal: z.boolean().default(false),
   description: z.string().trim().default(""),
   projectIds: z.array(z.string().trim().min(1)).default([]),
-  relatedSubsystemIds: z.array(z.string().trim().min(1)).default([]),
   photoUrl: z.string().trim().default(""),
 });
 
@@ -100,7 +99,6 @@ export const milestonePatchSchema = z.object({
   isExternal: z.boolean().optional(),
   description: z.string().trim().optional(),
   projectIds: z.array(z.string().trim().min(1)).optional(),
-  relatedSubsystemIds: z.array(z.string().trim().min(1)).optional(),
   photoUrl: z.string().trim().optional(),
 });
 

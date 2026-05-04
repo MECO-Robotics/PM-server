@@ -939,7 +939,6 @@ const snapshotSeed: Omit<
       description: "Introductory milestone for the tutorial season workspace and onboarding flow.",
       status: "ready",
       projectIds: ["project-operations-2026", "project-training-2026"],
-      relatedSubsystemIds: ["operations", "scouting"],
     },
     {
       id: "tutorial-robot-checkpoint-feb-21",
@@ -952,7 +951,6 @@ const snapshotSeed: Omit<
       description: "Midseason checkpoint for drivetrain tuning and controls integration.",
       status: "qa",
       projectIds: ["project-robot-2026"],
-      relatedSubsystemIds: ["drive", "controls"],
     },
     {
       id: "tutorial-training-showcase-mar-21",
@@ -965,7 +963,6 @@ const snapshotSeed: Omit<
       description: "Tutorial-season demo milestone for training and outreach coordination.",
       status: "ready",
       projectIds: ["project-training-2026", "project-outreach-2026"],
-      relatedSubsystemIds: ["scouting", "outreach"],
     },
     {
       id: "drive-practice-apr-25",
@@ -977,7 +974,6 @@ const snapshotSeed: Omit<
       description: "Full robot practice used to validate control tuning and readiness.",
       status: "ready",
       projectIds: ["project-robot-2026"],
-      relatedSubsystemIds: ["drive", "controls"],
     },
     {
       id: "internal-review-apr-24",
@@ -989,7 +985,6 @@ const snapshotSeed: Omit<
       description: "Subsystem leads review readiness before the next practice block.",
       status: "qa",
       projectIds: ["project-robot-2026"],
-      relatedSubsystemIds: ["drive", "manipulator", "controls"],
     },
     {
       id: "demo-apr-30",
@@ -1001,7 +996,6 @@ const snapshotSeed: Omit<
       description: "External milestone that the team is aligning key finishing tasks to.",
       status: "blocked",
       projectIds: ["project-robot-2026"],
-      relatedSubsystemIds: ["drive", "manipulator", "controls"],
     },
     {
       id: "pit-freeze-apr-28",
@@ -1013,7 +1007,6 @@ const snapshotSeed: Omit<
       description: "Final freeze for pit checklists, spare bins, and field-support documentation.",
       status: "not ready",
       projectIds: ["project-operations-2026"],
-      relatedSubsystemIds: ["pit-readiness", "operations"],
     },
     {
       id: "week-zero-may-09",
@@ -1025,7 +1018,6 @@ const snapshotSeed: Omit<
       description: "Practice competition to test robot reliability, scouting flow, and pit execution.",
       status: "blocked",
       projectIds: ["project-robot-2026", "project-training-2026", "project-operations-2026"],
-      relatedSubsystemIds: ["drive", "controls", "vision", "scouting", "pit-readiness"],
     },
     {
       id: "stem-night-may-05",
@@ -1037,7 +1029,6 @@ const snapshotSeed: Omit<
       description: "Community outreach milestone featuring kiosk demos and student-led tours.",
       status: "ready",
       projectIds: ["project-outreach-2026"],
-      relatedSubsystemIds: ["outreach"],
     },
     {
       id: "outreach-milestone-may-05",
@@ -1049,7 +1040,6 @@ const snapshotSeed: Omit<
       description: "Final outreach readiness checkpoint before STEM Night demos begin.",
       status: "qa",
       projectIds: ["project-outreach-2026"],
-      relatedSubsystemIds: ["outreach"],
     },
     {
       id: "robot-readiness-may-02",
@@ -1061,7 +1051,6 @@ const snapshotSeed: Omit<
       description: "Cross-functional check before week-zero scrimmage.",
       status: "ready",
       projectIds: ["project-robot-2026"],
-      relatedSubsystemIds: ["drive", "manipulator", "controls", "vision", "climber"],
     },
   ],
   tasks: [

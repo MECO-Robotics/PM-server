@@ -274,7 +274,6 @@ export interface Milestone {
   isExternal: boolean;
   description: string;
   projectIds: string[];
-  relatedSubsystemIds: string[];
   status?: MilestoneStatus;
   isBlocked?: boolean;
   blockedReason?: string | null;
