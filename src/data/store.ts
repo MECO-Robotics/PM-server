@@ -2261,6 +2261,7 @@ export function createMechanism(input: MechanismInput) {
     subsystemId: input.subsystemId,
     name: input.name,
     description: input.description,
+    googleSheetsUrl: input.googleSheetsUrl ?? "",
     photoUrl: input.photoUrl ?? "",
     iteration: normalizeIteration(input.iteration),
     isArchived: input.isArchived ?? false,
@@ -2404,6 +2405,10 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
       updatedMechanism = {
         ...mechanism,
         ...input,
+        googleSheetsUrl:
+          input.googleSheetsUrl === undefined
+            ? mechanism.googleSheetsUrl ?? ""
+            : input.googleSheetsUrl,
         iteration:
           input.iteration === undefined
             ? mechanism.iteration

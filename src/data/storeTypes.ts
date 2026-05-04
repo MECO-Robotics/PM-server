@@ -174,6 +174,7 @@ export interface MechanismInput {
   subsystemId: string;
   name: string;
   description: string;
+  googleSheetsUrl?: string;
   photoUrl?: string;
   iteration?: number;
   isArchived?: boolean;

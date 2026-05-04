@@ -333,6 +333,7 @@ export const mechanismSchema = z.object({
   subsystemId: z.string().trim().min(1),
   name: z.string().trim().min(2),
   description: z.string().trim().min(3),
+  googleSheetsUrl: z.string().trim().default(""),
   photoUrl: z.string().trim().default(""),
   iteration: iterationSchema,
   isArchived: z.boolean().default(false),
