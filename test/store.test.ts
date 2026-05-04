@@ -388,6 +388,100 @@ test("updatePartInstance keeps the subsystem aligned with the selected mechanism
   assert.equal(updatedPartInstance.subsystemId, "manipulator");
 });
 
+test("createPartInstance merges duplicate part and mechanism quantities", () => {
+  const temporaryPartDefinition = createPartDefinition({
+    name: "Temporary Merge Part",
+    partNumber: "TMP-MERGE-000",
+    revision: "A",
+    type: "custom",
+    source: "Onshape",
+    materialId: "mat-onyx-filament",
+    description: "Temporary fixture for merge coverage.",
+  });
+
+  const firstPartInstance = createPartInstance({
+    subsystemId: "drive",
+    mechanismId: "swerve-module",
+    partDefinitionId: temporaryPartDefinition.id,
+    name: "Encoder bracket set",
+    quantity: 2,
+    trackIndividually: false,
+    status: "not ready",
+  });
+
+  const mergedPartInstance = createPartInstance({
+    subsystemId: "drive",
+    mechanismId: "swerve-module",
+    partDefinitionId: temporaryPartDefinition.id,
+    name: "Encoder bracket set",
+    quantity: 3,
+    trackIndividually: true,
+    status: "ready",
+  });
+
+  const matchingPartInstances = getSnapshot().partInstances.filter(
+    (partInstance) =>
+      partInstance.subsystemId === "drive" &&
+      partInstance.mechanismId === "swerve-module" &&
+      partInstance.partDefinitionId === temporaryPartDefinition.id,
+  );
+
+  assert.equal(matchingPartInstances.length, 1);
+  assert.equal(mergedPartInstance.id, firstPartInstance.id);
+  assert.equal(matchingPartInstances[0].quantity, 5);
+});
+
+test("updatePartInstance merges onto an existing part and retargets task references", () => {
+  const temporaryPartDefinition = createPartDefinition({
+    name: "Temporary Merge Part",
+    partNumber: "TMP-MERGE-001",
+    revision: "A",
+    type: "custom",
+    source: "Onshape",
+    materialId: "mat-onyx-filament",
+    description: "Temporary fixture for merge coverage.",
+  });
+
+  const drivePartInstance = createPartInstance({
+    subsystemId: "drive",
+    mechanismId: "swerve-module",
+    partDefinitionId: temporaryPartDefinition.id,
+    name: "Drive merge part",
+    quantity: 2,
+    trackIndividually: false,
+    status: "not ready",
+  });
+  const intakePartInstance = createPartInstance({
+    subsystemId: "manipulator",
+    mechanismId: "intake-roller",
+    partDefinitionId: temporaryPartDefinition.id,
+    name: "Intake merge part",
+    quantity: 3,
+    trackIndividually: false,
+    status: "blocked",
+  });
+
+  updateTask("swerve-sensor-bundle", {
+    partInstanceId: intakePartInstance.id,
+  });
+
+  const mergedPartInstance = updatePartInstance(intakePartInstance.id, {
+    mechanismId: "swerve-module",
+  });
+
+  const matchingPartInstances = getSnapshot().partInstances.filter(
+    (partInstance) => partInstance.partDefinitionId === temporaryPartDefinition.id,
+  );
+  const updatedTask = getSnapshot().tasks.find((task) => task.id === "swerve-sensor-bundle");
+
+  assert.ok(mergedPartInstance);
+  assert.equal(mergedPartInstance.id, drivePartInstance.id);
+  assert.equal(matchingPartInstances.length, 1);
+  assert.equal(matchingPartInstances[0].quantity, 5);
+  assert.equal(matchingPartInstances[0].mechanismId, "swerve-module");
+  assert.equal(updatedTask?.partInstanceId, drivePartInstance.id);
+});
+
 test("fabrication manufacturing items stay seeded and update cleanly", () => {
   const seededFabricationItem = getSnapshot().manufacturingItems.find(
     (item) => item.id === "frame-weldment",

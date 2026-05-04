@@ -442,12 +442,6 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     };
   });
 
-  const normalizedPartInstances = clonedSnapshot.partInstances.map((partInstance) => ({
-    ...partInstance,
-    status: normalizePartInstanceStatus(partInstance.status),
-    photoUrl: typeof partInstance.photoUrl === "string" ? partInstance.photoUrl : "",
-  }));
-
   const buildLegacyScopeRequirements = (milestones: Milestone[]): MilestoneRequirement[] => {
     const requirements: MilestoneRequirement[] = [];
     const seen = new Set<string>();
@@ -482,7 +476,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
       ? clonedSnapshot.milestoneRequirements
       : buildLegacyScopeRequirements(normalizedMilestones);
 
-  return normalizeSnapshotTaskSerials({
+  const normalizedSnapshot = normalizePartInstanceSnapshot({
     ...clonedSnapshot,
     members: clonedSnapshot.members.map((member) =>
       normalizeMemberSeasonMembership(member, fallbackSeasonId),
@@ -491,9 +485,10 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
       normalizePartDefinitionSeasonMembership(partDefinition, fallbackSeasonId),
     ),
     milestones: normalizedMilestones,
-    partInstances: normalizedPartInstances,
     milestoneRequirements: normalizedMilestoneRequirements,
   });
+
+  return normalizeSnapshotTaskSerials(normalizedSnapshot);
 }
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
@@ -543,6 +538,138 @@ function uniqueId(base: string, existingIds: Set<string>) {
 function uniqueIds(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(values.filter((value): value is string => Boolean(value))),
+  );
+}
+
+function getPartInstanceMergeKey(
+  partInstance: Pick<PartInstance, "subsystemId" | "mechanismId" | "partDefinitionId">,
+) {
+  return [partInstance.subsystemId, partInstance.mechanismId ?? "", partInstance.partDefinitionId].join(
+    "::",
+  );
+}
+
+function remapPartInstanceReferences(
+  snapshot: PlatformSnapshot,
+  remappedPartInstanceIds: Map<string, string>,
+) {
+  if (remappedPartInstanceIds.size === 0) {
+    return snapshot;
+  }
+
+  const remapId = (value: string | null | undefined) => {
+    if (!value) {
+      return null;
+    }
+
+    return remappedPartInstanceIds.get(value) ?? value;
+  };
+
+  const remapIdList = (values: string[]) => uniqueIds(values.map((value) => remapId(value)));
+
+  return {
+    ...snapshot,
+    tasks: snapshot.tasks.map((task) => {
+      const partInstanceId = remapId(task.partInstanceId);
+      const partInstanceIds = remapIdList(task.partInstanceIds);
+
+      if (partInstanceId === task.partInstanceId && partInstanceIds.length === task.partInstanceIds.length) {
+        let matches = true;
+        for (let index = 0; index < partInstanceIds.length; index += 1) {
+          if (partInstanceIds[index] !== task.partInstanceIds[index]) {
+            matches = false;
+            break;
+          }
+        }
+
+        if (matches) {
+          return task;
+        }
+      }
+
+      return normalizeTaskTargets({
+        ...task,
+        partInstanceId,
+        partInstanceIds,
+      });
+    }),
+    manufacturingItems: snapshot.manufacturingItems.map((item) => {
+      const partInstanceId = remapId(item.partInstanceId);
+      const partInstanceIds = remapIdList(item.partInstanceIds);
+
+      if (partInstanceId === item.partInstanceId && partInstanceIds.length === item.partInstanceIds.length) {
+        let matches = true;
+        for (let index = 0; index < partInstanceIds.length; index += 1) {
+          if (partInstanceIds[index] !== item.partInstanceIds[index]) {
+            matches = false;
+            break;
+          }
+        }
+
+        if (matches) {
+          return item;
+        }
+      }
+
+      return {
+        ...item,
+        partInstanceId,
+        partInstanceIds,
+      };
+    }),
+    risks: snapshot.risks.map((risk) =>
+      risk.attachmentType === "part-instance"
+        ? {
+            ...risk,
+            attachmentId: remappedPartInstanceIds.get(risk.attachmentId) ?? risk.attachmentId,
+          }
+        : risk,
+    ),
+    qaFindings: snapshot.qaFindings.map((finding) => ({
+      ...finding,
+      partInstanceId: remapId(finding.partInstanceId),
+    })),
+    testFindings: snapshot.testFindings.map((finding) => ({
+      ...finding,
+      partInstanceId: remapId(finding.partInstanceId),
+    })),
+    designIterations: snapshot.designIterations.map((iteration) => ({
+      ...iteration,
+      partInstanceId: remapId(iteration.partInstanceId),
+    })),
+  };
+}
+
+function normalizePartInstanceSnapshot(snapshot: PlatformSnapshot) {
+  const remappedPartInstanceIds = new Map<string, string>();
+  const partInstanceByKey = new Map<string, PartInstance>();
+  const normalizedPartInstances: PartInstance[] = [];
+
+  for (const partInstance of snapshot.partInstances) {
+    const normalizedPartInstance = {
+      ...partInstance,
+      status: normalizePartInstanceStatus(partInstance.status),
+      photoUrl: typeof partInstance.photoUrl === "string" ? partInstance.photoUrl : "",
+    };
+    const mergeKey = getPartInstanceMergeKey(normalizedPartInstance);
+    const existingPartInstance = partInstanceByKey.get(mergeKey);
+
+    if (existingPartInstance) {
+      existingPartInstance.quantity += normalizedPartInstance.quantity;
+      remappedPartInstanceIds.set(normalizedPartInstance.id, existingPartInstance.id);
+      continue;
+    }
+
+    partInstanceByKey.set(mergeKey, normalizedPartInstance);
+    normalizedPartInstances.push(normalizedPartInstance);
+  }
+
+  return remapPartInstanceReferences(
+    {
+      ...snapshot,
+      partInstances: normalizedPartInstances,
+    },
+    remappedPartInstanceIds,
   );
 }
 
@@ -2294,12 +2421,16 @@ export function createPartInstance(input: PartInstanceInput) {
     photoUrl: input.photoUrl ?? "",
   };
 
-  currentSnapshot = {
+  currentSnapshot = normalizePartInstanceSnapshot({
     ...currentSnapshot,
     partInstances: [...currentSnapshot.partInstances, partInstance],
-  };
+  });
 
-  return partInstance;
+  return (
+    currentSnapshot.partInstances.find(
+      (candidate) => getPartInstanceMergeKey(candidate) === getPartInstanceMergeKey(partInstance),
+    ) ?? partInstance
+  );
 }
 
 export function updatePartInstance(
@@ -2345,7 +2476,16 @@ export function updatePartInstance(
     }),
   };
 
-  return updatedPartInstance;
+  currentSnapshot = normalizePartInstanceSnapshot(currentSnapshot);
+
+  return (
+    currentSnapshot.partInstances.find(
+      (candidate) =>
+        candidate.id === partInstanceId ||
+        getPartInstanceMergeKey(candidate) ===
+          getPartInstanceMergeKey(updatedPartInstance ?? currentPartInstance),
+    ) ?? updatedPartInstance
+  );
 }
 
 export function removePartInstance(partInstanceId: string) {
