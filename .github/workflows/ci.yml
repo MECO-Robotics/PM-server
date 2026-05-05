@@ -3,25 +3,8 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - ".editorconfig"
-      - ".github/workflows/ci.yml"
-      - ".github/workflows/deploy-vps.yml"
-      - ".gitignore"
-      - ".dockerignore"
-      - "Dockerfile"
-      - "docker-compose.prod.yml"
-      - "package.json"
-      - "package-lock.json"
-      - "prisma/**"
-      - "prisma.config.ts"
-      - "deploy/**"
-      - "src/**"
-      - "test/**"
-      - "tsconfig.json"
-      - "tsconfig.test.json"
-  push:
-    branches-ignore:
+    branches:
+      - development
       - main
     paths:
       - ".editorconfig"
@@ -40,6 +23,32 @@ on:
       - "test/**"
       - "tsconfig.json"
       - "tsconfig.test.json"
+      - ".env.production.example"
+  push:
+    branches:
+      - development
+      - main
+      - "feature/**"
+      - "fix/**"
+      - "hotfix/**"
+    paths:
+      - ".editorconfig"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/deploy-vps.yml"
+      - ".gitignore"
+      - ".dockerignore"
+      - "Dockerfile"
+      - "docker-compose.prod.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "prisma/**"
+      - "prisma.config.ts"
+      - "deploy/**"
+      - "src/**"
+      - "test/**"
+      - "tsconfig.json"
+      - "tsconfig.test.json"
+      - ".env.production.example"
 
 permissions:
   contents: read
@@ -52,8 +61,39 @@ env:
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 
 jobs:
-  validate:
-    name: Test and validate
+  branch-model:
+    name: branch-model
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR branch strategy
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$BASE_REF" == "development" ]]; then
+            if [[ "$HEAD_REF" =~ ^(feature|fix|hotfix)/ ]]; then
+              exit 0
+            fi
+            echo "PRs into development must come from feature/*, fix/*, or hotfix/* branches." >&2
+            exit 1
+          fi
+
+          if [[ "$BASE_REF" == "main" ]]; then
+            if [[ "$HEAD_REF" == "development" || "$HEAD_REF" =~ ^hotfix/ ]]; then
+              exit 0
+            fi
+            echo "PRs into main must come from development or hotfix/* branches." >&2
+            exit 1
+          fi
+
+          echo "Unexpected PR base branch: $BASE_REF" >&2
+          exit 1
+
+  ci-validate:
+    name: ci-validate
     runs-on: ubuntu-latest
 
     steps:
@@ -77,3 +117,143 @@ jobs:
 
       - name: Validate Prisma schema
         run: npx prisma validate
+
+  snapshot-validate:
+    name: snapshot-validate
+    needs: ci-validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build server artifact
+        run: npm run build
+
+      - name: Render production compose config
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p snapshot
+          docker compose --env-file .env.production.example -f docker-compose.prod.yml config > snapshot/docker-compose.rendered.yml
+
+      - name: Build sanitized production-like snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const payload = {
+            repository: process.env.GITHUB_REPOSITORY,
+            commit: process.env.GITHUB_SHA,
+            ref: process.env.GITHUB_REF,
+            generatedAtUtc: new Date().toISOString(),
+            validations: [
+              'npm run typecheck:test',
+              'npm run verify',
+              'npx prisma validate',
+              'docker compose --env-file .env.production.example -f docker-compose.prod.yml config',
+            ],
+            artifacts: [
+              'dist/**',
+              'docker-compose.prod.yml',
+              'Dockerfile',
+              '.env.production.example',
+              'prisma/**',
+              'deploy/**',
+            ],
+            deployTarget: 'production-vps',
+          };
+
+          fs.writeFileSync('snapshot/manifest.json', `${JSON.stringify(payload, null, 2)}\n`);
+          NODE
+          tar -czf snapshot/server-production-snapshot.tgz dist docker-compose.prod.yml Dockerfile .env.production.example prisma deploy package.json package-lock.json snapshot/manifest.json snapshot/docker-compose.rendered.yml
+
+      - name: Upload sanitized snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-production-snapshot-${{ github.sha }}
+          path: |
+            snapshot/manifest.json
+            snapshot/docker-compose.rendered.yml
+            snapshot/server-production-snapshot.tgz
+          if-no-files-found: error
+
+  cross-repo-production-gate:
+    name: cross-repo-production-gate
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    needs:
+      - ci-validate
+      - snapshot-validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate development integration health across all repos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          const owner = 'MECO-Robotics';
+          const repos = ['PM-web-app', 'PM-server', 'PM-mobile-app'];
+          const requiredChecks = {
+            'PM-web-app': ['ci-validate', 'snapshot-validate'],
+            'PM-server': ['ci-validate', 'snapshot-validate'],
+            'PM-mobile-app': ['ci-validate', 'snapshot-validate'],
+          };
+
+          const token = process.env.GH_TOKEN;
+          if (!token) {
+            throw new Error('github.token is required for cross-repo validation.');
+          }
+
+          async function gh(path) {
+            const response = await fetch(`https://api.github.com${path}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+              },
+            });
+
+            if (!response.ok) {
+              const body = await response.text();
+              throw new Error(`GitHub API ${path} failed (${response.status}): ${body}`);
+            }
+
+            return response.json();
+          }
+
+          for (const repo of repos) {
+            const branch = await gh(`/repos/${owner}/${repo}/branches/development`);
+            const sha = branch?.commit?.sha;
+            if (!sha) {
+              throw new Error(`Could not resolve development HEAD SHA for ${owner}/${repo}.`);
+            }
+
+            const checks = await gh(`/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=100`);
+            const successful = new Set(
+              (checks.check_runs ?? [])
+                .filter((check) => check.conclusion === 'success')
+                .map((check) => check.name),
+            );
+
+            for (const checkName of requiredChecks[repo]) {
+              if (!successful.has(checkName)) {
+                throw new Error(
+                  `${owner}/${repo}@${sha} is missing successful check: ${checkName}.`,
+                );
+              }
+            }
+
+            console.log(`Validated ${owner}/${repo}@${sha}`);
+          }
+          NODE
