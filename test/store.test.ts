@@ -124,7 +124,7 @@ test("createProject seeds drivetrain defaults for robot projects", () => {
   ]);
 });
 
-test("seeded training records belong to the Training project", () => {
+test("seeded training records stay in Training while strategy has its own seeded coverage", () => {
   const snapshot = getSnapshot();
   const trainingProject = snapshot.projects.find(
     (project) => project.id === "project-training-2026",
@@ -167,8 +167,18 @@ test("seeded training records belong to the Training project", () => {
   assert.deepEqual(
     snapshot.workstreams
       .filter((workstream) => workstream.projectId === "project-strategy-2026")
-      .map((workstream) => workstream.id),
-    [],
+      .map((workstream) => workstream.id)
+      .sort(),
+    ["workstream-strategy-playbooks", "workstream-strategy-scouting"].sort(),
+  );
+  assert.equal(
+    snapshot.tasks.find((task) => task.id === "strategy-opponent-model-update")?.projectId,
+    "project-strategy-2026",
+  );
+  assert.equal(
+    snapshot.artifacts.find((artifact) => artifact.id === "artifact-strategy-picklist-board")
+      ?.projectId,
+    "project-strategy-2026",
   );
 });
 

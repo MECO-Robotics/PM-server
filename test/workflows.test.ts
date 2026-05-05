@@ -384,7 +384,7 @@ test("buildMetrics aggregates progress, stock, and activity totals", () => {
   assert.equal(metrics.waitingForQa, 1);
   assert.equal(metrics.blockerCount, 1);
   assert.equal(metrics.attendanceHours, 5);
-  assert.equal(metrics.subsystemMetrics.length, 9);
+  assert.equal(metrics.subsystemMetrics.length, snapshot.subsystems.length);
   assert.equal(metrics.mechanismMetrics.length, 2);
 
   const driveSubsystem = metrics.subsystemMetrics.find((metric) => metric.id === "drive");
