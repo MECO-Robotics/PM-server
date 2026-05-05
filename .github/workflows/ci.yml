@@ -54,7 +54,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: meco-platform-ci-${{ github.workflow }}-${{ github.ref }}
+  group: meco-mission-control-platform-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -203,11 +203,11 @@ jobs:
         run: |
           node <<'NODE'
           const owner = 'MECO-Robotics';
-          const repos = ['PM-web-app', 'PM-server', 'PM-mobile-app'];
+          const repos = ['meco-mission-control-web', 'meco-mission-control-platform', 'meco-mission-control-mobile'];
           const requiredChecks = {
-            'PM-web-app': ['ci-validate', 'snapshot-validate'],
-            'PM-server': ['ci-validate', 'snapshot-validate'],
-            'PM-mobile-app': ['ci-validate', 'snapshot-validate'],
+            'meco-mission-control-web': ['ci-validate', 'snapshot-validate'],
+            'meco-mission-control-platform': ['ci-validate', 'snapshot-validate'],
+            'meco-mission-control-mobile': ['ci-validate', 'snapshot-validate'],
           };
 
           const token = process.env.GH_TOKEN;
