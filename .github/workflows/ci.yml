@@ -144,6 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p snapshot
+          cp .env.production.example .env.production
           docker compose --env-file .env.production.example -f docker-compose.prod.yml config > snapshot/docker-compose.rendered.yml
 
       - name: Build sanitized production-like snapshot
