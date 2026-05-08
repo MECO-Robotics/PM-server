@@ -73,7 +73,7 @@ jobs:
             );
           }
 
-          if (deploySource === 'release-manifest') {
+          if (manifestText.length > 0) {
             let manifest;
             try {
               manifest = JSON.parse(manifestText);
