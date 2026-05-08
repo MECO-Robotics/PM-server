@@ -385,6 +385,28 @@ test("updateTask patches an existing task in place", () => {
   assert.deepEqual(updatedTask.assigneeIds, ["ava", "ethan"]);
 });
 
+test("task updates append an audit action entry", () => {
+  const initialActionCount = getSnapshot().actions?.length ?? 0;
+
+  const updatedTask = updateTask("intake-guard", {
+    status: "complete",
+  });
+
+  assert.ok(updatedTask);
+  const snapshot = getSnapshot();
+  const actions = snapshot.actions ?? [];
+  assert.equal(actions.length, initialActionCount + 1);
+
+  const lastAction = actions[actions.length - 1];
+  assert.equal(lastAction.entityType, "task");
+  assert.equal(lastAction.operation, "update");
+  assert.equal(lastAction.taskId, "intake-guard");
+  assert.equal(lastAction.projectId, updatedTask.projectId);
+  assert.equal(lastAction.subsystemId, updatedTask.subsystemId);
+  assert.equal(lastAction.entityLabel, updatedTask.title);
+  assert.ok(lastAction.changedFields.includes("status"));
+});
+
 test("updatePartInstance keeps the subsystem aligned with the selected mechanism", () => {
   updatePartInstance("pi-swerve-encoder-bracket-front-left", {
     mechanismId: "intake-roller",

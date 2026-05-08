@@ -1,4 +1,5 @@
 import type {
+  AuditAction,
   Milestone,
   MilestoneRequirement,
   Member,
@@ -512,6 +513,31 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
         isPartDefinitionActiveInSeason(partDefinition, selectedSeasonId),
       )
     : snapshot.partDefinitions;
+  const scopedActions = (snapshot.actions ?? [])
+    .filter((action) => {
+      if (action.projectId && !activeProjectIds.has(action.projectId)) {
+        return false;
+      }
+
+      if (action.taskId && !scopedTaskIds.has(action.taskId)) {
+        return false;
+      }
+
+      if (action.subsystemId && !scopedSubsystemIds.has(action.subsystemId)) {
+        return false;
+      }
+
+      if (
+        selection.personId &&
+        action.actorMemberId !== selection.personId &&
+        !action.memberIds.includes(selection.personId)
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
 
   return {
     seasons: snapshot.seasons,
@@ -551,6 +577,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     purchaseItems: scopedPurchaseItems,
     qaReviews: scopedQaReviews,
     escalations: snapshot.escalations,
+    actions: scopedActions as AuditAction[],
   };
 }
 
