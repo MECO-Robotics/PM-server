@@ -850,6 +850,42 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     resetLimits();
 
+    const rosterInsightsResponse = await app.inject({
+      method: "GET",
+      url: "/api/roster/insights?seasonId=default-season&projectId=project-robot-2026",
+    });
+    assert.equal(rosterInsightsResponse.statusCode, 200);
+    const rosterInsightsBody = rosterInsightsResponse.json() as {
+      attendanceTimeline: Array<{ date: string; memberCount: number; totalHours: number }>;
+      members: Array<{
+        activeTaskCount: number;
+        availabilityStatus: "available" | "at-risk" | "overloaded" | "unavailable";
+        memberId: string;
+      }>;
+      recentAttendance: Array<{ activeTaskCount: number; id: string; memberId: string }>;
+      summary: {
+        attendanceHoursLast14Days: number;
+        blockedTaskCount: number;
+        memberCount: number;
+        openTaskCount: number;
+      };
+    };
+    assert.ok(rosterInsightsBody.members.length > 0);
+    assert.ok(
+      rosterInsightsBody.members.some((member) =>
+        ["available", "at-risk", "overloaded", "unavailable"].includes(
+          member.availabilityStatus,
+        ),
+      ),
+    );
+    assert.equal(typeof rosterInsightsBody.summary.openTaskCount, "number");
+    assert.equal(typeof rosterInsightsBody.summary.blockedTaskCount, "number");
+    assert.equal(typeof rosterInsightsBody.summary.attendanceHoursLast14Days, "number");
+    assert.ok(Array.isArray(rosterInsightsBody.recentAttendance));
+    assert.ok(Array.isArray(rosterInsightsBody.attendanceTimeline));
+
+    resetLimits();
+
     const qaResponse = await app.inject({
       method: "GET",
       url: "/api/qa",

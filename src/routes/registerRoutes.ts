@@ -151,6 +151,7 @@ import {
   buildBootstrapResponse,
   readBootstrapSelection,
 } from "./helpers/bootstrapSelection";
+import { buildRosterInsights } from "./helpers/rosterInsights";
 import {
   artifactPatchSchema,
   artifactSchema,
@@ -2711,6 +2712,25 @@ export async function registerRoutes(app: FastifyInstance) {
       attendance: getSnapshot().attendanceRecords,
       workLogs: getSnapshot().workLogs,
     };
+  });
+
+  app.get("/api/roster/insights", async (request, reply) => {
+    if (!requireApiSessionIfEnabled(request, reply)) {
+      return;
+    }
+
+    const snapshot = buildBootstrapResponse(
+      getSnapshot(),
+      readBootstrapSelection(request.query),
+    );
+
+    return buildRosterInsights({
+      attendanceRecords: snapshot.attendanceRecords,
+      members: snapshot.members,
+      projects: snapshot.projects,
+      taskBlockers: snapshot.taskBlockers,
+      tasks: snapshot.tasks,
+    });
   });
 
   app.get("/api/manufacturing", async (request, reply) => {
