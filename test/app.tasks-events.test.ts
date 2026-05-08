@@ -299,6 +299,30 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
 
     resetLimits();
 
+    const scopedBootstrapAfterTaskDeleteResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?projectId=project-robot-2026",
+    });
+
+    assert.equal(scopedBootstrapAfterTaskDeleteResponse.statusCode, 200);
+    const scopedBootstrapAfterTaskDeleteBody = scopedBootstrapAfterTaskDeleteResponse.json() as {
+      actions?: Array<{
+        entityId: string;
+        entityType: string;
+        operation: string;
+      }>;
+    };
+    assert.ok(
+      (scopedBootstrapAfterTaskDeleteBody.actions ?? []).some(
+        (action) =>
+          action.entityType === "task" &&
+          action.entityId === mobileTaskCreatedBody.item.id &&
+          action.operation === "delete",
+      ),
+    );
+
+    resetLimits();
+
     const mobileSubsystemDeleteResponse = await app.inject({
       method: "DELETE",
       url: `/api/subsystems/${mobileSubsystemCreatedBody.item.id}`,
