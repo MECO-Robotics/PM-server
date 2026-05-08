@@ -850,6 +850,79 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
 
     resetLimits();
 
+    const rosterSummarySubsystemCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        name: "Roster Insights Dedupe Subsystem",
+        description: "Temporary subsystem for roster insights coverage.",
+        parentSubsystemId: "manipulator",
+        responsibleEngineerId: "ava",
+        mentorIds: ["riley"],
+        risks: [],
+      },
+    });
+    assert.equal(rosterSummarySubsystemCreateResponse.statusCode, 201);
+    const rosterSummarySubsystemBody = rosterSummarySubsystemCreateResponse.json() as {
+      item: {
+        id: string;
+      };
+    };
+
+    resetLimits();
+
+    const rosterSummaryTaskCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Roster summary dedupe task",
+        summary: "Ensures roster summary task counts stay deduplicated.",
+        subsystemId: rosterSummarySubsystemBody.item.id,
+        disciplineId: "design",
+        requirementId: null,
+        mechanismId: null,
+        partInstanceId: null,
+        targetMilestoneId: null,
+        ownerId: "ava",
+        assigneeIds: ["ava", "priya"],
+        mentorId: "riley",
+        dueDate: "2026-04-01",
+        priority: "high",
+        status: "waiting-for-qa",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 2,
+        actualHours: 0,
+      },
+    });
+    assert.equal(rosterSummaryTaskCreateResponse.statusCode, 201);
+    const rosterSummaryTaskBody = rosterSummaryTaskCreateResponse.json() as {
+      item: {
+        id: string;
+      };
+    };
+
+    resetLimits();
+
+    const rosterSummaryBlockerCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/task-blockers",
+      payload: {
+        blockedTaskId: rosterSummaryTaskBody.item.id,
+        blockerType: "external",
+        blockerId: null,
+        description: "Scoped blocker for roster summary dedupe coverage.",
+        severity: "high",
+        status: "open",
+        createdByMemberId: "ava",
+      },
+    });
+    assert.equal(rosterSummaryBlockerCreateResponse.statusCode, 201);
+
+    resetLimits();
+
     const rosterInsightsResponse = await app.inject({
       method: "GET",
       url: "/api/roster/insights?seasonId=default-season&projectId=project-robot-2026",
@@ -868,6 +941,8 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
         blockedTaskCount: number;
         memberCount: number;
         openTaskCount: number;
+        overdueTaskCount: number;
+        waitingForQaTaskCount: number;
       };
     };
     assert.ok(rosterInsightsBody.members.length > 0);
@@ -883,6 +958,26 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     assert.equal(typeof rosterInsightsBody.summary.attendanceHoursLast14Days, "number");
     assert.ok(Array.isArray(rosterInsightsBody.recentAttendance));
     assert.ok(Array.isArray(rosterInsightsBody.attendanceTimeline));
+    assert.ok(
+      rosterInsightsBody.summary.blockedTaskCount <=
+        rosterInsightsBody.summary.openTaskCount,
+    );
+    assert.ok(
+      rosterInsightsBody.summary.waitingForQaTaskCount <=
+        rosterInsightsBody.summary.openTaskCount,
+    );
+    assert.ok(
+      rosterInsightsBody.summary.overdueTaskCount <=
+        rosterInsightsBody.summary.openTaskCount,
+    );
+    const scopedMemberIds = new Set(
+      rosterInsightsBody.members.map((member) => member.memberId),
+    );
+    assert.ok(
+      rosterInsightsBody.recentAttendance.every((record) =>
+        scopedMemberIds.has(record.memberId),
+      ),
+    );
 
     resetLimits();
 

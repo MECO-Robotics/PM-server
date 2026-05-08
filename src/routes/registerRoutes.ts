@@ -152,6 +152,7 @@ import {
   readBootstrapSelection,
 } from "./helpers/bootstrapSelection";
 import { buildRosterInsights } from "./helpers/rosterInsights";
+import { parseDateValue } from "./helpers/rosterInsightsMemberMetrics";
 import {
   artifactPatchSchema,
   artifactSchema,
@@ -2719,13 +2720,36 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
-    const snapshot = buildBootstrapResponse(
-      getSnapshot(),
-      readBootstrapSelection(request.query),
-    );
+    const selection = readBootstrapSelection(request.query);
+    const snapshot = buildBootstrapResponse(getSnapshot(), selection);
+    const scopedMemberIds = new Set(snapshot.members.map((member) => member.id));
+    const season = selection.seasonId
+      ? snapshot.seasons.find((candidate) => candidate.id === selection.seasonId) ?? null
+      : null;
+    const seasonStart = season ? parseDateValue(season.startDate) : null;
+    const seasonEnd = season ? parseDateValue(season.endDate) : null;
+    const scopedAttendance = snapshot.attendanceRecords.filter((record) => {
+      if (!scopedMemberIds.has(record.memberId)) {
+        return false;
+      }
+
+      if (!seasonStart || !seasonEnd) {
+        return true;
+      }
+
+      const attendanceDate = parseDateValue(record.date);
+      if (!attendanceDate) {
+        return false;
+      }
+
+      return (
+        attendanceDate.getTime() >= seasonStart.getTime() &&
+        attendanceDate.getTime() <= seasonEnd.getTime()
+      );
+    });
 
     return buildRosterInsights({
-      attendanceRecords: snapshot.attendanceRecords,
+      attendanceRecords: scopedAttendance,
       members: snapshot.members,
       projects: snapshot.projects,
       taskBlockers: snapshot.taskBlockers,

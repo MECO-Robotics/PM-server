@@ -29,6 +29,16 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
       .filter((blocker) => blocker.status === "open")
       .map((blocker) => blocker.blockedTaskId),
   );
+  const overdueTaskCount = openTasks.filter((task) => {
+    const dueDate = parseDateValue(task.dueDate);
+    return dueDate !== null && dueDate.getTime() < today.getTime();
+  }).length;
+  const blockedTaskCount = openTasks.filter(
+    (task) => task.isBlocked || openTaskBlockerIds.has(task.id),
+  ).length;
+  const waitingForQaTaskCount = openTasks.filter(
+    (task) => task.status === "waiting-for-qa",
+  ).length;
   const projectsById = new Map(source.projects.map((project) => [project.id, project] as const));
 
   const members = buildMemberInsights({
@@ -106,9 +116,9 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
       memberCount: members.length,
       activeMemberCount: members.filter((member) => member.activeTaskCount > 0).length,
       openTaskCount: openTasks.length,
-      overdueTaskCount: members.reduce((sum, member) => sum + member.overdueTaskCount, 0),
-      blockedTaskCount: members.reduce((sum, member) => sum + member.blockedTaskCount, 0),
-      waitingForQaTaskCount: members.reduce((sum, member) => sum + member.waitingForQaTaskCount, 0),
+      overdueTaskCount,
+      blockedTaskCount,
+      waitingForQaTaskCount,
       unassignedTaskCount: openTasks.filter(
         (task) => task.ownerId === null && task.assigneeIds.length === 0,
       ).length,
