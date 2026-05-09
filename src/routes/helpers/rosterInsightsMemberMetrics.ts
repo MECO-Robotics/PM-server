@@ -6,9 +6,18 @@
 } from "./rosterInsightsTypes";
 
 export function parseDateValue(value: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const parsed = new Date(`${value}T00:00:00Z`);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (calendarDateMatch) {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+
+    if (parsed.toISOString().slice(0, 10) !== value) {
+      return null;
+    }
+
+    return parsed;
   }
 
   const parsed = new Date(value);
@@ -126,19 +135,31 @@ export function buildMemberInsights(args: {
     const memberAttendanceRecords = attendanceRecords.filter((record) => record.memberId === member.id);
     const attendanceHoursLast7Days = memberAttendanceRecords.reduce((sum, record) => {
       const attendanceDate = parseDateValue(record.date);
-      return !attendanceDate || attendanceDate < args.day7Start ? sum : sum + record.totalHours;
+      return !attendanceDate ||
+        attendanceDate < args.day7Start ||
+        attendanceDate > args.today
+        ? sum
+        : sum + record.totalHours;
     }, 0);
     const attendanceHoursLast14Days = memberAttendanceRecords.reduce((sum, record) => {
       const attendanceDate = parseDateValue(record.date);
-      return !attendanceDate || attendanceDate < args.day14Start ? sum : sum + record.totalHours;
+      return !attendanceDate ||
+        attendanceDate < args.day14Start ||
+        attendanceDate > args.today
+        ? sum
+        : sum + record.totalHours;
     }, 0);
     const attendanceHoursLast30Days = memberAttendanceRecords.reduce((sum, record) => {
       const attendanceDate = parseDateValue(record.date);
-      return !attendanceDate || attendanceDate < args.day30Start ? sum : sum + record.totalHours;
+      return !attendanceDate ||
+        attendanceDate < args.day30Start ||
+        attendanceDate > args.today
+        ? sum
+        : sum + record.totalHours;
     }, 0);
     const attendanceSessionsLast30Days = memberAttendanceRecords.filter((record) => {
       const attendanceDate = parseDateValue(record.date);
-      return Boolean(attendanceDate && attendanceDate >= args.day30Start);
+      return Boolean(attendanceDate && attendanceDate >= args.day30Start && attendanceDate <= args.today);
     }).length;
 
     return {

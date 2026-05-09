@@ -29,6 +29,16 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
       .filter((blocker) => blocker.status === "open")
       .map((blocker) => blocker.blockedTaskId),
   );
+  const overdueTaskCount = openTasks.filter((task) => {
+    const dueDate = parseDateValue(task.dueDate);
+    return dueDate !== null && dueDate.getTime() < today.getTime();
+  }).length;
+  const blockedTaskCount = openTasks.filter(
+    (task) => task.isBlocked || openTaskBlockerIds.has(task.id),
+  ).length;
+  const waitingForQaTaskCount = openTasks.filter(
+    (task) => task.status === "waiting-for-qa",
+  ).length;
   const projectsById = new Map(source.projects.map((project) => [project.id, project] as const));
 
   const members = buildMemberInsights({
@@ -65,7 +75,7 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
   const attendanceTimelineByDate = new Map<string, { totalHours: number; memberIds: Set<string> }>();
   attendanceRecords.forEach((record) => {
     const attendanceDate = parseDateValue(record.date);
-    if (!attendanceDate || attendanceDate < day30Start) {
+    if (!attendanceDate || attendanceDate < day30Start || attendanceDate > today) {
       return;
     }
 
@@ -86,6 +96,10 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
 
   const membersById = new Map(members.map((member) => [member.memberId, member] as const));
   const recentAttendance = [...attendanceRecords]
+    .filter((record) => {
+      const attendanceDate = parseDateValue(record.date);
+      return Boolean(attendanceDate && attendanceDate <= today);
+    })
     .sort((left, right) => right.date.localeCompare(left.date))
     .slice(0, 30)
     .map((record) => {
@@ -106,9 +120,9 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
       memberCount: members.length,
       activeMemberCount: members.filter((member) => member.activeTaskCount > 0).length,
       openTaskCount: openTasks.length,
-      overdueTaskCount: members.reduce((sum, member) => sum + member.overdueTaskCount, 0),
-      blockedTaskCount: members.reduce((sum, member) => sum + member.blockedTaskCount, 0),
-      waitingForQaTaskCount: members.reduce((sum, member) => sum + member.waitingForQaTaskCount, 0),
+      overdueTaskCount,
+      blockedTaskCount,
+      waitingForQaTaskCount,
       unassignedTaskCount: openTasks.filter(
         (task) => task.ownerId === null && task.assigneeIds.length === 0,
       ).length,

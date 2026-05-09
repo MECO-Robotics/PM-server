@@ -73,7 +73,7 @@ jobs:
             );
           }
 
-          if (deploySource === 'release-manifest') {
+          if (manifestText.length > 0) {
             let manifest;
             try {
               manifest = JSON.parse(manifestText);
@@ -195,9 +195,17 @@ jobs:
           fi
 
           if [ -f /opt/pm-server/.env.production ] && [ -f /opt/pm-server/docker-compose.prod.yml ]; then
-            docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_root/pm-server-db-${timestamp}.sql"
-            chmod 600 "$backup_root/pm-server-db-${timestamp}.sql"
-            echo "Created database backup: $backup_root/pm-server-db-${timestamp}.sql"
+            if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml ps --status running --services postgres 2>/dev/null | grep -qx 'postgres'; then
+              if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_root/pm-server-db-${timestamp}.sql"; then
+                chmod 600 "$backup_root/pm-server-db-${timestamp}.sql"
+                echo "Created database backup: $backup_root/pm-server-db-${timestamp}.sql"
+              else
+                rm -f "$backup_root/pm-server-db-${timestamp}.sql"
+                echo "Database backup failed; continuing deployment without DB dump."
+              fi
+            else
+              echo "Postgres service is not running; skipping database backup."
+            fi
           else
             echo "No existing env/compose deployment files found; skipping database backup."
           fi
