@@ -126,19 +126,31 @@ export function buildMemberInsights(args: {
     const memberAttendanceRecords = attendanceRecords.filter((record) => record.memberId === member.id);
     const attendanceHoursLast7Days = memberAttendanceRecords.reduce((sum, record) => {
       const attendanceDate = parseDateValue(record.date);
-      return !attendanceDate || attendanceDate < args.day7Start ? sum : sum + record.totalHours;
+      return !attendanceDate ||
+        attendanceDate < args.day7Start ||
+        attendanceDate > args.today
+        ? sum
+        : sum + record.totalHours;
     }, 0);
     const attendanceHoursLast14Days = memberAttendanceRecords.reduce((sum, record) => {
       const attendanceDate = parseDateValue(record.date);
-      return !attendanceDate || attendanceDate < args.day14Start ? sum : sum + record.totalHours;
+      return !attendanceDate ||
+        attendanceDate < args.day14Start ||
+        attendanceDate > args.today
+        ? sum
+        : sum + record.totalHours;
     }, 0);
     const attendanceHoursLast30Days = memberAttendanceRecords.reduce((sum, record) => {
       const attendanceDate = parseDateValue(record.date);
-      return !attendanceDate || attendanceDate < args.day30Start ? sum : sum + record.totalHours;
+      return !attendanceDate ||
+        attendanceDate < args.day30Start ||
+        attendanceDate > args.today
+        ? sum
+        : sum + record.totalHours;
     }, 0);
     const attendanceSessionsLast30Days = memberAttendanceRecords.filter((record) => {
       const attendanceDate = parseDateValue(record.date);
-      return Boolean(attendanceDate && attendanceDate >= args.day30Start);
+      return Boolean(attendanceDate && attendanceDate >= args.day30Start && attendanceDate <= args.today);
     }).length;
 
     return {

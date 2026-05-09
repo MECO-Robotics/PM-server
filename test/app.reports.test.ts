@@ -1,7 +1,54 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { buildMemberInsights } from "../src/routes/helpers/rosterInsightsMemberMetrics";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("buildMemberInsights excludes future attendance from rolling windows", () => {
+  const today = new Date("2026-05-01T00:00:00Z");
+  const members = buildMemberInsights({
+    source: {
+      members: [
+        {
+          id: "ava",
+          name: "Ava",
+          role: "student",
+          disciplineId: "design",
+        },
+      ],
+      projects: [],
+      tasks: [],
+      attendanceRecords: [
+        {
+          id: "attendance-present",
+          memberId: "ava",
+          date: "2026-04-30",
+          totalHours: 2,
+        },
+        {
+          id: "attendance-future",
+          memberId: "ava",
+          date: "2026-05-03",
+          totalHours: 5,
+        },
+      ],
+    },
+    openTasks: [],
+    openTaskBlockerIds: new Set<string>(),
+    projectsById: new Map(),
+    day7Start: new Date("2026-04-24T00:00:00Z"),
+    day14Start: new Date("2026-04-17T00:00:00Z"),
+    day30Start: new Date("2026-04-01T00:00:00Z"),
+    today,
+    dueSoonEnd: new Date("2026-05-08T00:00:00Z"),
+  });
+
+  assert.equal(members.length, 1);
+  assert.equal(members[0].attendanceHoursLast7Days, 2);
+  assert.equal(members[0].attendanceHoursLast14Days, 2);
+  assert.equal(members[0].attendanceHoursLast30Days, 2);
+  assert.equal(members[0].attendanceSessionsLast30Days, 1);
+});
 
 test("qa report and milestone report endpoints support create flows with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
