@@ -143,6 +143,7 @@ model Member {
 model Subsystem {
   id                    String            @id @default(cuid())
   name                  String            @unique
+  color                 String?
   description           String?
   isCore                Boolean           @default(false)
   parentSubsystemId     String?
