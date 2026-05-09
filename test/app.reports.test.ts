@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildMemberInsights } from "../src/routes/helpers/rosterInsightsMemberMetrics";
+import {
+  buildMemberInsights,
+  parseDateValue,
+} from "../src/routes/helpers/rosterInsightsMemberMetrics";
 import { buildRosterInsights } from "../src/routes/helpers/rosterInsights";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("parseDateValue rejects invalid calendar YYYY-MM-DD values", () => {
+  const validDate = parseDateValue("2026-02-28");
+  assert.ok(validDate);
+  assert.equal(validDate?.toISOString(), "2026-02-28T00:00:00.000Z");
+  assert.equal(parseDateValue("2026-02-30"), null);
+  assert.equal(parseDateValue("2026-13-01"), null);
+});
 
 test("buildMemberInsights excludes future attendance from rolling windows", () => {
   const today = new Date("2026-05-01T00:00:00Z");
