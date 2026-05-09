@@ -115,6 +115,7 @@ export interface AuditAction {
   message: string;
   changedFields: string[];
   projectId: string | null;
+  projectIds?: string[];
   taskId: string | null;
   subsystemId: string | null;
   actorMemberId: string | null;
