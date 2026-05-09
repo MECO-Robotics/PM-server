@@ -6,9 +6,25 @@
 } from "./rosterInsightsTypes";
 
 export function parseDateValue(value: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const parsed = new Date(`${value}T00:00:00Z`);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (calendarDateMatch) {
+    const year = Number(calendarDateMatch[1]);
+    const month = Number(calendarDateMatch[2]);
+    const day = Number(calendarDateMatch[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      return null;
+    }
+
+    return parsed;
   }
 
   const parsed = new Date(value);
