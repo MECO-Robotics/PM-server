@@ -8,19 +8,12 @@
 export function parseDateValue(value: string) {
   const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (calendarDateMatch) {
-    const year = Number(calendarDateMatch[1]);
-    const month = Number(calendarDateMatch[2]);
-    const day = Number(calendarDateMatch[3]);
-    const parsed = new Date(Date.UTC(year, month - 1, day));
+    const parsed = new Date(`${value}T00:00:00.000Z`);
     if (Number.isNaN(parsed.getTime())) {
       return null;
     }
 
-    if (
-      parsed.getUTCFullYear() !== year ||
-      parsed.getUTCMonth() !== month - 1 ||
-      parsed.getUTCDate() !== day
-    ) {
+    if (parsed.toISOString().slice(0, 10) !== value) {
       return null;
     }
 

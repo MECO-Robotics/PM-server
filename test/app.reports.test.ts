@@ -12,6 +12,10 @@ test("parseDateValue rejects invalid calendar YYYY-MM-DD values", () => {
   const validDate = parseDateValue("2026-02-28");
   assert.ok(validDate);
   assert.equal(validDate?.toISOString(), "2026-02-28T00:00:00.000Z");
+  assert.equal(
+    parseDateValue("0099-12-31")?.toISOString(),
+    "0099-12-31T00:00:00.000Z",
+  );
   assert.equal(parseDateValue("2026-02-30"), null);
   assert.equal(parseDateValue("2026-13-01"), null);
 });
