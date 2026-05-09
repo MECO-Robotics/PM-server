@@ -75,7 +75,7 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
   const attendanceTimelineByDate = new Map<string, { totalHours: number; memberIds: Set<string> }>();
   attendanceRecords.forEach((record) => {
     const attendanceDate = parseDateValue(record.date);
-    if (!attendanceDate || attendanceDate < day30Start) {
+    if (!attendanceDate || attendanceDate < day30Start || attendanceDate > today) {
       return;
     }
 
@@ -96,6 +96,10 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
 
   const membersById = new Map(members.map((member) => [member.memberId, member] as const));
   const recentAttendance = [...attendanceRecords]
+    .filter((record) => {
+      const attendanceDate = parseDateValue(record.date);
+      return Boolean(attendanceDate && attendanceDate <= today);
+    })
     .sort((left, right) => right.date.localeCompare(left.date))
     .slice(0, 30)
     .map((record) => {

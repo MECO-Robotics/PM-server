@@ -1,7 +1,102 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { buildMemberInsights } from "../src/routes/helpers/rosterInsightsMemberMetrics";
+import { buildRosterInsights } from "../src/routes/helpers/rosterInsights";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("buildMemberInsights excludes future attendance from rolling windows", () => {
+  const today = new Date("2026-05-01T00:00:00Z");
+  const members = buildMemberInsights({
+    source: {
+      members: [
+        {
+          id: "ava",
+          name: "Ava",
+          role: "student",
+          disciplineId: "design",
+        },
+      ],
+      projects: [],
+      tasks: [],
+      attendanceRecords: [
+        {
+          id: "attendance-present",
+          memberId: "ava",
+          date: "2026-04-30",
+          totalHours: 2,
+        },
+        {
+          id: "attendance-future",
+          memberId: "ava",
+          date: "2026-05-03",
+          totalHours: 5,
+        },
+      ],
+    },
+    openTasks: [],
+    openTaskBlockerIds: new Set<string>(),
+    projectsById: new Map(),
+    day7Start: new Date("2026-04-24T00:00:00Z"),
+    day14Start: new Date("2026-04-17T00:00:00Z"),
+    day30Start: new Date("2026-04-01T00:00:00Z"),
+    today,
+    dueSoonEnd: new Date("2026-05-08T00:00:00Z"),
+  });
+
+  assert.equal(members.length, 1);
+  assert.equal(members[0].attendanceHoursLast7Days, 2);
+  assert.equal(members[0].attendanceHoursLast14Days, 2);
+  assert.equal(members[0].attendanceHoursLast30Days, 2);
+  assert.equal(members[0].attendanceSessionsLast30Days, 1);
+});
+
+test("buildRosterInsights excludes future attendance from timeline and recent attendance", () => {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const todayKey = today.toISOString().slice(0, 10);
+  const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+
+  const response = buildRosterInsights({
+    members: [
+      {
+        id: "ava",
+        name: "Ava",
+        role: "student",
+        disciplineId: "design",
+      },
+    ],
+    projects: [],
+    tasks: [],
+    attendanceRecords: [
+      {
+        id: "attendance-today",
+        memberId: "ava",
+        date: todayKey,
+        totalHours: 2,
+      },
+      {
+        id: "attendance-future",
+        memberId: "ava",
+        date: tomorrowKey,
+        totalHours: 5,
+      },
+    ],
+  });
+
+  assert.deepEqual(response.attendanceTimeline, [
+    {
+      date: todayKey,
+      totalHours: 2,
+      memberCount: 1,
+    },
+  ]);
+  assert.deepEqual(
+    response.recentAttendance.map((record) => record.id),
+    ["attendance-today"],
+  );
+});
 
 test("qa report and milestone report endpoints support create flows with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
