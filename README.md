@@ -1,6 +1,6 @@
-# MECO Platform
+# MECO Mission Control Platform
 
-Backend starter for the MECO Robotics project-management and manufacturing workflow app.
+Backend API for MECO Mission Control manufacturing, planning, and operations workflows.
 
 ## Hosting direction
 
@@ -149,7 +149,7 @@ local access button. Production builds do not register that route.
 
 ## Required GitHub secrets
 
-Add these secrets to `MECO-Robotics/PM-server`:
+Add these secrets to `MECO-Robotics/meco-mission-control-platform`:
 
 - `VPS_HOST`: public IP or hostname of the server
 - `VPS_USER`: deploy user, for example `root` or `deploy`

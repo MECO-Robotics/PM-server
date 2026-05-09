@@ -2,9 +2,16 @@ name: Deploy Server to VPS
 
 on:
   workflow_dispatch:
+    inputs:
+      release_manifest:
+        description: Optional release-manifest JSON for coordinated cross-repo promotion
+        required: false
+        type: string
   push:
     branches:
       - main
+    tags:
+      - "release-*"
     paths:
       - ".github/workflows/deploy-vps.yml"
       - "src/**"
@@ -17,6 +24,7 @@ on:
       - "docker-compose.prod.yml"
       - ".dockerignore"
       - "deploy/**"
+      - ".env.production.example"
 
 permissions:
   contents: read
@@ -29,8 +37,69 @@ env:
   REMOTE_PATH: /opt/pm-server
 
 jobs:
+  deploy-source-gate:
+    name: deploy-source-gate
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_source: ${{ steps.gate.outputs.deploy_source }}
+    steps:
+      - name: Validate deployment source
+        id: gate
+        env:
+          RELEASE_MANIFEST: ${{ github.event.inputs.release_manifest || '' }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const eventName = process.env.GITHUB_EVENT_NAME;
+          const ref = process.env.GITHUB_REF;
+          const sha = process.env.GITHUB_SHA;
+          const repoName = process.env.REPOSITORY_NAME;
+          const manifestText = (process.env.RELEASE_MANIFEST || '').trim();
+
+          let deploySource = null;
+          if (ref === 'refs/heads/main') {
+            deploySource = 'main';
+          } else if (ref.startsWith('refs/tags/release-')) {
+            deploySource = 'release-tag';
+          } else if (manifestText.length > 0) {
+            deploySource = 'release-manifest';
+          }
+
+          if (!deploySource) {
+            throw new Error(
+              `Production deploy is allowed only from main, release-* tags, or a release manifest. Got event=${eventName}, ref=${ref}.`,
+            );
+          }
+
+          if (manifestText.length > 0) {
+            let manifest;
+            try {
+              manifest = JSON.parse(manifestText);
+            } catch (error) {
+              throw new Error(`release_manifest is not valid JSON: ${error.message}`);
+            }
+
+            const repoEntry = manifest?.repositories?.[repoName];
+            if (!repoEntry?.sha) {
+              throw new Error(`release_manifest.repositories.${repoName}.sha is required.`);
+            }
+
+            if (repoEntry.sha !== sha) {
+              throw new Error(
+                `release manifest SHA mismatch for ${repoName}: expected ${sha} but got ${repoEntry.sha}.`,
+              );
+            }
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `deploy_source=${deploySource}\n`);
+          console.log(`Deployment source accepted: ${deploySource}`);
+          NODE
+
   validate:
-    name: Validate server build
+    name: validate
+    needs: deploy-source-gate
     runs-on: ubuntu-latest
 
     steps:
@@ -61,8 +130,10 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public
 
   deploy:
-    name: Deploy to VPS
-    needs: validate
+    name: deploy
+    needs:
+      - deploy-source-gate
+      - validate
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -101,6 +172,48 @@ jobs:
           printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Backup existing VPS server deployment
+        shell: bash
+        run: |
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
+          set -euo pipefail
+          backup_root=/opt/pm-backups/server
+          timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+          mkdir -p "$backup_root"
+
+          if [ -d /opt/pm-server ]; then
+            tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf "$backup_root/pm-server-files-${timestamp}.tgz" -C /opt pm-server
+            echo "Created file backup: $backup_root/pm-server-files-${timestamp}.tgz"
+          else
+            echo "No existing /opt/pm-server directory found; skipping file backup tarball."
+          fi
+
+          if [ -f /opt/pm-server/.env.production ]; then
+            cp /opt/pm-server/.env.production "$backup_root/pm-server-env-${timestamp}.backup"
+            chmod 600 "$backup_root/pm-server-env-${timestamp}.backup"
+          fi
+
+          if [ -f /opt/pm-server/.env.production ] && [ -f /opt/pm-server/docker-compose.prod.yml ]; then
+            if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml ps --status running --services postgres 2>/dev/null | grep -qx 'postgres'; then
+              if docker compose --env-file /opt/pm-server/.env.production -f /opt/pm-server/docker-compose.prod.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$backup_root/pm-server-db-${timestamp}.sql"; then
+                chmod 600 "$backup_root/pm-server-db-${timestamp}.sql"
+                echo "Created database backup: $backup_root/pm-server-db-${timestamp}.sql"
+              else
+                rm -f "$backup_root/pm-server-db-${timestamp}.sql"
+                echo "Database backup failed; continuing deployment without DB dump."
+              fi
+            else
+              echo "Postgres service is not running; skipping database backup."
+            fi
+          else
+            echo "No existing env/compose deployment files found; skipping database backup."
+          fi
+
+          ls -1t "$backup_root" 2>/dev/null | tail -n +21 | while read -r file; do
+            rm -f "$backup_root/$file"
+          done
+          EOF
 
       - name: Ensure remote directory exists
         shell: bash
@@ -166,61 +279,61 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          existing_path = Path(".env.production")
-          incoming_path = Path(".env.production.partial")
+          existing_path = Path('.env.production')
+          incoming_path = Path('.env.production.partial')
 
           def parse_env(text: str):
               values = {}
               for raw_line in text.splitlines():
                   line = raw_line.strip()
-                  if not line or line.startswith("#") or "=" not in line:
+                  if not line or line.startswith('#') or '=' not in line:
                       continue
-                  key, value = line.split("=", 1)
+                  key, value = line.split('=', 1)
                   values[key] = value
               return values
 
-          existing = parse_env(existing_path.read_text() if existing_path.exists() else "")
-          incoming = parse_env(incoming_path.read_text() if incoming_path.exists() else "")
+          existing = parse_env(existing_path.read_text() if existing_path.exists() else '')
+          incoming = parse_env(incoming_path.read_text() if incoming_path.exists() else '')
           merged = {**existing, **incoming}
 
           ordered_keys = [
-              "NODE_ENV",
-              "PORT",
-              "PUBLIC_PORT",
-              "POSTGRES_DB",
-              "POSTGRES_USER",
-              "POSTGRES_PASSWORD",
-              "DATABASE_URL",
-              "CORS_ORIGIN",
-              "GOOGLE_ALLOWED_HOSTED_DOMAIN",
-              "GOOGLE_CLIENT_ID",
-              "AUTH_JWT_SECRET",
-              "AUTH_TOKEN_TTL",
-              "RESEND_API_KEY",
-              "AUTH_EMAIL_SMTP_FROM",
-              "AUTH_EMAIL_SMTP_HOST",
-              "AUTH_EMAIL_SMTP_PORT",
-              "AUTH_EMAIL_SMTP_USER",
-              "AUTH_EMAIL_SMTP_PASS",
-              "AUTH_EMAIL_FROM",
-              "AUTH_EMAIL_CODE_TTL_MINUTES",
-              "AUTH_EMAIL_CODE_LENGTH",
-              "AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS",
-              "AUTH_EMAIL_MAX_VERIFY_ATTEMPTS",
+              'NODE_ENV',
+              'PORT',
+              'PUBLIC_PORT',
+              'POSTGRES_DB',
+              'POSTGRES_USER',
+              'POSTGRES_PASSWORD',
+              'DATABASE_URL',
+              'CORS_ORIGIN',
+              'GOOGLE_ALLOWED_HOSTED_DOMAIN',
+              'GOOGLE_CLIENT_ID',
+              'AUTH_JWT_SECRET',
+              'AUTH_TOKEN_TTL',
+              'RESEND_API_KEY',
+              'AUTH_EMAIL_SMTP_FROM',
+              'AUTH_EMAIL_SMTP_HOST',
+              'AUTH_EMAIL_SMTP_PORT',
+              'AUTH_EMAIL_SMTP_USER',
+              'AUTH_EMAIL_SMTP_PASS',
+              'AUTH_EMAIL_FROM',
+              'AUTH_EMAIL_CODE_TTL_MINUTES',
+              'AUTH_EMAIL_CODE_LENGTH',
+              'AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS',
+              'AUTH_EMAIL_MAX_VERIFY_ATTEMPTS',
           ]
 
           lines = []
           seen = set()
           for key in ordered_keys:
               if key in merged:
-                  lines.append(f"{key}={merged[key]}")
+                  lines.append(f'{key}={merged[key]}')
                   seen.add(key)
 
           for key, value in merged.items():
               if key not in seen:
-                  lines.append(f"{key}={value}")
+                  lines.append(f'{key}={value}')
 
-          existing_path.write_text("\n".join(lines) + "\n")
+          existing_path.write_text('\n'.join(lines) + '\n')
           existing_path.chmod(0o600)
           incoming_path.chmod(0o600)
           incoming_path.unlink(missing_ok=True)

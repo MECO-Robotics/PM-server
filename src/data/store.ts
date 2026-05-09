@@ -1,5 +1,7 @@
 import { snapshot as initialSnapshot } from "./mockData";
 import type {
+  AuditAction,
+  AuditActionOperation,
   Artifact,
   DesignIteration,
   Discipline,
@@ -488,7 +490,10 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     milestoneRequirements: normalizedMilestoneRequirements,
   });
 
-  return normalizeSnapshotTaskSerials(normalizedSnapshot);
+  return normalizeSnapshotTaskSerials({
+    ...normalizedSnapshot,
+    actions: normalizedSnapshot.actions ?? [],
+  });
 }
 
 let currentSnapshot = cloneSnapshot(initialSnapshot);
@@ -1212,6 +1217,122 @@ function nextWorkLogId() {
   return `log-${highestSequence + 1}`;
 }
 
+function nextActionId() {
+  const highestSequence = (currentSnapshot.actions ?? []).reduce((max, action) => {
+    const match = /^action-(\d+)$/.exec(action.id);
+    if (!match) {
+      return max;
+    }
+
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  return `action-${highestSequence + 1}`;
+}
+
+function resolveEntityLabel(value: string | null | undefined, fallbackId: string) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed.length > 0 ? trimmed : fallbackId;
+}
+
+function formatEntityTypeLabel(entityType: string) {
+  const normalized = entityType.replace(/[_-]+/g, " ").trim();
+  if (!normalized) {
+    return "record";
+  }
+
+  return normalized;
+}
+
+function buildActionMessage(args: {
+  operation: AuditActionOperation;
+  entityType: string;
+  entityLabel: string;
+  changedFields: string[];
+}) {
+  const verb =
+    args.operation === "create"
+      ? "Created"
+      : args.operation === "update"
+        ? "Updated"
+        : "Deleted";
+  const entityTypeLabel = formatEntityTypeLabel(args.entityType);
+
+  if (args.operation === "update" && args.changedFields.length > 0) {
+    return `${verb} ${entityTypeLabel} ${args.entityLabel} (${args.changedFields.join(", ")})`;
+  }
+
+  return `${verb} ${entityTypeLabel} ${args.entityLabel}`;
+}
+
+function collectChangedFields(previous: object, next: object) {
+  const previousRecord = previous as Record<string, unknown>;
+  const nextRecord = next as Record<string, unknown>;
+  const keys = new Set<string>([...Object.keys(previousRecord), ...Object.keys(nextRecord)]);
+  return Array.from(keys)
+    .filter((key) => {
+      const previousValue = previousRecord[key];
+      const nextValue = nextRecord[key];
+
+      if (typeof previousValue === "function" || typeof nextValue === "function") {
+        return false;
+      }
+
+      return JSON.stringify(previousValue) !== JSON.stringify(nextValue);
+    })
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function collectProvidedFields(input: Record<string, unknown>) {
+  return Object.entries(input)
+    .filter(([, value]) => value !== undefined)
+    .map(([key]) => key)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function recordAuditAction(args: {
+  operation: AuditActionOperation;
+  entityType: string;
+  entityId: string;
+  entityLabel?: string | null;
+  changedFields?: string[];
+  projectId?: string | null;
+  taskId?: string | null;
+  subsystemId?: string | null;
+  actorMemberId?: string | null;
+  memberIds?: Array<string | null | undefined>;
+}) {
+  const entityLabel = resolveEntityLabel(args.entityLabel, args.entityId);
+  const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
+    left.localeCompare(right),
+  );
+  const action: AuditAction = {
+    id: nextActionId(),
+    timestamp: new Date().toISOString(),
+    operation: args.operation,
+    entityType: args.entityType,
+    entityId: args.entityId,
+    entityLabel,
+    message: buildActionMessage({
+      operation: args.operation,
+      entityType: args.entityType,
+      entityLabel,
+      changedFields,
+    }),
+    changedFields,
+    projectId: args.projectId ?? null,
+    taskId: args.taskId ?? null,
+    subsystemId: args.subsystemId ?? null,
+    actorMemberId: args.actorMemberId ?? null,
+    memberIds: uniqueIds(args.memberIds ?? []),
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    actions: [...(currentSnapshot.actions ?? []), action],
+  };
+}
+
 export function getSnapshot() {
   return currentSnapshot;
 }
@@ -1343,6 +1464,13 @@ export function createSeason(input: SeasonInput) {
     mechanisms: [...currentSnapshot.mechanisms, ...mechanisms],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "season",
+    entityId: season.id,
+    entityLabel: season.name,
+  });
+
   return season;
 }
 
@@ -1376,6 +1504,14 @@ export function createProject(input: ProjectInput) {
     mechanisms: [...currentSnapshot.mechanisms, ...defaults.mechanisms],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "project",
+    entityId: project.id,
+    entityLabel: project.name,
+    projectId: project.id,
+  });
+
   return project;
 }
 
@@ -1383,6 +1519,7 @@ export function updateProject(
   projectId: string,
   input: Partial<Pick<ProjectInput, "description" | "name" | "status">>,
 ) {
+  const previousProject = currentSnapshot.projects.find((project) => project.id === projectId);
   let updatedProject: Project | null = null;
 
   currentSnapshot = {
@@ -1400,6 +1537,21 @@ export function updateProject(
       return updatedProject;
     }),
   };
+
+  const savedProject = currentSnapshot.projects.find((project) => project.id === projectId);
+  if (previousProject && savedProject) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "project",
+      entityId: savedProject.id,
+      entityLabel: savedProject.name,
+      projectId: savedProject.id,
+      changedFields: collectChangedFields(
+        previousProject,
+        savedProject,
+      ),
+    });
+  }
 
   return updatedProject;
 }
@@ -1426,10 +1578,21 @@ export function createWorkstream(input: WorkstreamInput) {
     workstreams: [...currentSnapshot.workstreams, workstream],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "workstream",
+    entityId: workstream.id,
+    entityLabel: workstream.name,
+    projectId: workstream.projectId,
+  });
+
   return workstream;
 }
 
 export function updateWorkstream(workstreamId: string, input: Partial<WorkstreamInput>) {
+  const previousWorkstream = currentSnapshot.workstreams.find(
+    (workstream) => workstream.id === workstreamId,
+  );
   let updatedWorkstream: Workstream | null = null;
   const nextColor =
     input.color === undefined ? undefined : normalizeWorkspaceColor(input.color);
@@ -1450,6 +1613,23 @@ export function updateWorkstream(workstreamId: string, input: Partial<Workstream
       return updatedWorkstream;
     }),
   };
+
+  const savedWorkstream = currentSnapshot.workstreams.find(
+    (workstream) => workstream.id === workstreamId,
+  );
+  if (previousWorkstream && savedWorkstream) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "workstream",
+      entityId: savedWorkstream.id,
+      entityLabel: savedWorkstream.name,
+      projectId: savedWorkstream.projectId,
+      changedFields: collectChangedFields(
+        previousWorkstream,
+        savedWorkstream,
+      ),
+    });
+  }
 
   return updatedWorkstream;
 }
@@ -1832,10 +2012,20 @@ export function createRisk(input: RiskInput) {
     risks: [...currentSnapshot.risks, risk],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "risk",
+    entityId: risk.id,
+    entityLabel: risk.title,
+    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    taskId: risk.mitigationTaskId,
+  });
+
   return risk;
 }
 
 export function updateRisk(riskId: string, input: Partial<RiskInput>) {
+  const previousRisk = currentSnapshot.risks.find((risk) => risk.id === riskId);
   let updatedRisk: Risk | null = null;
 
   currentSnapshot = {
@@ -1858,6 +2048,23 @@ export function updateRisk(riskId: string, input: Partial<RiskInput>) {
     }),
   };
 
+  const savedRisk = currentSnapshot.risks.find((risk) => risk.id === riskId);
+  if (previousRisk && savedRisk) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "risk",
+      entityId: savedRisk.id,
+      entityLabel: savedRisk.title,
+      projectId:
+        savedRisk.attachmentType === "project" ? savedRisk.attachmentId : null,
+      taskId: savedRisk.mitigationTaskId,
+      changedFields: collectChangedFields(
+        previousRisk,
+        savedRisk,
+      ),
+    });
+  }
+
   return updatedRisk;
 }
 
@@ -1871,6 +2078,15 @@ export function removeRisk(riskId: string) {
     ...currentSnapshot,
     risks: currentSnapshot.risks.filter((candidate) => candidate.id !== riskId),
   };
+
+  recordAuditAction({
+    operation: "delete",
+    entityType: "risk",
+    entityId: risk.id,
+    entityLabel: risk.title,
+    projectId: risk.attachmentType === "project" ? risk.attachmentId : null,
+    taskId: risk.mitigationTaskId,
+  });
 
   return risk;
 }
@@ -1902,10 +2118,18 @@ export function createMaterial(input: MaterialInput) {
     materials: [...currentSnapshot.materials, material],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "material",
+    entityId: material.id,
+    entityLabel: material.name,
+  });
+
   return material;
 }
 
 export function updateMaterial(materialId: string, input: Partial<MaterialInput>) {
+  const previousMaterial = currentSnapshot.materials.find((material) => material.id === materialId);
   let updatedMaterial: Material | null = null;
 
   currentSnapshot = {
@@ -1924,6 +2148,20 @@ export function updateMaterial(materialId: string, input: Partial<MaterialInput>
     }),
   };
 
+  const savedMaterial = currentSnapshot.materials.find((material) => material.id === materialId);
+  if (previousMaterial && savedMaterial) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "material",
+      entityId: savedMaterial.id,
+      entityLabel: savedMaterial.name,
+      changedFields: collectChangedFields(
+        previousMaterial,
+        savedMaterial,
+      ),
+    });
+  }
+
   return updatedMaterial;
 }
 
@@ -1941,6 +2179,13 @@ export function removeMaterial(materialId: string) {
       (candidate) => candidate.id !== materialId,
     ),
   };
+
+  recordAuditAction({
+    operation: "delete",
+    entityType: "material",
+    entityId: material.id,
+    entityLabel: material.name,
+  });
 
   return material;
 }
@@ -1965,10 +2210,19 @@ export function createArtifact(input: ArtifactInput) {
     artifacts: [...currentSnapshot.artifacts, artifact],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "artifact",
+    entityId: artifact.id,
+    entityLabel: artifact.title,
+    projectId: artifact.projectId,
+  });
+
   return artifact;
 }
 
 export function updateArtifact(artifactId: string, input: Partial<ArtifactInput>) {
+  const previousArtifact = currentSnapshot.artifacts.find((artifact) => artifact.id === artifactId);
   let updatedArtifact: Artifact | null = null;
 
   currentSnapshot = {
@@ -1986,6 +2240,21 @@ export function updateArtifact(artifactId: string, input: Partial<ArtifactInput>
       return updatedArtifact;
     }),
   };
+
+  const savedArtifact = currentSnapshot.artifacts.find((artifact) => artifact.id === artifactId);
+  if (previousArtifact && savedArtifact) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "artifact",
+      entityId: savedArtifact.id,
+      entityLabel: savedArtifact.title,
+      projectId: savedArtifact.projectId,
+      changedFields: collectChangedFields(
+        previousArtifact,
+        savedArtifact,
+      ),
+    });
+  }
 
   return updatedArtifact;
 }
@@ -2027,6 +2296,14 @@ export function removeArtifact(artifactId: string) {
     ),
   };
 
+  recordAuditAction({
+    operation: "delete",
+    entityType: "artifact",
+    entityId: artifact.id,
+    entityLabel: artifact.title,
+    projectId: artifact.projectId,
+  });
+
   return artifact;
 }
 
@@ -2056,6 +2333,31 @@ export function createSubsystem(input: SubsystemInput) {
     subsystems: [...currentSnapshot.subsystems, subsystem],
     tasks: integrationTask ? [...currentSnapshot.tasks, integrationTask] : currentSnapshot.tasks,
   });
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "subsystem",
+    entityId: subsystem.id,
+    entityLabel: subsystem.name,
+    projectId: subsystem.projectId,
+    subsystemId: subsystem.id,
+    memberIds: [subsystem.responsibleEngineerId, ...subsystem.mentorIds],
+    actorMemberId: subsystem.responsibleEngineerId,
+  });
+
+  if (integrationTask) {
+    recordAuditAction({
+      operation: "create",
+      entityType: "task",
+      entityId: integrationTask.id,
+      entityLabel: integrationTask.title,
+      projectId: integrationTask.projectId,
+      subsystemId: integrationTask.subsystemId,
+      taskId: integrationTask.id,
+      memberIds: [integrationTask.ownerId, ...integrationTask.assigneeIds, integrationTask.mentorId],
+      actorMemberId: integrationTask.ownerId,
+    });
+  }
 
   return subsystem;
 }
@@ -2105,6 +2407,24 @@ export function updateSubsystem(subsystemId: string, input: Partial<SubsystemInp
   };
 
   currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
+
+  const savedSubsystem = currentSnapshot.subsystems.find((subsystem) => subsystem.id === subsystemId);
+  if (savedSubsystem) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "subsystem",
+      entityId: savedSubsystem.id,
+      entityLabel: savedSubsystem.name,
+      projectId: savedSubsystem.projectId,
+      subsystemId: savedSubsystem.id,
+      memberIds: [savedSubsystem.responsibleEngineerId, ...savedSubsystem.mentorIds],
+      actorMemberId: savedSubsystem.responsibleEngineerId,
+      changedFields: collectChangedFields(
+        currentSubsystem,
+        savedSubsystem,
+      ),
+    });
+  }
 
   return updatedSubsystem;
 }
@@ -2246,6 +2566,17 @@ export function removeSubsystem(subsystemId: string) {
     }),
   };
 
+  recordAuditAction({
+    operation: "delete",
+    entityType: "subsystem",
+    entityId: subsystem.id,
+    entityLabel: subsystem.name,
+    projectId: subsystem.projectId,
+    subsystemId: subsystem.id,
+    memberIds: [subsystem.responsibleEngineerId, ...subsystem.mentorIds],
+    actorMemberId: subsystem.responsibleEngineerId,
+  });
+
   return subsystem;
 }
 
@@ -2282,6 +2613,13 @@ export function createPartDefinition(input: PartDefinitionInput) {
     partDefinitions: [...currentSnapshot.partDefinitions, partDefinition],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "part-definition",
+    entityId: partDefinition.id,
+    entityLabel: partDefinition.name,
+  });
+
   return partDefinition;
 }
 
@@ -2289,6 +2627,9 @@ export function updatePartDefinition(
   partDefinitionId: string,
   input: Partial<PartDefinitionInput>,
 ) {
+  const previousPartDefinition = currentSnapshot.partDefinitions.find(
+    (partDefinition) => partDefinition.id === partDefinitionId,
+  );
   let updatedPartDefinition: PartDefinition | null = null;
 
   currentSnapshot = {
@@ -2317,6 +2658,22 @@ export function updatePartDefinition(
       return updatedPartDefinition;
     }),
   };
+
+  const savedPartDefinition = currentSnapshot.partDefinitions.find(
+    (partDefinition) => partDefinition.id === partDefinitionId,
+  );
+  if (previousPartDefinition && savedPartDefinition) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "part-definition",
+      entityId: savedPartDefinition.id,
+      entityLabel: savedPartDefinition.name,
+      changedFields: collectChangedFields(
+        previousPartDefinition,
+        savedPartDefinition,
+      ),
+    });
+  }
 
   return updatedPartDefinition;
 }
@@ -2378,6 +2735,13 @@ export function removePartDefinition(partDefinitionId: string) {
     ),
   };
 
+  recordAuditAction({
+    operation: "delete",
+    entityType: "part-definition",
+    entityId: partDefinition.id,
+    entityLabel: partDefinition.name,
+  });
+
   return partDefinition;
 }
 
@@ -2401,6 +2765,28 @@ export function createMechanism(input: MechanismInput) {
     mechanisms: [...currentSnapshot.mechanisms, mechanism],
     tasks: wiringTask ? [...currentSnapshot.tasks, wiringTask] : currentSnapshot.tasks,
   });
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "mechanism",
+    entityId: mechanism.id,
+    entityLabel: mechanism.name,
+    subsystemId: mechanism.subsystemId,
+  });
+
+  if (wiringTask) {
+    recordAuditAction({
+      operation: "create",
+      entityType: "task",
+      entityId: wiringTask.id,
+      entityLabel: wiringTask.title,
+      projectId: wiringTask.projectId,
+      subsystemId: wiringTask.subsystemId,
+      taskId: wiringTask.id,
+      memberIds: [wiringTask.ownerId, ...wiringTask.assigneeIds, wiringTask.mentorId],
+      actorMemberId: wiringTask.ownerId,
+    });
+  }
 
   return mechanism;
 }
@@ -2426,11 +2812,20 @@ export function createPartInstance(input: PartInstanceInput) {
     partInstances: [...currentSnapshot.partInstances, partInstance],
   });
 
-  return (
+  const savedPartInstance =
     currentSnapshot.partInstances.find(
       (candidate) => getPartInstanceMergeKey(candidate) === getPartInstanceMergeKey(partInstance),
-    ) ?? partInstance
-  );
+    ) ?? partInstance;
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "part-instance",
+    entityId: savedPartInstance.id,
+    entityLabel: savedPartInstance.name,
+    subsystemId: savedPartInstance.subsystemId,
+  });
+
+  return savedPartInstance;
 }
 
 export function updatePartInstance(
@@ -2478,14 +2873,31 @@ export function updatePartInstance(
 
   currentSnapshot = normalizePartInstanceSnapshot(currentSnapshot);
 
-  return (
+  const savedPartInstance =
     currentSnapshot.partInstances.find(
       (candidate) =>
         candidate.id === partInstanceId ||
         getPartInstanceMergeKey(candidate) ===
           getPartInstanceMergeKey(updatedPartInstance ?? currentPartInstance),
-    ) ?? updatedPartInstance
-  );
+    ) ?? updatedPartInstance;
+
+  if (savedPartInstance) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "part-instance",
+      entityId: savedPartInstance.id,
+      entityLabel: savedPartInstance.name,
+      subsystemId: savedPartInstance.subsystemId,
+      changedFields: updatedPartInstance
+        ? collectChangedFields(
+            currentPartInstance,
+            updatedPartInstance,
+          )
+        : collectProvidedFields(input),
+    });
+  }
+
+  return savedPartInstance;
 }
 
 export function removePartInstance(partInstanceId: string) {
@@ -2519,6 +2931,14 @@ export function removePartInstance(partInstanceId: string) {
       });
     }),
   };
+
+  recordAuditAction({
+    operation: "delete",
+    entityType: "part-instance",
+    entityId: partInstance.id,
+    entityLabel: partInstance.name,
+    subsystemId: partInstance.subsystemId,
+  });
 
   return partInstance;
 }
@@ -2583,6 +3003,21 @@ export function updateMechanism(mechanismId: string, input: Partial<MechanismInp
     ),
   };
 
+  const savedMechanism = currentSnapshot.mechanisms.find((mechanism) => mechanism.id === mechanismId);
+  if (savedMechanism) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "mechanism",
+      entityId: savedMechanism.id,
+      entityLabel: savedMechanism.name,
+      subsystemId: savedMechanism.subsystemId,
+      changedFields: collectChangedFields(
+        currentMechanism,
+        savedMechanism,
+      ),
+    });
+  }
+
   return updatedMechanism;
 }
 
@@ -2622,6 +3057,14 @@ export function removeMechanism(mechanismId: string) {
         : partInstance,
     ),
   };
+
+  recordAuditAction({
+    operation: "delete",
+    entityType: "mechanism",
+    entityId: mechanism.id,
+    entityLabel: mechanism.name,
+    subsystemId: mechanism.subsystemId,
+  });
 
   return mechanism;
 }
@@ -2681,7 +3124,21 @@ export function createTask(input: TaskInput) {
     tasks: [...currentSnapshot.tasks, normalizedTask],
   });
 
-  return currentSnapshot.tasks.find((task) => task.id === normalizedTask.id) ?? normalizedTask;
+  const savedTask = currentSnapshot.tasks.find((task) => task.id === normalizedTask.id) ?? normalizedTask;
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "task",
+    entityId: savedTask.id,
+    entityLabel: savedTask.title,
+    projectId: savedTask.projectId,
+    subsystemId: savedTask.subsystemId,
+    taskId: savedTask.id,
+    memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
+    actorMemberId: savedTask.ownerId,
+  });
+
+  return savedTask;
 }
 
 function buildScopeRequirementsForMilestone(input: {
@@ -2746,6 +3203,14 @@ export function createMilestone(input: MilestoneInput) {
     ],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "milestone",
+    entityId: milestone.id,
+    entityLabel: milestone.title,
+    projectId: milestone.projectIds[0] ?? null,
+  });
+
   return milestone;
 }
 
@@ -2767,6 +3232,18 @@ export function createQaReport(input: QaReportInput) {
     qaReports: [...currentSnapshot.qaReports, report],
   };
 
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === report.taskId);
+  recordAuditAction({
+    operation: "create",
+    entityType: "report",
+    entityId: report.id,
+    entityLabel: task ? `QA: ${task.title}` : `QA report ${report.id}`,
+    projectId: task?.projectId ?? null,
+    subsystemId: task?.subsystemId ?? null,
+    taskId: report.taskId,
+    memberIds: report.participantIds,
+  });
+
   return report;
 }
 
@@ -2785,6 +3262,15 @@ export function createTestResult(input: TestResultInput) {
     ...currentSnapshot,
     testResults: [...currentSnapshot.testResults, testResult],
   };
+
+  const milestone = currentSnapshot.milestones.find((candidate) => candidate.id === testResult.milestoneId);
+  recordAuditAction({
+    operation: "create",
+    entityType: "report",
+    entityId: testResult.id,
+    entityLabel: testResult.title,
+    projectId: milestone?.projectIds[0] ?? null,
+  });
 
   return testResult;
 }
@@ -2857,6 +3343,16 @@ export function createReportFinding(input: ReportFindingInput) {
       qaFindings: [...currentSnapshot.qaFindings, finding],
     };
 
+    recordAuditAction({
+      operation: "create",
+      entityType: "report-finding",
+      entityId: finding.id,
+      entityLabel: finding.title,
+      projectId: finding.projectId,
+      taskId: finding.taskId,
+      subsystemId: finding.subsystemId,
+    });
+
     return reportFindingFromQaFinding(finding);
   }
 
@@ -2883,6 +3379,16 @@ export function createReportFinding(input: ReportFindingInput) {
     ...currentSnapshot,
     testFindings: [...currentSnapshot.testFindings, finding],
   };
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "report-finding",
+    entityId: finding.id,
+    entityLabel: finding.title,
+    projectId: finding.projectId,
+    taskId: finding.taskId,
+    subsystemId: finding.subsystemId,
+  });
 
   return reportFindingFromTestFinding(finding);
 }
@@ -2911,6 +3417,17 @@ export function createTaskDependency(input: TaskDependencyInput) {
         : task,
     ),
   };
+
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
+  recordAuditAction({
+    operation: "create",
+    entityType: "task-dependency",
+    entityId: dependency.id,
+    entityLabel: `${dependency.kind}:${dependency.refId}`,
+    projectId: task?.projectId ?? null,
+    taskId: dependency.taskId,
+    subsystemId: task?.subsystemId ?? null,
+  });
 
   return dependency;
 }
@@ -2961,6 +3478,21 @@ export function updateTaskDependency(
     }),
   };
 
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === savedDependency.taskId);
+  recordAuditAction({
+    operation: "update",
+    entityType: "task-dependency",
+    entityId: savedDependency.id,
+    entityLabel: `${savedDependency.kind}:${savedDependency.refId}`,
+    projectId: task?.projectId ?? null,
+    taskId: savedDependency.taskId,
+    subsystemId: task?.subsystemId ?? null,
+    changedFields: collectChangedFields(
+      originalDependency,
+      savedDependency,
+    ),
+  });
+
   return savedDependency;
 }
 
@@ -2988,6 +3520,17 @@ export function removeTaskDependency(dependencyId: string) {
         : task,
     ),
   };
+
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === dependency.taskId);
+  recordAuditAction({
+    operation: "delete",
+    entityType: "task-dependency",
+    entityId: dependency.id,
+    entityLabel: `${dependency.kind}:${dependency.refId}`,
+    projectId: task?.projectId ?? null,
+    taskId: dependency.taskId,
+    subsystemId: task?.subsystemId ?? null,
+  });
 
   return dependency;
 }
@@ -3019,6 +3562,18 @@ export function createTaskBlocker(input: TaskBlockerInput) {
         : task,
     ),
   };
+
+  const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
+  recordAuditAction({
+    operation: "create",
+    entityType: "task-blocker",
+    entityId: blocker.id,
+    entityLabel: blocker.description,
+    projectId: blockedTask?.projectId ?? null,
+    taskId: blocker.blockedTaskId,
+    subsystemId: blockedTask?.subsystemId ?? null,
+    actorMemberId: blocker.createdByMemberId,
+  });
 
   return blocker;
 }
@@ -3060,6 +3615,22 @@ export function updateTaskBlocker(blockerId: string, input: Partial<TaskBlockerI
     }),
   };
 
+  const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === savedBlocker.blockedTaskId);
+  recordAuditAction({
+    operation: "update",
+    entityType: "task-blocker",
+    entityId: savedBlocker.id,
+    entityLabel: savedBlocker.description,
+    projectId: blockedTask?.projectId ?? null,
+    taskId: savedBlocker.blockedTaskId,
+    subsystemId: blockedTask?.subsystemId ?? null,
+    actorMemberId: savedBlocker.createdByMemberId,
+    changedFields: collectChangedFields(
+      originalBlocker,
+      savedBlocker,
+    ),
+  });
+
   return savedBlocker;
 }
 
@@ -3085,6 +3656,18 @@ export function removeTaskBlocker(blockerId: string) {
         : task,
     ),
   };
+
+  const blockedTask = currentSnapshot.tasks.find((candidate) => candidate.id === blocker.blockedTaskId);
+  recordAuditAction({
+    operation: "delete",
+    entityType: "task-blocker",
+    entityId: blocker.id,
+    entityLabel: blocker.description,
+    projectId: blockedTask?.projectId ?? null,
+    taskId: blocker.blockedTaskId,
+    subsystemId: blockedTask?.subsystemId ?? null,
+    actorMemberId: blocker.createdByMemberId,
+  });
 
   return blocker;
 }
@@ -3157,6 +3740,18 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       ...currentSnapshot,
       milestoneRequirements: [...retained, ...additions],
     };
+
+    recordAuditAction({
+      operation: "update",
+      entityType: "milestone",
+      entityId: updatedMilestone.id,
+      entityLabel: updatedMilestone.title,
+      projectId: updatedMilestone.projectIds[0] ?? null,
+      changedFields: collectChangedFields(
+        currentMilestone,
+        updatedMilestone,
+      ),
+    });
   }
 
   return updatedMilestone;
@@ -3185,6 +3780,14 @@ export function removeMilestone(milestoneId: string) {
     ),
   };
 
+  recordAuditAction({
+    operation: "delete",
+    entityType: "milestone",
+    entityId: milestone.id,
+    entityLabel: milestone.title,
+    projectId: milestone.projectIds[0] ?? null,
+  });
+
   return milestone;
 }
 
@@ -3204,10 +3807,23 @@ export function createWorkLog(input: WorkLogInput) {
     workLogs: [...currentSnapshot.workLogs, workLog],
   };
 
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === workLog.taskId);
+  recordAuditAction({
+    operation: "create",
+    entityType: "worklog",
+    entityId: workLog.id,
+    entityLabel: task ? task.title : workLog.taskId,
+    projectId: task?.projectId ?? null,
+    taskId: workLog.taskId,
+    subsystemId: task?.subsystemId ?? null,
+    memberIds: workLog.participantIds,
+  });
+
   return workLog;
 }
 
 export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
+  const previousWorkLog = currentSnapshot.workLogs.find((workLog) => workLog.id === workLogId);
   let updatedWorkLog: WorkLog | null = null;
 
   currentSnapshot = {
@@ -3226,6 +3842,25 @@ export function updateWorkLog(workLogId: string, input: Partial<WorkLogInput>) {
     }),
   };
 
+  const savedWorkLog = currentSnapshot.workLogs.find((workLog) => workLog.id === workLogId);
+  if (previousWorkLog && savedWorkLog) {
+    const task = currentSnapshot.tasks.find((candidate) => candidate.id === savedWorkLog.taskId);
+    recordAuditAction({
+      operation: "update",
+      entityType: "worklog",
+      entityId: savedWorkLog.id,
+      entityLabel: task ? task.title : savedWorkLog.taskId,
+      projectId: task?.projectId ?? null,
+      taskId: savedWorkLog.taskId,
+      subsystemId: task?.subsystemId ?? null,
+      memberIds: savedWorkLog.participantIds,
+      changedFields: collectChangedFields(
+        previousWorkLog,
+        savedWorkLog,
+      ),
+    });
+  }
+
   return updatedWorkLog;
 }
 
@@ -3243,6 +3878,18 @@ export function removeWorkLog(workLogId: string) {
       (candidate) => candidate.id !== workLogId,
     ),
   };
+
+  const task = currentSnapshot.tasks.find((candidate) => candidate.id === workLog.taskId);
+  recordAuditAction({
+    operation: "delete",
+    entityType: "worklog",
+    entityId: workLog.id,
+    entityLabel: task ? task.title : workLog.taskId,
+    projectId: task?.projectId ?? null,
+    taskId: workLog.taskId,
+    subsystemId: task?.subsystemId ?? null,
+    memberIds: workLog.participantIds,
+  });
 
   return workLog;
 }
@@ -3299,9 +3946,24 @@ export function updateTask(taskId: string, input: Partial<TaskInput>): Task | nu
 
   currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
 
-  return (
-    currentSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask
-  );
+  const savedTask = currentSnapshot.tasks.find((task) => task.id === updatedTask.id) ?? updatedTask;
+  recordAuditAction({
+    operation: "update",
+    entityType: "task",
+    entityId: savedTask.id,
+    entityLabel: savedTask.title,
+    projectId: savedTask.projectId,
+    subsystemId: savedTask.subsystemId,
+    taskId: savedTask.id,
+    memberIds: [savedTask.ownerId, ...savedTask.assigneeIds, savedTask.mentorId],
+    actorMemberId: savedTask.ownerId,
+    changedFields: collectChangedFields(
+      currentTask,
+      savedTask,
+    ),
+  });
+
+  return savedTask;
 }
 
 export function removeTask(taskId: string) {
@@ -3336,6 +3998,18 @@ export function removeTask(taskId: string) {
 
   currentSnapshot = normalizeSnapshotTaskSerials(currentSnapshot);
 
+  recordAuditAction({
+    operation: "delete",
+    entityType: "task",
+    entityId: task.id,
+    entityLabel: task.title,
+    projectId: task.projectId,
+    subsystemId: task.subsystemId,
+    taskId: task.id,
+    memberIds: [task.ownerId, ...task.assigneeIds, task.mentorId],
+    actorMemberId: task.ownerId,
+  });
+
   return task;
 }
 
@@ -3361,6 +4035,18 @@ export function createPurchaseItem(input: PurchaseItemInput) {
     purchaseItems: [...currentSnapshot.purchaseItems, item],
   };
 
+  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
+  recordAuditAction({
+    operation: "create",
+    entityType: "purchase-item",
+    entityId: item.id,
+    entityLabel: item.title,
+    projectId: subsystem?.projectId ?? null,
+    subsystemId: item.subsystemId,
+    actorMemberId: item.requestedById,
+    memberIds: [item.requestedById],
+  });
+
   return item;
 }
 
@@ -3368,6 +4054,7 @@ export function updatePurchaseItem(
   itemId: string,
   input: Partial<PurchaseItemInput>,
 ) {
+  const previousItem = currentSnapshot.purchaseItems.find((item) => item.id === itemId);
   let updatedItem: PurchaseItem | null = null;
 
   currentSnapshot = {
@@ -3385,6 +4072,25 @@ export function updatePurchaseItem(
       return updatedItem;
     }),
   };
+
+  const savedPurchaseItem = currentSnapshot.purchaseItems.find((item) => item.id === itemId);
+  if (previousItem && savedPurchaseItem) {
+    const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === savedPurchaseItem.subsystemId);
+    recordAuditAction({
+      operation: "update",
+      entityType: "purchase-item",
+      entityId: savedPurchaseItem.id,
+      entityLabel: savedPurchaseItem.title,
+      projectId: subsystem?.projectId ?? null,
+      subsystemId: savedPurchaseItem.subsystemId,
+      actorMemberId: savedPurchaseItem.requestedById,
+      memberIds: [savedPurchaseItem.requestedById],
+      changedFields: collectChangedFields(
+        previousItem,
+        savedPurchaseItem,
+      ),
+    });
+  }
 
   return updatedItem;
 }
@@ -3409,6 +4115,18 @@ export function removePurchaseItem(itemId: string) {
       ),
     })),
   };
+
+  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
+  recordAuditAction({
+    operation: "delete",
+    entityType: "purchase-item",
+    entityId: item.id,
+    entityLabel: item.title,
+    projectId: subsystem?.projectId ?? null,
+    subsystemId: item.subsystemId,
+    actorMemberId: item.requestedById,
+    memberIds: [item.requestedById],
+  });
 
   return item;
 }
@@ -3443,6 +4161,18 @@ export function createManufacturingItem(input: ManufacturingItemInput) {
     manufacturingItems: [...currentSnapshot.manufacturingItems, item],
   };
 
+  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
+  recordAuditAction({
+    operation: "create",
+    entityType: "manufacturing-item",
+    entityId: item.id,
+    entityLabel: item.title,
+    projectId: subsystem?.projectId ?? null,
+    subsystemId: item.subsystemId,
+    actorMemberId: item.requestedById,
+    memberIds: [item.requestedById],
+  });
+
   return item;
 }
 
@@ -3450,6 +4180,7 @@ export function updateManufacturingItem(
   itemId: string,
   input: Partial<ManufacturingItemInput>,
 ) {
+  const previousItem = currentSnapshot.manufacturingItems.find((item) => item.id === itemId);
   let updatedItem: ManufacturingItem | null = null;
 
   currentSnapshot = {
@@ -3480,6 +4211,25 @@ export function updateManufacturingItem(
     }),
   };
 
+  const savedManufacturingItem = currentSnapshot.manufacturingItems.find((item) => item.id === itemId);
+  if (previousItem && savedManufacturingItem) {
+    const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === savedManufacturingItem.subsystemId);
+    recordAuditAction({
+      operation: "update",
+      entityType: "manufacturing-item",
+      entityId: savedManufacturingItem.id,
+      entityLabel: savedManufacturingItem.title,
+      projectId: subsystem?.projectId ?? null,
+      subsystemId: savedManufacturingItem.subsystemId,
+      actorMemberId: savedManufacturingItem.requestedById,
+      memberIds: [savedManufacturingItem.requestedById],
+      changedFields: collectChangedFields(
+        previousItem,
+        savedManufacturingItem,
+      ),
+    });
+  }
+
   return updatedItem;
 }
 
@@ -3508,6 +4258,18 @@ export function removeManufacturingItem(itemId: string) {
     ),
   };
 
+  const subsystem = currentSnapshot.subsystems.find((candidate) => candidate.id === item.subsystemId);
+  recordAuditAction({
+    operation: "delete",
+    entityType: "manufacturing-item",
+    entityId: item.id,
+    entityLabel: item.title,
+    projectId: subsystem?.projectId ?? null,
+    subsystemId: item.subsystemId,
+    actorMemberId: item.requestedById,
+    memberIds: [item.requestedById],
+  });
+
   return item;
 }
 
@@ -3534,10 +4296,20 @@ export function createMember(input: MemberInput) {
     members: [...currentSnapshot.members, member],
   };
 
+  recordAuditAction({
+    operation: "create",
+    entityType: "member",
+    entityId: member.id,
+    entityLabel: member.name,
+    actorMemberId: member.id,
+    memberIds: [member.id],
+  });
+
   return member;
 }
 
 export function updateMember(memberId: string, input: Partial<MemberInput>) {
+  const previousMember = currentSnapshot.members.find((member) => member.id === memberId);
   let updatedMember: Member | null = null;
 
   currentSnapshot = {
@@ -3571,6 +4343,22 @@ export function updateMember(memberId: string, input: Partial<MemberInput>) {
       return updatedMember;
     }),
   };
+
+  const savedMember = currentSnapshot.members.find((member) => member.id === memberId);
+  if (previousMember && savedMember) {
+    recordAuditAction({
+      operation: "update",
+      entityType: "member",
+      entityId: savedMember.id,
+      entityLabel: savedMember.name,
+      actorMemberId: savedMember.id,
+      memberIds: [savedMember.id],
+      changedFields: collectChangedFields(
+        previousMember,
+        savedMember,
+      ),
+    });
+  }
 
   return updatedMember;
 }
@@ -3625,6 +4413,15 @@ export function removeMember(memberId: string) {
     })),
   };
 
+  recordAuditAction({
+    operation: "delete",
+    entityType: "member",
+    entityId: member.id,
+    entityLabel: member.name,
+    actorMemberId: member.id,
+    memberIds: [member.id],
+  });
+
   return member;
 }
 
@@ -3671,3 +4468,4 @@ export function findArtifact(artifactId: string): Artifact | undefined {
 export function findRisk(riskId: string): Risk | undefined {
   return currentSnapshot.risks.find((risk) => risk.id === riskId);
 }
+

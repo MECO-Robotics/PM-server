@@ -384,7 +384,7 @@ test("buildMetrics aggregates progress, stock, and activity totals", () => {
   assert.equal(metrics.waitingForQa, 1);
   assert.equal(metrics.blockerCount, 1);
   assert.equal(metrics.attendanceHours, 5);
-  assert.equal(metrics.subsystemMetrics.length, 9);
+  assert.equal(metrics.subsystemMetrics.length, snapshot.subsystems.length);
   assert.equal(metrics.mechanismMetrics.length, 2);
 
   const driveSubsystem = metrics.subsystemMetrics.find((metric) => metric.id === "drive");
@@ -456,11 +456,14 @@ test("deploy workflow validates secrets and retains the app health gate", () => 
   assertIncludesAll(
     deployWorkflow,
     [
-      "needs: validate",
+      "deploy-source-gate",
+      "- validate",
       "environment:",
       "name: production",
       "Validate deploy secrets",
       "Missing required deploy secret(s):",
+      "Backup existing VPS server deployment",
+      "Production deploy is allowed only from main, release-* tags, or a release manifest.",
       "set -euo pipefail",
       "curl --fail --silent http://127.0.0.1:8080/health",
       "Health check passed.",
@@ -498,9 +501,13 @@ test("ci workflow watches deploy artifacts and runs the full validation matrix",
     [
       "workflow_dispatch:",
       "pull_request:",
-      "branches-ignore:",
+      "- development",
       "- main",
       "push:",
+      '"feature/**"',
+      '"fix/**"',
+      '"hotfix/**"',
+      "branch-model",
       '".github/workflows/deploy-vps.yml"',
       '"deploy/**"',
       '"docker-compose.prod.yml"',
@@ -512,6 +519,8 @@ test("ci workflow watches deploy artifacts and runs the full validation matrix",
       "npm run typecheck:test",
       "npm run verify",
       "npx prisma validate",
+      "snapshot-validate",
+      "cross-repo-production-gate",
     ],
     "ci workflow",
   );

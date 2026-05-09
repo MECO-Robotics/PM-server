@@ -124,7 +124,7 @@ test("createProject seeds drivetrain defaults for robot projects", () => {
   ]);
 });
 
-test("seeded training records belong to the Training project", () => {
+test("seeded training records stay in Training while strategy has its own seeded coverage", () => {
   const snapshot = getSnapshot();
   const trainingProject = snapshot.projects.find(
     (project) => project.id === "project-training-2026",
@@ -167,8 +167,18 @@ test("seeded training records belong to the Training project", () => {
   assert.deepEqual(
     snapshot.workstreams
       .filter((workstream) => workstream.projectId === "project-strategy-2026")
-      .map((workstream) => workstream.id),
-    [],
+      .map((workstream) => workstream.id)
+      .sort(),
+    ["workstream-strategy-playbooks", "workstream-strategy-scouting"].sort(),
+  );
+  assert.equal(
+    snapshot.tasks.find((task) => task.id === "strategy-opponent-model-update")?.projectId,
+    "project-strategy-2026",
+  );
+  assert.equal(
+    snapshot.artifacts.find((artifact) => artifact.id === "artifact-strategy-picklist-board")
+      ?.projectId,
+    "project-strategy-2026",
   );
 });
 
@@ -373,6 +383,28 @@ test("updateTask patches an existing task in place", () => {
   assert.equal(updatedTask.status, "complete");
   assert.equal(updatedTask.actualHours, 8);
   assert.deepEqual(updatedTask.assigneeIds, ["ava", "ethan"]);
+});
+
+test("task updates append an audit action entry", () => {
+  const initialActionCount = getSnapshot().actions?.length ?? 0;
+
+  const updatedTask = updateTask("intake-guard", {
+    status: "complete",
+  });
+
+  assert.ok(updatedTask);
+  const snapshot = getSnapshot();
+  const actions = snapshot.actions ?? [];
+  assert.equal(actions.length, initialActionCount + 1);
+
+  const lastAction = actions[actions.length - 1];
+  assert.equal(lastAction.entityType, "task");
+  assert.equal(lastAction.operation, "update");
+  assert.equal(lastAction.taskId, "intake-guard");
+  assert.equal(lastAction.projectId, updatedTask.projectId);
+  assert.equal(lastAction.subsystemId, updatedTask.subsystemId);
+  assert.equal(lastAction.entityLabel, updatedTask.title);
+  assert.ok(lastAction.changedFields.includes("status"));
 });
 
 test("updatePartInstance keeps the subsystem aligned with the selected mechanism", () => {
