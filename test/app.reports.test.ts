@@ -1,7 +1,117 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import {
+  buildMemberInsights,
+  parseDateValue,
+} from "../src/routes/helpers/rosterInsightsMemberMetrics";
+import { buildRosterInsights } from "../src/routes/helpers/rosterInsights";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+test("parseDateValue rejects invalid calendar YYYY-MM-DD values", () => {
+  const validDate = parseDateValue("2026-02-28");
+  assert.ok(validDate);
+  assert.equal(validDate?.toISOString(), "2026-02-28T00:00:00.000Z");
+  assert.equal(
+    parseDateValue("0099-12-31")?.toISOString(),
+    "0099-12-31T00:00:00.000Z",
+  );
+  assert.equal(parseDateValue("2026-02-30"), null);
+  assert.equal(parseDateValue("2026-13-01"), null);
+});
+
+test("buildMemberInsights excludes future attendance from rolling windows", () => {
+  const today = new Date("2026-05-01T00:00:00Z");
+  const members = buildMemberInsights({
+    source: {
+      members: [
+        {
+          id: "ava",
+          name: "Ava",
+          role: "student",
+          disciplineId: "design",
+        },
+      ],
+      projects: [],
+      tasks: [],
+      attendanceRecords: [
+        {
+          id: "attendance-present",
+          memberId: "ava",
+          date: "2026-04-30",
+          totalHours: 2,
+        },
+        {
+          id: "attendance-future",
+          memberId: "ava",
+          date: "2026-05-03",
+          totalHours: 5,
+        },
+      ],
+    },
+    openTasks: [],
+    openTaskBlockerIds: new Set<string>(),
+    projectsById: new Map(),
+    day7Start: new Date("2026-04-24T00:00:00Z"),
+    day14Start: new Date("2026-04-17T00:00:00Z"),
+    day30Start: new Date("2026-04-01T00:00:00Z"),
+    today,
+    dueSoonEnd: new Date("2026-05-08T00:00:00Z"),
+  });
+
+  assert.equal(members.length, 1);
+  assert.equal(members[0].attendanceHoursLast7Days, 2);
+  assert.equal(members[0].attendanceHoursLast14Days, 2);
+  assert.equal(members[0].attendanceHoursLast30Days, 2);
+  assert.equal(members[0].attendanceSessionsLast30Days, 1);
+});
+
+test("buildRosterInsights excludes future attendance from timeline and recent attendance", () => {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const todayKey = today.toISOString().slice(0, 10);
+  const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+
+  const response = buildRosterInsights({
+    members: [
+      {
+        id: "ava",
+        name: "Ava",
+        role: "student",
+        disciplineId: "design",
+      },
+    ],
+    projects: [],
+    tasks: [],
+    attendanceRecords: [
+      {
+        id: "attendance-today",
+        memberId: "ava",
+        date: todayKey,
+        totalHours: 2,
+      },
+      {
+        id: "attendance-future",
+        memberId: "ava",
+        date: tomorrowKey,
+        totalHours: 5,
+      },
+    ],
+  });
+
+  assert.deepEqual(response.attendanceTimeline, [
+    {
+      date: todayKey,
+      totalHours: 2,
+      memberCount: 1,
+    },
+  ]);
+  assert.deepEqual(
+    response.recentAttendance.map((record) => record.id),
+    ["attendance-today"],
+  );
+});
 
 test("qa report and milestone report endpoints support create flows with link validation", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
@@ -847,6 +957,137 @@ test("seeded list endpoints and auth fallbacks stay healthy on mock data", async
     assert.ok(meetingsBody.meetings.length > 0);
     assert.ok(meetingsBody.attendance.length > 0);
     assert.ok(meetingsBody.workLogs.length > 0);
+
+    resetLimits();
+
+    const rosterSummarySubsystemCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/subsystems",
+      payload: {
+        name: "Roster Insights Dedupe Subsystem",
+        description: "Temporary subsystem for roster insights coverage.",
+        parentSubsystemId: "manipulator",
+        responsibleEngineerId: "ava",
+        mentorIds: ["riley"],
+        risks: [],
+      },
+    });
+    assert.equal(rosterSummarySubsystemCreateResponse.statusCode, 201);
+    const rosterSummarySubsystemBody = rosterSummarySubsystemCreateResponse.json() as {
+      item: {
+        id: string;
+      };
+    };
+
+    resetLimits();
+
+    const rosterSummaryTaskCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Roster summary dedupe task",
+        summary: "Ensures roster summary task counts stay deduplicated.",
+        subsystemId: rosterSummarySubsystemBody.item.id,
+        disciplineId: "design",
+        requirementId: null,
+        mechanismId: null,
+        partInstanceId: null,
+        targetMilestoneId: null,
+        ownerId: "ava",
+        assigneeIds: ["ava", "priya"],
+        mentorId: "riley",
+        dueDate: "2026-04-01",
+        priority: "high",
+        status: "waiting-for-qa",
+        dependencyIds: [],
+        blockers: [],
+        linkedManufacturingIds: [],
+        linkedPurchaseIds: [],
+        estimatedHours: 2,
+        actualHours: 0,
+      },
+    });
+    assert.equal(rosterSummaryTaskCreateResponse.statusCode, 201);
+    const rosterSummaryTaskBody = rosterSummaryTaskCreateResponse.json() as {
+      item: {
+        id: string;
+      };
+    };
+
+    resetLimits();
+
+    const rosterSummaryBlockerCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/task-blockers",
+      payload: {
+        blockedTaskId: rosterSummaryTaskBody.item.id,
+        blockerType: "external",
+        blockerId: null,
+        description: "Scoped blocker for roster summary dedupe coverage.",
+        severity: "high",
+        status: "open",
+        createdByMemberId: "ava",
+      },
+    });
+    assert.equal(rosterSummaryBlockerCreateResponse.statusCode, 201);
+
+    resetLimits();
+
+    const rosterInsightsResponse = await app.inject({
+      method: "GET",
+      url: "/api/roster/insights?seasonId=default-season&projectId=project-robot-2026",
+    });
+    assert.equal(rosterInsightsResponse.statusCode, 200);
+    const rosterInsightsBody = rosterInsightsResponse.json() as {
+      attendanceTimeline: Array<{ date: string; memberCount: number; totalHours: number }>;
+      members: Array<{
+        activeTaskCount: number;
+        availabilityStatus: "available" | "at-risk" | "overloaded" | "unavailable";
+        memberId: string;
+      }>;
+      recentAttendance: Array<{ activeTaskCount: number; id: string; memberId: string }>;
+      summary: {
+        attendanceHoursLast14Days: number;
+        blockedTaskCount: number;
+        memberCount: number;
+        openTaskCount: number;
+        overdueTaskCount: number;
+        waitingForQaTaskCount: number;
+      };
+    };
+    assert.ok(rosterInsightsBody.members.length > 0);
+    assert.ok(
+      rosterInsightsBody.members.some((member) =>
+        ["available", "at-risk", "overloaded", "unavailable"].includes(
+          member.availabilityStatus,
+        ),
+      ),
+    );
+    assert.equal(typeof rosterInsightsBody.summary.openTaskCount, "number");
+    assert.equal(typeof rosterInsightsBody.summary.blockedTaskCount, "number");
+    assert.equal(typeof rosterInsightsBody.summary.attendanceHoursLast14Days, "number");
+    assert.ok(Array.isArray(rosterInsightsBody.recentAttendance));
+    assert.ok(Array.isArray(rosterInsightsBody.attendanceTimeline));
+    assert.ok(
+      rosterInsightsBody.summary.blockedTaskCount <=
+        rosterInsightsBody.summary.openTaskCount,
+    );
+    assert.ok(
+      rosterInsightsBody.summary.waitingForQaTaskCount <=
+        rosterInsightsBody.summary.openTaskCount,
+    );
+    assert.ok(
+      rosterInsightsBody.summary.overdueTaskCount <=
+        rosterInsightsBody.summary.openTaskCount,
+    );
+    const scopedMemberIds = new Set(
+      rosterInsightsBody.members.map((member) => member.memberId),
+    );
+    assert.ok(
+      rosterInsightsBody.recentAttendance.every((record) =>
+        scopedMemberIds.has(record.memberId),
+      ),
+    );
 
     resetLimits();
 

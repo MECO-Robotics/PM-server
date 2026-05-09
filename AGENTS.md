@@ -8,6 +8,31 @@
 
 ---
 
+### Development Workflow
+
+* Branch model:
+  * `main`: production-ready only
+  * `development`: integration branch for active work
+  * `feature/*`: short-lived feature branches
+  * `fix/*`: short-lived bugfix branches
+  * `hotfix/*`: emergency production fixes
+* PR flow:
+  * Merge `feature/*` and `fix/*` into `development` by PR only.
+  * Merge `hotfix/*` into `development` or `main` by PR only.
+  * Merge into `main` only from `development` or `hotfix/*` by PR only.
+* Protected branch requirements:
+  * `development`: required checks `ci-validate` and `snapshot-validate`, at least 1 approval.
+  * `main`: required checks `ci-validate`, `snapshot-validate`, and `cross-repo-production-gate`, at least 2 approvals.
+  * Keep conversation resolution, linear history, and admin enforcement enabled on both protected branches.
+* Production safety requirements:
+  * Validate sanitized production-like snapshots before merge.
+  * Enforce stricter cross-repo validation before `main` merges.
+  * Deploy production server only from `main`, `release-*` tags, or a release manifest.
+  * Create VPS backups immediately before production deploy (files, env, and database dump).
+* Do not introduce or rely on a permanent live staging environment. There is one production VPS.
+
+---
+
 ### File Size Rules (TypeScript / Node)
 
 **Measurement**
