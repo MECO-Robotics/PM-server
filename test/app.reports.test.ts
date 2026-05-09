@@ -20,8 +20,9 @@ test("parseDateValue rejects invalid calendar YYYY-MM-DD values", () => {
   assert.equal(parseDateValue("2026-13-01"), null);
 });
 
-test("buildMemberInsights excludes future attendance from rolling windows", () => {
+test("buildMemberInsights includes same-day timestamps and excludes future attendance", () => {
   const today = new Date("2026-05-01T00:00:00Z");
+  const tomorrow = new Date("2026-05-02T00:00:00Z");
   const members = buildMemberInsights({
     source: {
       members: [
@@ -42,6 +43,12 @@ test("buildMemberInsights excludes future attendance from rolling windows", () =
           totalHours: 2,
         },
         {
+          id: "attendance-same-day-timestamp",
+          memberId: "ava",
+          date: "2026-05-01T12:00:00Z",
+          totalHours: 3,
+        },
+        {
           id: "attendance-future",
           memberId: "ava",
           date: "2026-05-03",
@@ -56,17 +63,18 @@ test("buildMemberInsights excludes future attendance from rolling windows", () =
     day14Start: new Date("2026-04-17T00:00:00Z"),
     day30Start: new Date("2026-04-01T00:00:00Z"),
     today,
+    attendanceUpperBound: tomorrow,
     dueSoonEnd: new Date("2026-05-08T00:00:00Z"),
   });
 
   assert.equal(members.length, 1);
-  assert.equal(members[0].attendanceHoursLast7Days, 2);
-  assert.equal(members[0].attendanceHoursLast14Days, 2);
-  assert.equal(members[0].attendanceHoursLast30Days, 2);
-  assert.equal(members[0].attendanceSessionsLast30Days, 1);
+  assert.equal(members[0].attendanceHoursLast7Days, 5);
+  assert.equal(members[0].attendanceHoursLast14Days, 5);
+  assert.equal(members[0].attendanceHoursLast30Days, 5);
+  assert.equal(members[0].attendanceSessionsLast30Days, 2);
 });
 
-test("buildRosterInsights excludes future attendance from timeline and recent attendance", () => {
+test("buildRosterInsights includes same-day timestamps and excludes future attendance", () => {
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
@@ -92,6 +100,12 @@ test("buildRosterInsights excludes future attendance from timeline and recent at
         totalHours: 2,
       },
       {
+        id: "attendance-today-timestamp",
+        memberId: "ava",
+        date: `${todayKey}T12:00:00Z`,
+        totalHours: 1.5,
+      },
+      {
         id: "attendance-future",
         memberId: "ava",
         date: tomorrowKey,
@@ -103,13 +117,13 @@ test("buildRosterInsights excludes future attendance from timeline and recent at
   assert.deepEqual(response.attendanceTimeline, [
     {
       date: todayKey,
-      totalHours: 2,
+      totalHours: 3.5,
       memberCount: 1,
     },
   ]);
   assert.deepEqual(
     response.recentAttendance.map((record) => record.id),
-    ["attendance-today"],
+    ["attendance-today-timestamp", "attendance-today"],
   );
 });
 
