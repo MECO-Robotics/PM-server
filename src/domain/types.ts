@@ -103,6 +103,23 @@ export type TaskBlockerType =
   | "external";
 export type TaskBlockerSeverity = "low" | "medium" | "high" | "critical";
 export type TaskBlockerStatus = "open" | "resolved";
+export type AuditActionOperation = "create" | "update" | "delete";
+
+export interface AuditAction {
+  id: string;
+  timestamp: string;
+  operation: AuditActionOperation;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  message: string;
+  changedFields: string[];
+  projectId: string | null;
+  taskId: string | null;
+  subsystemId: string | null;
+  actorMemberId: string | null;
+  memberIds: string[];
+}
 
 export interface Member {
   id: string;
@@ -653,4 +670,5 @@ export interface PlatformSnapshot {
   purchaseItems: PurchaseItem[];
   qaReviews: QaReview[];
   escalations: Escalation[];
+  actions?: AuditAction[];
 }
