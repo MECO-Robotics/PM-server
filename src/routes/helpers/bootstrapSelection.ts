@@ -515,7 +515,16 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     : snapshot.partDefinitions;
   const scopedActions = (snapshot.actions ?? [])
     .filter((action) => {
-      if (action.projectId && !activeProjectIds.has(action.projectId)) {
+      const actionProjectIds =
+        action.projectIds && action.projectIds.length > 0
+          ? action.projectIds
+          : action.projectId
+            ? [action.projectId]
+            : [];
+      if (
+        actionProjectIds.length > 0 &&
+        !actionProjectIds.some((projectId) => activeProjectIds.has(projectId))
+      ) {
         return false;
       }
 
