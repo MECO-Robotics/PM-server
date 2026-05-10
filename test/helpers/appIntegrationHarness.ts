@@ -31,6 +31,12 @@ const APP_ENV_KEYS = [
   "SLACK_CHANNEL_PROGRAMMING_ID",
   "SLACK_CHANNEL_SCOUTING_STRATEGY_ID",
   "SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID",
+  "ONSHAPE_BASE_URL",
+  "ONSHAPE_ACCESS_KEY",
+  "ONSHAPE_SECRET_KEY",
+  "ONSHAPE_OAUTH_TOKEN",
+  "ONSHAPE_CREDENTIAL_REFERENCE",
+  "CAD_STORE_DRIVER",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -81,6 +87,12 @@ function configureEnv() {
   process.env.SLACK_CHANNEL_PROGRAMMING_ID = "C02BLURKRED";
   process.env.SLACK_CHANNEL_SCOUTING_STRATEGY_ID = "C05SW57962E";
   process.env.SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID = "C088N9VC6H4";
+  process.env.ONSHAPE_BASE_URL = "https://cad.onshape.com";
+  delete process.env.ONSHAPE_ACCESS_KEY;
+  delete process.env.ONSHAPE_SECRET_KEY;
+  delete process.env.ONSHAPE_OAUTH_TOKEN;
+  delete process.env.ONSHAPE_CREDENTIAL_REFERENCE;
+  process.env.CAD_STORE_DRIVER = "runtime";
 }
 
 export async function withIntegrationApp(

@@ -170,3 +170,31 @@ test("slack config maps channel ids and alert usergroup handles", async () => {
     restoreEnv(saved);
   }
 });
+
+test("CAD persistence defaults to Prisma and allows runtime override", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "CAD_STORE_DRIVER",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    delete process.env.CAD_STORE_DRIVER;
+
+    const defaultConfig = await loadEnvModule(`cad-store-default-${Date.now()}`);
+    assert.equal(defaultConfig.cadPersistenceConfig.storeDriver, "prisma");
+
+    delete require.cache[require.resolve("../src/config/env.ts")];
+    process.env.CAD_STORE_DRIVER = "runtime";
+
+    const runtimeConfig = await loadEnvModule(`cad-store-runtime-${Date.now()}`);
+    assert.equal(runtimeConfig.cadPersistenceConfig.storeDriver, "runtime");
+  } finally {
+    restoreEnv(saved);
+  }
+});
