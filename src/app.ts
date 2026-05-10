@@ -3,11 +3,13 @@ import cors from "@fastify/cors";
 
 import { corsConfig, env } from "./config/env";
 import { resetStore } from "./data/store";
+import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
 
 export async function buildApp() {
   // Always start from the checked-in seed snapshot so deploys regenerate tutorial state.
   resetStore();
+  resetOnshapeRuntimeStore();
 
   const app = Fastify({
     logger: true,

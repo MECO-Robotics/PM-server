@@ -68,6 +68,11 @@ const envSchema = z.object({
   SLACK_CHANNEL_PROGRAMMING_ID: z.string().min(1).optional(),
   SLACK_CHANNEL_SCOUTING_STRATEGY_ID: z.string().min(1).optional(),
   SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID: z.string().min(1).optional(),
+  ONSHAPE_BASE_URL: z.string().min(1).default("https://cad.onshape.com"),
+  ONSHAPE_ACCESS_KEY: z.string().min(1).optional(),
+  ONSHAPE_SECRET_KEY: z.string().min(1).optional(),
+  ONSHAPE_OAUTH_TOKEN: z.string().min(1).optional(),
+  ONSHAPE_CREDENTIAL_REFERENCE: z.string().min(1).optional(),
 });
 
 export const env = envSchema.parse(process.env);
@@ -218,4 +223,16 @@ export const slackConfig = {
     scoutingStrategy: env.SLACK_CHANNEL_SCOUTING_STRATEGY_ID,
     transportationAttendance: env.SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID,
   },
+} as const;
+
+export const onshapeConfig = {
+  enabled: Boolean(
+    env.ONSHAPE_OAUTH_TOKEN ||
+      (env.ONSHAPE_ACCESS_KEY && env.ONSHAPE_SECRET_KEY),
+  ),
+  baseUrl: normalizeUrl(env.ONSHAPE_BASE_URL) ?? "https://cad.onshape.com",
+  accessKey: env.ONSHAPE_ACCESS_KEY,
+  secretKey: env.ONSHAPE_SECRET_KEY,
+  bearerToken: env.ONSHAPE_OAUTH_TOKEN,
+  credentialReference: env.ONSHAPE_CREDENTIAL_REFERENCE ?? null,
 } as const;
