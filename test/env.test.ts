@@ -254,3 +254,33 @@ test("STEP parser mode defaults to real parser auto mode and allows explicit pla
     restoreEnv(saved);
   }
 });
+
+test("production config refuses placeholder STEP parser mode", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "AUTH_JWT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_ALLOWED_HOSTED_DOMAIN",
+    "CAD_STEP_PARSER_MODE",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "https://app.example.com";
+    process.env.AUTH_JWT_SECRET = "a".repeat(32);
+    process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
+    process.env.GOOGLE_ALLOWED_HOSTED_DOMAIN = "mecorobotics.org";
+    process.env.CAD_STEP_PARSER_MODE = "placeholder";
+
+    await assert.rejects(
+      loadEnvModule(`cad-step-parser-production-placeholder-${Date.now()}`),
+      /Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder/,
+    );
+  } finally {
+    restoreEnv(saved);
+  }
+});

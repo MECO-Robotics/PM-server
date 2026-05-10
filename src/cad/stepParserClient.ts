@@ -86,7 +86,7 @@ function duplicateNameWarnings(
     }));
 }
 
-function finalizeResult(result: Omit<StepParseResult, "rawStats">): StepParseResult {
+function finalizeResult(result: Omit<StepParseResult, "rawStats"> & { rawStats?: Partial<StepParseResult["rawStats"]> }): StepParseResult {
   const duplicateNameCount =
     duplicateNameWarnings(result.assemblyNodes.map((node) => ({ name: node.name, sourceId: node.sourceId })), "", "", "ASSEMBLY_NODE").length +
     duplicateNameWarnings(result.partDefinitions.map((part) => ({ name: part.name, sourceId: part.sourceId })), "", "", "PART_DEFINITION").length;
@@ -150,6 +150,7 @@ function finalizeResult(result: Omit<StepParseResult, "rawStats">): StepParseRes
     ...result,
     warnings,
     rawStats: {
+      ...result.rawStats,
       assemblyCount: result.assemblyNodes.length,
       partDefinitionCount: result.partDefinitions.length,
       partInstanceCount: result.partInstances.length,
@@ -343,6 +344,7 @@ function createFlatStepResult(args: {
   productDefinitions: Map<string, StepProductDefinition>;
   products: Map<string, string>;
   warnings: NormalizedCadWarning[];
+  rawStats?: Partial<StepParseResult["rawStats"]>;
 }) {
   const assemblyNodes: NormalizedCadAssemblyNode[] = [];
   const partDefinitions: NormalizedCadPartDefinition[] = [];
@@ -421,6 +423,7 @@ function createFlatStepResult(args: {
     partDefinitions,
     partInstances: [],
     warnings: args.warnings,
+    rawStats: args.rawStats,
   });
 }
 
@@ -431,6 +434,14 @@ function parseStepTextAssemblyGraph(input: StepParserInput): StepParseResult {
   const productDefinitions = new Map<string, StepProductDefinition>();
   const warnings: NormalizedCadWarning[] = [];
   let partialReferenceCount = 0;
+  const baseRawStats = () => ({
+    entityCount: entities.length,
+    productCount: products.size,
+    productDefinitionFormationCount: formationToProductId.size,
+    productDefinitionCount: productDefinitions.size,
+    nextAssemblyUsageOccurrenceCount: assemblyUsages.length,
+    assemblyUsageCount: assemblyUsages.length,
+  });
 
   for (const entity of entities) {
     if (entity.type === "PRODUCT") {
@@ -506,7 +517,20 @@ function parseStepTextAssemblyGraph(input: StepParserInput): StepParseResult {
         }),
       );
     }
-    return createFlatStepResult({ productDefinitions, products, warnings });
+    return createFlatStepResult({
+      productDefinitions,
+      products,
+      warnings,
+      rawStats: {
+        ...baseRawStats(),
+        rootCount: productDefinitions.size > 0 || products.size > 0 ? 1 : 0,
+        rootNames: productDefinitions.size > 0
+          ? [[...productDefinitions.values()][0]?.name ?? "STEP import"]
+          : [[...products.values()][0] ?? "STEP import"],
+        topLevelAssemblyNames: [],
+        firstTenAssemblyNames: [],
+      },
+    });
   }
 
   const childrenByParent = new Map<string, StepAssemblyUsage[]>();
@@ -554,6 +578,11 @@ function parseStepTextAssemblyGraph(input: StepParserInput): StepParseResult {
       }),
     );
   }
+
+  const rootNames = roots.map((rootId) => productDefinitions.get(rootId)?.name ?? `Assembly ${rootId}`);
+  const topLevelAssemblyNames = roots.flatMap((rootId) =>
+    (childrenByParent.get(rootId) ?? []).map((edge) => occurrenceNameFor(edge, productDefinitions.get(edge.childProductDefinitionId))),
+  );
 
   const assemblyNodes: NormalizedCadAssemblyNode[] = [];
   const partDefinitionsBySourceId = new Map<string, NormalizedCadPartDefinition>();
@@ -698,6 +727,13 @@ function parseStepTextAssemblyGraph(input: StepParserInput): StepParseResult {
     partDefinitions: [...partDefinitionsBySourceId.values()],
     partInstances,
     warnings,
+    rawStats: {
+      ...baseRawStats(),
+      rootCount: roots.length,
+      rootNames,
+      topLevelAssemblyNames,
+      firstTenAssemblyNames: assemblyNodes.slice(0, 10).map((node) => node.name),
+    },
   });
 }
 
@@ -778,60 +814,64 @@ function parseJsonFixture(input: StepParserInput): StepParseResult | null {
 }
 
 function placeholderResult(): StepParseResult {
+  const rootName = "PLACEHOLDER PARSER RESULT - NOT REAL CAD";
+  const assemblyName = "PLACEHOLDER - DO NOT MAP";
+  const childAssemblyName = "PLACEHOLDER CHILD - DO NOT MAP";
+  const partName = "PLACEHOLDER PART - DO NOT MAP";
   return finalizeResult({
     parserVersion: "mock-step-parser-placeholder-1",
-    rootName: "ASM - Robot",
+    rootName,
     units: null,
     assemblyNodes: [
       {
         sourceId: "asm-root",
         parentSourceId: null,
-        name: "ASM - Robot",
-        instancePath: "/Robot",
+        name: assemblyName,
+        instancePath: `/${assemblyName}`,
         depth: 0,
         inferredType: "ROOT",
-        stableSignature: "asm:path:/Robot",
+        stableSignature: `asm:path:/${assemblyName}`,
         metadata: { placeholder: true },
       },
       {
-        sourceId: "asm-shooter",
+        sourceId: "asm-placeholder-child",
         parentSourceId: "asm-root",
-        name: "MECH - Shooter - Flywheel",
-        instancePath: "/Robot/MECH - Shooter - Flywheel",
+        name: childAssemblyName,
+        instancePath: `/${assemblyName}/${childAssemblyName}`,
         depth: 1,
         inferredType: "MECHANISM_CANDIDATE",
-        stableSignature: "asm:path:/Robot/MECH - Shooter - Flywheel",
+        stableSignature: `asm:path:/${assemblyName}/${childAssemblyName}`,
         metadata: { placeholder: true },
       },
     ],
     partDefinitions: [
       {
-        sourceId: "part-spacer",
-        name: "PRT - Shooter - Flywheel - Spacer",
-        partNumber: "SHR-001",
+        sourceId: "part-placeholder",
+        name: partName,
+        partNumber: null,
         material: null,
-        stableSignature: "part:number:SHR-001",
+        stableSignature: "part:name:placeholder-part-do-not-map",
         metadata: { placeholder: true },
       },
     ],
     partInstances: [
       {
-        sourceId: "inst-spacer-1",
-        partDefinitionSourceId: "part-spacer",
-        parentAssemblySourceId: "asm-shooter",
-        instancePath: "/Robot/MECH - Shooter - Flywheel/Spacer-1",
+        sourceId: "inst-placeholder-1",
+        partDefinitionSourceId: "part-placeholder",
+        parentAssemblySourceId: "asm-placeholder-child",
+        instancePath: `/${assemblyName}/${childAssemblyName}/${partName}`,
         quantity: 1,
-        stableSignature: "inst:path:/Robot/MECH - Shooter - Flywheel/Spacer-1",
+        stableSignature: `inst:path:/${assemblyName}/${childAssemblyName}/${partName}`,
         metadata: { placeholder: true },
       },
     ],
     warnings: [
       {
-        severity: "INFO",
+        severity: "ERROR",
         code: "step_parser_placeholder_used",
         title: "Placeholder STEP parser used",
         message:
-          "Mission Control used the MVP placeholder parser. A future Open CASCADE worker can replace this without changing the review workflow.",
+          "Placeholder parser output. This is not a real parse of the uploaded STEP file.",
         metadata: {},
       },
     ],
@@ -892,9 +932,5 @@ export function createStepParserClient(options?: { mode?: StepParserMode }): Ste
 }
 
 export function createMockStepParserClient(): StepParserClient {
-  return {
-    async parseStepFile(input) {
-      return parseJsonFixture(input) ?? placeholderResult();
-    },
-  };
+  return createJsonFixtureStepParserClient();
 }

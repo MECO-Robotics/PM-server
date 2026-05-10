@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { cadStepParserConfig, cadStepUploadConfig } from "../config/env";
+import { cadStepUploadConfig, resolveCadStepParserMode } from "../config/env";
 import { getCadStore } from "./cadStoreFactory";
 import { buildCadSnapshotDiff } from "./cadDiffService";
 import { CadImportError, runStepImport } from "./cadImportService";
@@ -170,9 +170,17 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
     }
     try {
       const payload = await readStepImportPayload(request);
+      let parserMode: ReturnType<typeof resolveCadStepParserMode>;
+      try {
+        parserMode = resolveCadStepParserMode();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new CadImportError(message, 500);
+      }
       const result = await runStepImport({
         store: getCadStore(),
-        parserClient: createStepParserClient({ mode: cadStepParserConfig.mode }),
+        parserClient: createStepParserClient({ mode: parserMode }),
+        parserMode,
         input: {
           fileText: payload.fileText,
           originalFilename: payload.fileName,
@@ -227,6 +235,8 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
     if (!item) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
     }
+    const importRun = await store.findImportRun(item.importRunId);
+    const rawSummaryJson = importRun?.rawSummaryJson ?? {};
     return {
       item,
       summary: {
@@ -235,6 +245,12 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
         partInstanceCount: (await store.listPartInstances(item.id)).length,
         mappingCount: (await store.listSnapshotMappings(item.id)).length,
         warningCount: (await store.listWarnings({ snapshotId: item.id })).length,
+        originalFilename: importRun?.originalFilename ?? null,
+        importRunCreatedAt: importRun?.createdAt ?? null,
+        configuredParserMode: rawSummaryJson.configuredParserMode ?? rawSummaryJson.parserMode ?? null,
+        actualParserVersion: rawSummaryJson.actualParserVersion ?? rawSummaryJson.parserVersion ?? importRun?.parserVersion ?? null,
+        parserUsedPlaceholder: rawSummaryJson.parserUsedPlaceholder === true,
+        rawStats: rawSummaryJson,
       },
     };
   });

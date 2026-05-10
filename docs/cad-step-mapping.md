@@ -31,9 +31,11 @@ This parser intentionally does not parse geometry, mass properties, or shape-lev
 Parser modes:
 
 - `CAD_STEP_PARSER_MODE=auto` is the default. JSON fixtures are accepted when the upload body starts as JSON; normal `.step` and `.stp` text uses the STEP assembly graph parser.
-- `CAD_STEP_PARSER_MODE=step_text` forces the STEP text assembly parser.
+- `CAD_STEP_PARSER_MODE=step_text` forces the STEP text assembly parser and is recommended for real STEP testing.
 - `CAD_STEP_PARSER_MODE=json_fixture` is for tests that feed normalized JSON fixtures.
-- `CAD_STEP_PARSER_MODE=placeholder` is an explicit development fallback only. It returns the hardcoded placeholder graph and emits `step_parser_placeholder_used`.
+- `CAD_STEP_PARSER_MODE=placeholder` is explicit test/demo mode only, never production. It returns visibly fake names such as `PLACEHOLDER PARSER RESULT - NOT REAL CAD`, emits an `ERROR` warning with `step_parser_placeholder_used`, and must not be treated as uploaded CAD evidence. Production startup refuses this mode.
+
+Upload responses and import run summaries include parser diagnostics: configured parser mode, actual parser version, placeholder-used flag, STEP entity counts, product counts, `NEXT_ASSEMBLY_USAGE_OCCURRENCE` counts, root names, top-level assembly names, and the first detected assembly names. If the STEP text parser cannot recover a graph, it returns the flat or failed parse result with warnings; it does not fall back to placeholder output.
 
 Do not parse large native CAD geometry inside the main request path.
 

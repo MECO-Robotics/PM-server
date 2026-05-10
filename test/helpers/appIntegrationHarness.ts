@@ -60,7 +60,7 @@ function restoreEnv(snapshot: AppEnvSnapshot) {
   }
 }
 
-function configureEnv() {
+function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>) {
   process.env.NODE_ENV = "development";
   process.env.DATABASE_URL =
     "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
@@ -97,6 +97,14 @@ function configureEnv() {
   process.env.CAD_STORE_DRIVER = "runtime";
   delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
   delete process.env.CAD_STEP_PARSER_MODE;
+
+  for (const [key, value] of Object.entries(overrides ?? {}) as Array<[AppEnvKey, string | undefined]>) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 }
 
 export async function withIntegrationApp(
@@ -104,11 +112,14 @@ export async function withIntegrationApp(
     app: FastifyInstance;
     resetLimits: typeof resetRequestLimits;
   }) => Promise<void>,
+  options?: {
+    env?: Partial<Record<AppEnvKey, string | undefined>>;
+  },
 ) {
   const envSnapshot = saveEnv();
 
   try {
-    configureEnv();
+    configureEnv(options?.env);
     resetStore();
 
     const { buildApp } = await import("../../src/app");

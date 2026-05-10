@@ -78,6 +78,8 @@ const envSchema = z.object({
   CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
 });
 
+const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
+
 export const env = envSchema.parse(process.env);
 
 const googleClientIds = parseGoogleClientIds(env.GOOGLE_CLIENT_ID);
@@ -179,6 +181,12 @@ function assertProductionSecurityConfig() {
       "Production deployments must set CORS_ORIGIN to one or more explicit origins.",
     );
   }
+
+  if (env.CAD_STEP_PARSER_MODE === "placeholder") {
+    throw new Error(
+      "Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder.",
+    );
+  }
 }
 
 assertProductionSecurityConfig();
@@ -251,3 +259,14 @@ export const cadStepUploadConfig = {
 export const cadStepParserConfig = {
   mode: env.CAD_STEP_PARSER_MODE,
 } as const;
+
+export function resolveCadStepParserMode() {
+  const requestedMode = process.env.CAD_STEP_PARSER_MODE;
+  if (cadStepParserModes.some((mode) => mode === requestedMode)) {
+    if (process.env.NODE_ENV === "production" && requestedMode === "placeholder") {
+      throw new Error("Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder.");
+    }
+    return requestedMode as (typeof cadStepParserModes)[number];
+  }
+  return cadStepParserConfig.mode;
+}

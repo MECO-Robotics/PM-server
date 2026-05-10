@@ -217,5 +217,15 @@ export interface StepParseResult {
     hadNames: boolean;
     hadHierarchy: boolean;
     duplicateNameCount: number;
+    entityCount?: number;
+    productCount?: number;
+    productDefinitionFormationCount?: number;
+    productDefinitionCount?: number;
+    nextAssemblyUsageOccurrenceCount?: number;
+    assemblyUsageCount?: number;
+    rootCount?: number;
+    rootNames?: string[];
+    topLevelAssemblyNames?: string[];
+    firstTenAssemblyNames?: string[];
   };
 }

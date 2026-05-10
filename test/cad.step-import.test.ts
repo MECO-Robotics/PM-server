@@ -76,6 +76,51 @@ function stepEntityFixture(options?: {
   return ["ISO-10303-21;", "DATA;", ...products, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
 }
 
+function uploadedClassStepFixture() {
+  const products = [
+    ["#1", "MAIN ASSEMBLY"],
+    ["#4", "Intake Cheese"],
+    ["#7", "Hopper Assembly <1>"],
+    ["#10", "Drivetrain Assembly <1>"],
+    ["#13", "Conveyer Assembly <1>"],
+    ["#16", "Detailed Assembly <1>"],
+    ["#19", "Shooter Main Assembly <1>"],
+    ["#22", "Intake Roller"],
+    ["#25", "Hopper Plate"],
+    ["#28", "Drive Rail"],
+    ["#31", "Conveyer Belt"],
+    ["#34", "Detail Bracket"],
+    ["#37", "Shooter Flywheel Assembly <1>"],
+    ["#40", "Part 2"],
+  ];
+  const definitions = products.flatMap(([productId, name], index) => {
+    const formationId = Number(productId.slice(1)) + 1;
+    const definitionId = Number(productId.slice(1)) + 2;
+    return [
+      `${productId}=PRODUCT('${name}','', '', (#900));`,
+      `#${formationId}=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',${productId},.NOT_KNOWN.);`,
+      `#${definitionId}=PRODUCT_DEFINITION('design','',#${formationId},#901);`,
+    ];
+  });
+  const edges = [
+    "#100=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO1','Intake Cheese','',#3,#6,$);",
+    "#101=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO2','Hopper Assembly <1>','',#3,#9,$);",
+    "#102=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO3','Drivetrain Assembly <1>','',#3,#12,$);",
+    "#103=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO4','Conveyer Assembly <1>','',#3,#15,$);",
+    "#104=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO5','Detailed Assembly <1>','',#3,#18,$);",
+    "#105=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO6','Shooter Main Assembly <1>','',#3,#21,$);",
+    "#106=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO7','Intake Roller <1>','',#6,#24,$);",
+    "#107=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO8','Hopper Plate <1>','',#9,#27,$);",
+    "#108=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO9','Drive Rail <1>','',#12,#30,$);",
+    "#109=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO10','Conveyer Belt <1>','',#15,#33,$);",
+    "#110=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO11','Detail Bracket <1>','',#18,#36,$);",
+    "#111=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO12','Shooter Flywheel Assembly <1>','',#21,#39,$);",
+    "#112=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO13','Part 2 <1>','',#39,#42,$);",
+    "#113=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO14','Part 2 <2>','',#39,#42,$);",
+  ];
+  return ["ISO-10303-21;", "DATA;", ...definitions, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
+}
+
 function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) {
   return JSON.stringify({
     rootName: "Robot master assembly",
@@ -151,15 +196,41 @@ async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").bu
   });
   assert.equal(response.statusCode, 201, response.body);
   return response.json() as {
-    importRun: { id: string; status: string; originalFilename: string };
+    importRun: { id: string; status: string; originalFilename: string; rawSummaryJson: Record<string, unknown> };
     snapshot: { id: string; status: string; previousSnapshotId: string | null };
     summary: {
       assemblyCount: number;
       partDefinitionCount: number;
       partInstanceCount: number;
       warningCount: number;
+      configuredParserMode?: string;
+      actualParserVersion?: string;
+      parserUsedPlaceholder?: boolean;
+      rawStats?: {
+        productCount?: number;
+        productDefinitionCount?: number;
+        assemblyUsageCount?: number;
+        rootCount?: number;
+        rootNames?: string[];
+        topLevelAssemblyNames?: string[];
+      };
     };
   };
+}
+
+function allParsedNames(parsed: {
+  assemblyNodes: Array<{ name: string }>;
+  partDefinitions: Array<{ name: string }>;
+}) {
+  return [...parsed.assemblyNodes.map((node) => node.name), ...parsed.partDefinitions.map((part) => part.name)];
+}
+
+function assertNoPlaceholderNames(names: string[], inputText = "") {
+  for (const placeholderName of ["ASM - Robot", "MECH - Shooter - Flywheel", "PRT - Shooter - Flywheel - Spacer"]) {
+    if (!inputText.includes(placeholderName)) {
+      assert.ok(!names.includes(placeholderName), `${placeholderName} must not appear unless uploaded input contains it`);
+    }
+  }
 }
 
 function multipartStepPayload(input: {
@@ -233,6 +304,35 @@ test("STEP text parser preserves multiple subsystem candidates and repeated part
   assert.notEqual(parsed.partInstances[0]?.sourceId, parsed.partInstances[1]?.sourceId);
 });
 
+test("STEP text parser extracts uploaded Onshape-style top-level assemblies and diagnostics", async () => {
+  const fileText = uploadedClassStepFixture();
+  const parsed = await createStepParserClient({ mode: "step_text" }).parseStepFile({
+    fileText,
+    originalFilename: "onshape-export.step",
+    importRunId: "import-test",
+  });
+
+  assert.equal(parsed.parserVersion, "step-text-assembly-parser-1");
+  assert.equal(parsed.rootName, "MAIN ASSEMBLY");
+  assert.ok(parsed.assemblyNodes.length > 6);
+  assert.ok(parsed.partInstances.length > 1);
+  assert.equal(parsed.rawStats.productCount, 14);
+  assert.equal(parsed.rawStats.productDefinitionCount, 14);
+  assert.equal(parsed.rawStats.assemblyUsageCount, 14);
+  assert.equal(parsed.rawStats.rootCount, 1);
+  assert.deepEqual(parsed.rawStats.rootNames, ["MAIN ASSEMBLY"]);
+  assert.deepEqual(parsed.rawStats.topLevelAssemblyNames, [
+    "Intake Cheese",
+    "Hopper Assembly <1>",
+    "Drivetrain Assembly <1>",
+    "Conveyer Assembly <1>",
+    "Detailed Assembly <1>",
+    "Shooter Main Assembly <1>",
+  ]);
+  assert.ok(!parsed.warnings.some((warning) => warning.code === "step_parser_placeholder_used"));
+  assertNoPlaceholderNames(allParsedNames(parsed), fileText);
+});
+
 test("STEP text parser warns on flattened or duplicate-name STEP text", async () => {
   const flat = await createStepParserClient().parseStepFile({
     fileText: stepEntityFixture({ flat: true }),
@@ -256,18 +356,30 @@ test("non-JSON STEP text does not use the hardcoded placeholder unless requested
     originalFilename: "robot.step",
     importRunId: "import-test",
   });
-  const names = [...parsed.assemblyNodes.map((node) => node.name), ...parsed.partDefinitions.map((part) => part.name)];
-  assert.ok(!names.includes("ASM - Robot"));
-  assert.ok(!names.includes("MECH - Shooter - Flywheel"));
-  assert.ok(!names.includes("PRT - Shooter - Flywheel - Spacer"));
+  assertNoPlaceholderNames(allParsedNames(parsed));
 
   const placeholder = await createPlaceholderStepParserClient().parseStepFile({
     fileText: "ISO-10303-21;",
     originalFilename: "placeholder.step",
     importRunId: "import-test",
   });
-  assert.equal(placeholder.assemblyNodes[0]?.name, "ASM - Robot");
-  assert.ok(placeholder.warnings.some((warning) => warning.code === "step_parser_placeholder_used"));
+  assert.equal(placeholder.rootName, "PLACEHOLDER PARSER RESULT - NOT REAL CAD");
+  assert.equal(placeholder.assemblyNodes[0]?.name, "PLACEHOLDER - DO NOT MAP");
+  assert.ok(
+    placeholder.warnings.some((warning) => warning.code === "step_parser_placeholder_used" && warning.severity === "ERROR"),
+  );
+});
+
+test("non-placeholder parser modes never emit placeholder names for STEP text", async () => {
+  for (const mode of ["auto", "step_text"] as const) {
+    const fileText = uploadedClassStepFixture();
+    const parsed = await createStepParserClient({ mode }).parseStepFile({
+      fileText,
+      originalFilename: `${mode}.step`,
+      importRunId: "import-test",
+    });
+    assertNoPlaceholderNames(allParsedNames(parsed), fileText);
+  }
 });
 
 test("STEP import creates a snapshot graph with mapping proposals and parser warnings", async () => {
@@ -282,6 +394,9 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
     assert.equal(result.summary.assemblyCount, 5);
     assert.equal(result.summary.partDefinitionCount, 3);
     assert.equal(result.summary.partInstanceCount, 3);
+    assert.equal(result.summary.configuredParserMode, "auto");
+    assert.equal(result.summary.actualParserVersion, "step-text-assembly-parser-1");
+    assert.equal(result.summary.parserUsedPlaceholder, false);
 
     const treeResponse = await app.inject({
       method: "GET",
@@ -316,6 +431,40 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
       ),
     );
   });
+});
+
+test("STEP import route honors explicit step_text mode and returns parser diagnostics", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(app, "onshape-export", uploadedClassStepFixture());
+    resetLimits();
+
+    assert.equal(result.summary.configuredParserMode, "step_text");
+    assert.equal(result.summary.actualParserVersion, "step-text-assembly-parser-1");
+    assert.equal(result.summary.parserUsedPlaceholder, false);
+    assert.equal(result.summary.rawStats?.productCount, 14);
+    assert.equal(result.summary.rawStats?.assemblyUsageCount, 14);
+    assert.equal(result.summary.rawStats?.rootCount, 1);
+    assert.deepEqual(result.summary.rawStats?.topLevelAssemblyNames, [
+      "Intake Cheese",
+      "Hopper Assembly <1>",
+      "Drivetrain Assembly <1>",
+      "Conveyer Assembly <1>",
+      "Detailed Assembly <1>",
+      "Shooter Main Assembly <1>",
+    ]);
+
+    const importRunResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/import-runs/${result.importRun.id}`,
+    });
+    assert.equal(importRunResponse.statusCode, 200);
+    const importRun = importRunResponse.json() as { item: { rawSummaryJson: Record<string, unknown> } };
+    assert.equal(importRun.item.rawSummaryJson.parserMode, "step_text");
+    assert.equal(importRun.item.rawSummaryJson.parserVersion, "step-text-assembly-parser-1");
+    assert.deepEqual(importRun.item.rawSummaryJson.rootNames, ["MAIN ASSEMBLY"]);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
 test("multipart STEP uploads accept files larger than the old 25 MiB cap", async () => {
