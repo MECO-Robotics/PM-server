@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { cadStepUploadConfig } from "../config/env";
+import { cadStepParserConfig, cadStepUploadConfig } from "../config/env";
 import { getCadStore } from "./cadStoreFactory";
 import { buildCadSnapshotDiff } from "./cadDiffService";
 import { CadImportError, runStepImport } from "./cadImportService";
@@ -14,7 +14,7 @@ import {
   cadMappingUpdateSchema,
   cadStepImportJsonSchema,
 } from "./cadRouteSchemas";
-import { createMockStepParserClient } from "./stepParserClient";
+import { createStepParserClient } from "./stepParserClient";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 
@@ -172,7 +172,7 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
       const payload = await readStepImportPayload(request);
       const result = await runStepImport({
         store: getCadStore(),
-        parserClient: createMockStepParserClient(),
+        parserClient: createStepParserClient({ mode: cadStepParserConfig.mode }),
         input: {
           fileText: payload.fileText,
           originalFilename: payload.fileName,

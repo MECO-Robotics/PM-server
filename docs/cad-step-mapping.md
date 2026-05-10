@@ -24,7 +24,18 @@ If a file is flattened or uses generic names, Mission Control imports what it ca
 
 ## Parser Boundary
 
-The MVP uses `StepParserClient` with a mock/local parser adapter for smoke flows. Real STEP parsing should be added behind the same interface, likely as a Python/Open CASCADE worker that emits normalized JSON. Do not parse large native CAD files inside the main request path.
+The MVP uses `StepParserClient` with a lightweight STEP text assembly parser by default. It reads the ISO-10303-21 text graph for `PRODUCT`, `PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE`, `PRODUCT_DEFINITION`, and `NEXT_ASSEMBLY_USAGE_OCCURRENCE` entities, then emits normalized assembly nodes, part definitions, and part instances.
+
+This parser intentionally does not parse geometry, mass properties, or shape-level diffs. A future Python/Open CASCADE worker can replace or supplement it behind the same interface.
+
+Parser modes:
+
+- `CAD_STEP_PARSER_MODE=auto` is the default. JSON fixtures are accepted when the upload body starts as JSON; normal `.step` and `.stp` text uses the STEP assembly graph parser.
+- `CAD_STEP_PARSER_MODE=step_text` forces the STEP text assembly parser.
+- `CAD_STEP_PARSER_MODE=json_fixture` is for tests that feed normalized JSON fixtures.
+- `CAD_STEP_PARSER_MODE=placeholder` is an explicit development fallback only. It returns the hardcoded placeholder graph and emits `step_parser_placeholder_used`.
+
+Do not parse large native CAD geometry inside the main request path.
 
 ## Persistence
 

@@ -226,3 +226,31 @@ test("STEP upload limit defaults above common CAD export sizes and allows overri
     restoreEnv(saved);
   }
 });
+
+test("STEP parser mode defaults to real parser auto mode and allows explicit placeholder mode", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "CAD_STEP_PARSER_MODE",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    delete process.env.CAD_STEP_PARSER_MODE;
+
+    const defaultConfig = await loadEnvModule(`cad-step-parser-default-${Date.now()}`);
+    assert.equal(defaultConfig.cadStepParserConfig.mode, "auto");
+
+    delete require.cache[require.resolve("../src/config/env.ts")];
+    process.env.CAD_STEP_PARSER_MODE = "placeholder";
+
+    const overrideConfig = await loadEnvModule(`cad-step-parser-placeholder-${Date.now()}`);
+    assert.equal(overrideConfig.cadStepParserConfig.mode, "placeholder");
+  } finally {
+    restoreEnv(saved);
+  }
+});

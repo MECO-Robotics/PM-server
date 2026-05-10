@@ -84,6 +84,22 @@ function unresolvedWarningCode(sourceKind: CadMappingSourceKind) {
   return sourceKind === "ASSEMBLY_NODE" ? "step_unmapped_assembly" : "step_unmapped_part";
 }
 
+function suggestedTargetKind(source: CadSourceRecord): CadMappingTargetKind {
+  if (source.kind === "ASSEMBLY_NODE") {
+    if (source.item.inferredType === "SUBSYSTEM_CANDIDATE") {
+      return "SUBSYSTEM";
+    }
+    if (source.item.inferredType === "MECHANISM_CANDIDATE") {
+      return "MECHANISM";
+    }
+    return "UNMAPPED";
+  }
+  if (source.kind === "PART_DEFINITION") {
+    return "PART_DEFINITION";
+  }
+  return "PART_INSTANCE";
+}
+
 async function addMappingWarning(args: {
   store: CadStore;
   snapshot: CadSnapshot;
@@ -168,7 +184,7 @@ export async function applyMappingRules(args: {
         mappingRuleId: null,
         sourceKind: source.kind,
         sourceId: source.item.id,
-        targetKind: "UNMAPPED",
+        targetKind: matches.length > 1 ? "UNMAPPED" : suggestedTargetKind(source),
         targetId: null,
         confidence: "LOW",
         status: "NEEDS_REVIEW",

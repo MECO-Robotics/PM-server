@@ -2,7 +2,79 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
+import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
+
+function stepEntityFixture(options?: {
+  multipleTopLevel?: boolean;
+  repeatedPart?: boolean;
+  flat?: boolean;
+  duplicateNames?: boolean;
+}) {
+  const products = [
+    "#1=PRODUCT('MAIN ASSEMBLY','', '', (#900));",
+    "#2=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#1,.NOT_KNOWN.);",
+    "#3=PRODUCT_DEFINITION('design','',#2,#901);",
+    "#4=PRODUCT('Shooter Assembly','', '', (#900));",
+    "#5=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#4,.NOT_KNOWN.);",
+    "#6=PRODUCT_DEFINITION('design','',#5,#901);",
+    "#7=PRODUCT('Flywheel Assembly','', '', (#900));",
+    "#8=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#7,.NOT_KNOWN.);",
+    "#9=PRODUCT_DEFINITION('design','',#8,#901);",
+    "#10=PRODUCT('Spacer','', '', (#900));",
+    "#11=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#10,.NOT_KNOWN.);",
+    "#12=PRODUCT_DEFINITION('design','',#11,#901);",
+  ];
+
+  if (options?.multipleTopLevel) {
+    products.push(
+      "#13=PRODUCT('Drivetrain Assembly <1>','', '', (#900));",
+      "#14=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#13,.NOT_KNOWN.);",
+      "#15=PRODUCT_DEFINITION('design','',#14,#901);",
+      "#16=PRODUCT('Conveyer Assembly <1>','', '', (#900));",
+      "#17=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#16,.NOT_KNOWN.);",
+      "#18=PRODUCT_DEFINITION('design','',#17,#901);",
+      "#22=PRODUCT('Wheel','', '', (#900));",
+      "#23=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#22,.NOT_KNOWN.);",
+      "#24=PRODUCT_DEFINITION('design','',#23,#901);",
+      "#25=PRODUCT('Belt','', '', (#900));",
+      "#26=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#25,.NOT_KNOWN.);",
+      "#27=PRODUCT_DEFINITION('design','',#26,#901);",
+    );
+  }
+
+  if (options?.duplicateNames) {
+    products.push(
+      "#19=PRODUCT('Spacer','', '', (#900));",
+      "#20=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('1','',#19,.NOT_KNOWN.);",
+      "#21=PRODUCT_DEFINITION('design','',#20,#901);",
+    );
+  }
+
+  const edges = options?.flat
+    ? []
+    : [
+        "#100=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO1','Shooter Assembly <1>','',#3,#6,$);",
+        "#101=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO2','Flywheel Assembly <1>','',#6,#9,$);",
+        "#102=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO3','Spacer <1>','',#9,#12,$);",
+        ...(options?.repeatedPart
+          ? ["#103=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO4','Spacer <2>','',#9,#12,$);"]
+          : []),
+        ...(options?.multipleTopLevel
+          ? [
+              "#104=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO5','Drivetrain Assembly <1>','',#3,#15,$);",
+              "#105=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO6','Conveyer Assembly <1>','',#3,#18,$);",
+              "#107=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO8','Wheel <1>','',#15,#24,$);",
+              "#108=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO9','Belt <1>','',#18,#27,$);",
+            ]
+          : []),
+        ...(options?.duplicateNames
+          ? ["#106=NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO7','Spacer duplicate','',#9,#21,$);"]
+          : []),
+      ];
+
+  return ["ISO-10303-21;", "DATA;", ...products, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
+}
 
 function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) {
   return JSON.stringify({
@@ -117,18 +189,99 @@ function multipartStepPayload(input: {
   return Buffer.concat(chunks);
 }
 
+test("STEP text parser extracts an Onshape-style assembly graph", async () => {
+  const parsed = await createStepParserClient().parseStepFile({
+    fileText: stepEntityFixture(),
+    originalFilename: "robot.step",
+    importRunId: "import-test",
+  });
+
+  assert.match(parsed.parserVersion, /^step-text-assembly-parser-/);
+  assert.equal(parsed.rootName, "MAIN ASSEMBLY");
+  assert.deepEqual(
+    parsed.assemblyNodes.map((node) => [node.name, node.inferredType, node.depth]),
+    [
+      ["MAIN ASSEMBLY", "ROOT", 0],
+      ["Shooter Assembly <1>", "SUBSYSTEM_CANDIDATE", 1],
+      ["Flywheel Assembly <1>", "MECHANISM_CANDIDATE", 2],
+    ],
+  );
+  assert.equal(parsed.partDefinitions.length, 1);
+  assert.equal(parsed.partDefinitions[0]?.name, "Spacer");
+  assert.equal(parsed.partInstances.length, 1);
+  assert.equal(parsed.partInstances[0]?.parentAssemblySourceId, "step-asm-occ:#101");
+});
+
+test("STEP text parser preserves multiple subsystem candidates and repeated part instances", async () => {
+  const parsed = await createStepParserClient().parseStepFile({
+    fileText: stepEntityFixture({ multipleTopLevel: true, repeatedPart: true }),
+    originalFilename: "robot.step",
+    importRunId: "import-test",
+  });
+
+  const subsystemNames = parsed.assemblyNodes
+    .filter((node) => node.inferredType === "SUBSYSTEM_CANDIDATE")
+    .map((node) => node.name)
+    .sort();
+  assert.deepEqual(subsystemNames, [
+    "Conveyer Assembly <1>",
+    "Drivetrain Assembly <1>",
+    "Shooter Assembly <1>",
+  ]);
+  assert.equal(parsed.partDefinitions.length, 3);
+  assert.equal(parsed.partInstances.length, 4);
+  assert.notEqual(parsed.partInstances[0]?.sourceId, parsed.partInstances[1]?.sourceId);
+});
+
+test("STEP text parser warns on flattened or duplicate-name STEP text", async () => {
+  const flat = await createStepParserClient().parseStepFile({
+    fileText: stepEntityFixture({ flat: true }),
+    originalFilename: "flat.step",
+    importRunId: "import-test",
+  });
+  assert.ok(flat.warnings.some((warning) => warning.code === "step_hierarchy_missing"));
+  assert.ok(flat.warnings.some((warning) => warning.code === "step_flattened_file"));
+
+  const duplicateNames = await createStepParserClient().parseStepFile({
+    fileText: stepEntityFixture({ duplicateNames: true }),
+    originalFilename: "duplicate.step",
+    importRunId: "import-test",
+  });
+  assert.ok(duplicateNames.warnings.some((warning) => warning.code === "step_duplicate_part_name"));
+});
+
+test("non-JSON STEP text does not use the hardcoded placeholder unless requested", async () => {
+  const parsed = await createStepParserClient().parseStepFile({
+    fileText: "ISO-10303-21;\nDATA;\n#1=PRODUCT('MAIN ASSEMBLY','', '', (#900));\nENDSEC;",
+    originalFilename: "robot.step",
+    importRunId: "import-test",
+  });
+  const names = [...parsed.assemblyNodes.map((node) => node.name), ...parsed.partDefinitions.map((part) => part.name)];
+  assert.ok(!names.includes("ASM - Robot"));
+  assert.ok(!names.includes("MECH - Shooter - Flywheel"));
+  assert.ok(!names.includes("PRT - Shooter - Flywheel - Spacer"));
+
+  const placeholder = await createPlaceholderStepParserClient().parseStepFile({
+    fileText: "ISO-10303-21;",
+    originalFilename: "placeholder.step",
+    importRunId: "import-test",
+  });
+  assert.equal(placeholder.assemblyNodes[0]?.name, "ASM - Robot");
+  assert.ok(placeholder.warnings.some((warning) => warning.code === "step_parser_placeholder_used"));
+});
+
 test("STEP import creates a snapshot graph with mapping proposals and parser warnings", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
 
-    const result = await uploadStep(app, "robot-master", "ISO-10303-21; ENDSEC;");
+    const result = await uploadStep(app, "robot-master", stepEntityFixture({ multipleTopLevel: true }));
     resetLimits();
     assert.equal(result.importRun.status, "MAPPING_REVIEW");
     assert.equal(result.importRun.originalFilename, "robot-master.step");
     assert.equal(result.snapshot.status, "mapping_review");
-    assert.equal(result.summary.assemblyCount, 2);
-    assert.equal(result.summary.partDefinitionCount, 1);
-    assert.equal(result.summary.partInstanceCount, 1);
+    assert.equal(result.summary.assemblyCount, 5);
+    assert.equal(result.summary.partDefinitionCount, 3);
+    assert.equal(result.summary.partInstanceCount, 3);
 
     const treeResponse = await app.inject({
       method: "GET",
@@ -137,8 +290,8 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
     assert.equal(treeResponse.statusCode, 200);
     resetLimits();
     const tree = treeResponse.json() as { rootNodes: Array<{ name: string; children: unknown[] }> };
-    assert.equal(tree.rootNodes[0]?.name, "ASM - Robot");
-    assert.equal(tree.rootNodes[0]?.children.length, 1);
+    assert.equal(tree.rootNodes[0]?.name, "MAIN ASSEMBLY");
+    assert.equal(tree.rootNodes[0]?.children.length, 3);
 
     const mappingsResponse = await app.inject({
       method: "GET",
@@ -146,8 +299,11 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
     });
     assert.equal(mappingsResponse.statusCode, 200);
     resetLimits();
-    const mappings = mappingsResponse.json() as { items: Array<{ targetKind: string; status: string }> };
+    const mappings = mappingsResponse.json() as { items: Array<{ sourceName: string; targetKind: string; status: string }> };
     assert.ok(mappings.items.some((mapping) => mapping.targetKind === "UNMAPPED" && mapping.status === "NEEDS_REVIEW"));
+    assert.equal(mappings.items.find((mapping) => mapping.sourceName === "Shooter Assembly <1>")?.targetKind, "SUBSYSTEM");
+    assert.equal(mappings.items.find((mapping) => mapping.sourceName === "Flywheel Assembly <1>")?.targetKind, "MECHANISM");
+    assert.equal(mappings.items.find((mapping) => mapping.sourceName === "Spacer")?.targetKind, "PART_DEFINITION");
 
     const warningsResponse = await app.inject({
       method: "GET",
@@ -156,7 +312,7 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
     assert.equal(warningsResponse.statusCode, 200);
     assert.ok(
       (warningsResponse.json() as { warnings: Array<{ code: string }> }).warnings.some(
-        (warning) => warning.code === "step_parser_placeholder_used",
+        (warning) => warning.code === "step_unknown_units",
       ),
     );
   });

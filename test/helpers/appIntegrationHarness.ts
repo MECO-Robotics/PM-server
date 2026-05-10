@@ -38,6 +38,7 @@ const APP_ENV_KEYS = [
   "ONSHAPE_CREDENTIAL_REFERENCE",
   "CAD_STORE_DRIVER",
   "CAD_STEP_UPLOAD_MAX_BYTES",
+  "CAD_STEP_PARSER_MODE",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -95,6 +96,7 @@ function configureEnv() {
   delete process.env.ONSHAPE_CREDENTIAL_REFERENCE;
   process.env.CAD_STORE_DRIVER = "runtime";
   delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
+  delete process.env.CAD_STEP_PARSER_MODE;
 }
 
 export async function withIntegrationApp(
