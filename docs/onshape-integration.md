@@ -7,11 +7,28 @@ Mission Control treats Onshape as the CAD source of truth and stores local, audi
 Configure credentials on the platform backend only. Do not put Onshape secrets in frontend environment files.
 
 - `ONSHAPE_BASE_URL`: optional, defaults to `https://cad.onshape.com`.
-- `ONSHAPE_ACCESS_KEY` and `ONSHAPE_SECRET_KEY`: MVP API-key mode.
-- `ONSHAPE_OAUTH_TOKEN`: placeholder for OAuth-ready call sites.
+- `ONSHAPE_OAUTH_CLIENT_ID`: Onshape OAuth application client ID.
+- `ONSHAPE_OAUTH_CLIENT_SECRET`: Onshape OAuth application client secret. Backend only.
+- `ONSHAPE_OAUTH_REDIRECT_URI`: callback URL registered in Onshape, usually `/api/onshape/oauth/callback`.
+- `ONSHAPE_OAUTH_AUTHORIZATION_URL`: optional, defaults to `https://oauth.onshape.com/oauth/authorize`.
+- `ONSHAPE_OAUTH_TOKEN_URL`: optional, defaults to `https://oauth.onshape.com/oauth/token`.
+- `ONSHAPE_OAUTH_SCOPES`: optional comma-separated scopes, defaults to `OAuth2Read`.
+- `ONSHAPE_OAUTH_ACCESS_TOKEN`, `ONSHAPE_OAUTH_REFRESH_TOKEN`, `ONSHAPE_OAUTH_TOKEN_EXPIRES_AT`: optional bootstrap token values. Prefer runtime OAuth connection or a secret manager reference.
 - `ONSHAPE_CREDENTIAL_REFERENCE`: optional reference name for secret-manager-backed credentials.
 
 Raw secret values are not returned by the API and should not be logged. Request errors are redacted before they are stored.
+
+## OAuth2 Flow
+
+Mission Control uses OAuth2 authorization-code auth for Onshape API calls. API keys are no longer the primary integration path.
+
+1. Configure the backend OAuth variables above.
+2. In the CAD / Onshape panel, use the OAuth connect action to request an authorization URL.
+3. Onshape redirects back to `/api/onshape/oauth/callback` with `code` and `state`.
+4. The backend exchanges the code for access/refresh tokens and stores them in the backend runtime credential cache.
+5. Sync actions use bearer tokens only from backend state/env and refresh tokens when they are near expiry.
+
+The frontend never receives the client secret, access token, or refresh token.
 
 ## Linking URLs
 

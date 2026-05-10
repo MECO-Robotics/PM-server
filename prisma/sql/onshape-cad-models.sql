@@ -9,7 +9,7 @@ CREATE TYPE "OnshapePlanType" AS ENUM ('EDUCATION', 'FREE', 'STANDARD', 'PROFESS
 CREATE TABLE "OnshapeConnection" (
   "id" TEXT PRIMARY KEY,
   "organizationId" TEXT,
-  "authMode" "OnshapeAuthMode" NOT NULL DEFAULT 'API_KEY',
+  "authMode" "OnshapeAuthMode" NOT NULL DEFAULT 'OAUTH',
   "credentialReference" TEXT,
   "baseUrl" TEXT NOT NULL DEFAULT 'https://cad.onshape.com',
   "disabledAt" TIMESTAMP(3),

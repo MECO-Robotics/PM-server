@@ -5,6 +5,12 @@ import { onshapeConfig } from "../config/env";
 import { getMembers } from "../data/store";
 import { getOnshapeRuntimeStore } from "./cadStore";
 import { runCadImport } from "./cadImporter";
+import {
+  buildOnshapeOAuthAuthorizationUrl,
+  exchangeOnshapeOAuthCode,
+  isOnshapeOAuthClientConfigured,
+  refreshOnshapeOAuthToken,
+} from "./onshapeOAuth";
 import { createConfiguredOnshapeCadClient } from "./onshapeClientFactory";
 import {
   onshapeDocumentRefSchema,
@@ -59,16 +65,41 @@ function requireDeepReleasePermission(request: FastifyRequest, reply: FastifyRep
   return false;
 }
 
+function getOAuthConfig() {
+  return {
+    clientId: onshapeConfig.oauthClientId,
+    clientSecret: onshapeConfig.oauthClientSecret,
+    redirectUri: onshapeConfig.oauthRedirectUri,
+    authorizationUrl: onshapeConfig.oauthAuthorizationUrl,
+    tokenUrl: onshapeConfig.oauthTokenUrl,
+    scopes: onshapeConfig.oauthScopes,
+  };
+}
+
+function getOAuthStatus(store: ReturnType<typeof getOnshapeRuntimeStore>) {
+  const tokenSet = store.getOAuthTokenSet();
+  const envConnected = Boolean(onshapeConfig.oauthAccessToken || onshapeConfig.oauthRefreshToken);
+  return {
+    clientConfigured: isOnshapeOAuthClientConfigured(getOAuthConfig()),
+    connected: Boolean(tokenSet || envConnected),
+    authorizationUrlAvailable: isOnshapeOAuthClientConfigured(getOAuthConfig()),
+    scopes: onshapeConfig.oauthScopes,
+    tokenExpiresAt: tokenSet?.expiresAt ?? onshapeConfig.oauthTokenExpiresAt ?? null,
+    credentialSource: tokenSet ? "runtime" : (envConnected ? "env" : "none"),
+  };
+}
+
 function getOverview() {
   const store = getOnshapeRuntimeStore();
   const snapshots = store.listSnapshots();
   const latestSnapshot = snapshots[0] ?? null;
   return {
     connection: {
-      authMode: onshapeConfig.bearerToken ? "oauth" : "api_key",
+      authMode: "oauth",
       baseUrl: onshapeConfig.baseUrl,
       configured: onshapeConfig.enabled,
       credentialReference: onshapeConfig.credentialReference,
+      oauth: getOAuthStatus(store),
       lastError: null,
     },
     documentRefs: store.listDocumentRefs(),
@@ -90,6 +121,67 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     }
 
     return getOverview();
+  });
+
+  app.post("/api/onshape/oauth/authorization-url", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+
+    const config = getOAuthConfig();
+    if (!isOnshapeOAuthClientConfigured(config)) {
+      return reply.code(409).send({
+        message: "Onshape OAuth client ID, client secret, and redirect URI are not configured.",
+      });
+    }
+
+    const { state } = getOnshapeRuntimeStore().createOAuthState();
+    return {
+      authorizationUrl: buildOnshapeOAuthAuthorizationUrl({
+        authorizationUrl: config.authorizationUrl,
+        clientId: config.clientId!,
+        redirectUri: config.redirectUri!,
+        scopes: config.scopes,
+        state,
+      }).toString(),
+      state,
+    };
+  });
+
+  app.get("/api/onshape/oauth/callback", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const code = typeof query.code === "string" ? query.code : null;
+    const state = typeof query.state === "string" ? query.state : null;
+    if (!code || !state) {
+      return reply.code(400).send({ message: "Onshape OAuth callback requires code and state." });
+    }
+
+    const store = getOnshapeRuntimeStore();
+    if (!store.consumeOAuthState(state)) {
+      return reply.code(400).send({ message: "Onshape OAuth state is invalid or expired." });
+    }
+
+    const tokenSet = await exchangeOnshapeOAuthCode({ config: getOAuthConfig(), code });
+    store.setOAuthTokenSet(tokenSet);
+    return reply.type("text/html").send(
+      "<!doctype html><title>Onshape connected</title><p>Onshape OAuth connection complete. You can close this tab and return to Mission Control.</p>",
+    );
+  });
+
+  app.post("/api/onshape/oauth/refresh", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+
+    const store = getOnshapeRuntimeStore();
+    const refreshToken = store.getOAuthTokenSet()?.refreshToken ?? onshapeConfig.oauthRefreshToken;
+    if (!refreshToken) {
+      return reply.code(409).send({ message: "No Onshape OAuth refresh token is available." });
+    }
+
+    const tokenSet = await refreshOnshapeOAuthToken({ config: getOAuthConfig(), refreshToken });
+    store.setOAuthTokenSet(tokenSet);
+    return { item: { connected: true, tokenExpiresAt: tokenSet.expiresAt } };
   });
 
   app.get("/api/onshape/document-refs", async (request, reply) => {
@@ -183,7 +275,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
 
     const client = parsedBody.data.syncLevel === "link_only"
       ? createNoopClient()
-      : createConfiguredOnshapeCadClient(store, onshapeConfig);
+      : await createConfiguredOnshapeCadClient(store, onshapeConfig);
     const result = await runCadImport({
       store,
       documentRefId: documentRef.id,

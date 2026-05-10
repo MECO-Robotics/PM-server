@@ -560,7 +560,7 @@ model RiskTask {
 model OnshapeConnection {
   id                  String          @id @default(cuid())
   organizationId      String?
-  authMode            OnshapeAuthMode @default(API_KEY)
+  authMode            OnshapeAuthMode @default(OAUTH)
   credentialReference String?
   baseUrl             String          @default("https://cad.onshape.com")
   disabledAt          DateTime?

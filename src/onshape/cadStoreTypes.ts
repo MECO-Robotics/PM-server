@@ -9,6 +9,7 @@
   OnshapeApiCacheEntry,
   OnshapeApiRequestLog,
   OnshapeDocumentRef,
+  OnshapeOAuthTokenSet,
   OnshapeReference,
   OnshapeUrlParseResult,
   SyncLevel,
@@ -25,6 +26,8 @@ export interface OnshapeRuntimeState {
   partInstances: CadPartInstance[];
   warnings: CadImportWarning[];
   budget: OnshapeApiBudget;
+  oauthTokenSet: OnshapeOAuthTokenSet | null;
+  oauthStates: Array<{ state: string; createdAt: string }>;
 }
 
 export interface OnshapeRuntimeStore {
@@ -115,5 +118,9 @@ export interface OnshapeRuntimeStore {
   listWarnings(filter?: { importRunId?: string; snapshotId?: string }): CadImportWarning[];
   getBudget(): OnshapeApiBudget;
   recordApiCall(count: number, rateLimitRemaining?: number | null): OnshapeApiBudget;
+  createOAuthState(): { state: string; createdAt: string };
+  consumeOAuthState(state: string): boolean;
+  getOAuthTokenSet(): OnshapeOAuthTokenSet | null;
+  setOAuthTokenSet(tokenSet: OnshapeOAuthTokenSet | null): OnshapeOAuthTokenSet | null;
   reset(): void;
 }

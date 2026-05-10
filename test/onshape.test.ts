@@ -12,6 +12,11 @@ import {
   OnshapeCallBudgetExceededError,
   OnshapeRateLimitError,
 } from "../src/onshape/onshapeApiClient";
+import {
+  buildOnshapeOAuthAuthorizationUrl,
+  normalizeOnshapeOAuthTokenResponse,
+  shouldRefreshOnshapeOAuthToken,
+} from "../src/onshape/onshapeOAuth";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "../src/onshape/onshapeSyncPolicy";
 import type {
@@ -157,6 +162,46 @@ test("builds stable cache keys with immutable version identity", () => {
     }),
     "GET:/api/documents/d/0123456789abcdef01234567:d/0123456789abcdef01234567:v/222222222222222222222222:e/111111111111111111111111:metadata",
   );
+});
+
+test("builds Onshape OAuth2 authorization URLs without exposing client secrets", () => {
+  const url = buildOnshapeOAuthAuthorizationUrl({
+    authorizationUrl: "https://oauth.onshape.com/oauth/authorize",
+    clientId: "client-id",
+    redirectUri: "https://mission.test/api/onshape/oauth/callback",
+    scopes: ["OAuth2Read", "OAuth2Write"],
+    state: "state-123",
+  });
+
+  assert.equal(url.origin, "https://oauth.onshape.com");
+  assert.equal(url.pathname, "/oauth/authorize");
+  assert.equal(url.searchParams.get("response_type"), "code");
+  assert.equal(url.searchParams.get("client_id"), "client-id");
+  assert.equal(url.searchParams.get("redirect_uri"), "https://mission.test/api/onshape/oauth/callback");
+  assert.equal(url.searchParams.get("scope"), "OAuth2Read OAuth2Write");
+  assert.equal(url.searchParams.get("state"), "state-123");
+  assert.equal(url.toString().includes("secret"), false);
+});
+
+test("normalizes Onshape OAuth2 token responses and refresh timing", () => {
+  const tokenSet = normalizeOnshapeOAuthTokenResponse({
+    json: {
+      access_token: "access-token",
+      refresh_token: "refresh-token",
+      expires_in: 3600,
+      token_type: "Bearer",
+      scope: "OAuth2Read",
+    },
+    receivedAtMs: 1_000,
+  });
+
+  assert.equal(tokenSet.accessToken, "access-token");
+  assert.equal(tokenSet.refreshToken, "refresh-token");
+  assert.equal(tokenSet.tokenType, "Bearer");
+  assert.equal(tokenSet.scope, "OAuth2Read");
+  assert.equal(tokenSet.expiresAt, new Date(3_601_000).toISOString());
+  assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_540_000), false);
+  assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_550_000), true);
 });
 
 test("serves immutable cached responses without spending calls", async () => {
