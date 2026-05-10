@@ -32,6 +32,10 @@ Generic CAD import records are Prisma-backed by default through `CAD_STORE_DRIVE
 
 Snapshots are historical evidence. Do not rewrite old snapshots when mappings change. Use snapshot mappings for one-off decisions and create/supersede mapping rules for future-import behavior.
 
+## Upload Size
+
+STEP uploads default to a 250 MiB server-side limit. Deployments can override this with `CAD_STEP_UPLOAD_MAX_BYTES` when teams need a smaller or larger cap.
+
 ## Current Limits
 
 - No browser geometry viewer.

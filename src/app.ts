@@ -4,7 +4,7 @@ import multipart from "@fastify/multipart";
 
 import { resetCadRuntimeStore } from "./cad/cadStore";
 import { disconnectCadStore } from "./cad/cadStoreFactory";
-import { corsConfig, env } from "./config/env";
+import { cadStepUploadConfig, corsConfig, env } from "./config/env";
 import { resetStore } from "./data/store";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
@@ -25,7 +25,7 @@ export async function buildApp() {
   });
   await app.register(multipart, {
     limits: {
-      fileSize: 25 * 1024 * 1024,
+      fileSize: cadStepUploadConfig.maxBytes,
       files: 1,
     },
   });

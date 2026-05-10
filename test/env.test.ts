@@ -198,3 +198,31 @@ test("CAD persistence defaults to Prisma and allows runtime override", async () 
     restoreEnv(saved);
   }
 });
+
+test("STEP upload limit defaults above common CAD export sizes and allows override", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "CAD_STEP_UPLOAD_MAX_BYTES",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
+
+    const defaultConfig = await loadEnvModule(`cad-step-upload-default-${Date.now()}`);
+    assert.equal(defaultConfig.cadStepUploadConfig.maxBytes, 250 * 1024 * 1024);
+
+    delete require.cache[require.resolve("../src/config/env.ts")];
+    process.env.CAD_STEP_UPLOAD_MAX_BYTES = String(64 * 1024 * 1024);
+
+    const overrideConfig = await loadEnvModule(`cad-step-upload-override-${Date.now()}`);
+    assert.equal(overrideConfig.cadStepUploadConfig.maxBytes, 64 * 1024 * 1024);
+  } finally {
+    restoreEnv(saved);
+  }
+});

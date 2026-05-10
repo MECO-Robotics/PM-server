@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { cadStepUploadConfig } from "../config/env";
 import { getCadStore } from "./cadStoreFactory";
 import { buildCadSnapshotDiff } from "./cadDiffService";
 import { CadImportError, runStepImport } from "./cadImportService";
@@ -17,7 +18,21 @@ import { createMockStepParserClient } from "./stepParserClient";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 
-const maxStepUploadBytes = 25 * 1024 * 1024;
+const maxStepUploadBytes = cadStepUploadConfig.maxBytes;
+
+function formatUploadLimit(bytes: number) {
+  const mib = bytes / (1024 * 1024);
+  return `${Number.isInteger(mib) ? mib : mib.toFixed(1)} MiB`;
+}
+
+function isMultipartFileTooLargeError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "FST_REQ_FILE_TOO_LARGE"
+  );
+}
 
 function readListQuery(query: unknown) {
   const parsed = cadListQuerySchema.safeParse(query ?? {});
@@ -41,24 +56,34 @@ async function readStepImportPayload(request: FastifyRequest) {
       toBuffer: () => Promise<Buffer>;
     } | undefined>;
   };
-  const part = await multipartRequest.file({ limits: { fileSize: maxStepUploadBytes } });
-  if (!part) {
-    throw new CadImportError("STEP import requires a file.");
+  try {
+    const part = await multipartRequest.file({ limits: { fileSize: maxStepUploadBytes } });
+    if (!part) {
+      throw new CadImportError("STEP import requires a file.");
+    }
+    const buffer = await part.toBuffer();
+    const fields = part.fields as Record<string, { value?: unknown } | undefined>;
+    const fieldValue = (name: string) => {
+      const value = fields[name]?.value;
+      return typeof value === "string" ? value : undefined;
+    };
+    return {
+      fileName: part.filename,
+      fileText: buffer.toString("utf8"),
+      label: fieldValue("label"),
+      projectId: fieldValue("projectId"),
+      seasonId: fieldValue("seasonId"),
+      requestedBy: fieldValue("requestedBy"),
+    };
+  } catch (error) {
+    if (isMultipartFileTooLargeError(error)) {
+      throw new CadImportError(
+        `STEP file is larger than the ${formatUploadLimit(maxStepUploadBytes)} upload limit. Export a smaller assembly or ask an admin to raise CAD_STEP_UPLOAD_MAX_BYTES.`,
+        413,
+      );
+    }
+    throw error;
   }
-  const buffer = await part.toBuffer();
-  const fields = part.fields as Record<string, { value?: unknown } | undefined>;
-  const fieldValue = (name: string) => {
-    const value = fields[name]?.value;
-    return typeof value === "string" ? value : undefined;
-  };
-  return {
-    fileName: part.filename,
-    fileText: buffer.toString("utf8"),
-    label: fieldValue("label"),
-    projectId: fieldValue("projectId"),
-    seasonId: fieldValue("seasonId"),
-    requestedBy: fieldValue("requestedBy"),
-  };
 }
 
 function findSourceName(args: {

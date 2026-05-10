@@ -90,6 +90,33 @@ async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").bu
   };
 }
 
+function multipartStepPayload(input: {
+  boundary: string;
+  fileName: string;
+  label: string;
+  fileBuffer: Buffer;
+}) {
+  const chunks: Buffer[] = [];
+  const append = (value: string) => chunks.push(Buffer.from(value, "utf8"));
+
+  append(`--${input.boundary}\r\n`);
+  append(`Content-Disposition: form-data; name="label"\r\n\r\n`);
+  append(`${input.label}\r\n`);
+  append(`--${input.boundary}\r\n`);
+  append(`Content-Disposition: form-data; name="projectId"\r\n\r\n`);
+  append("robot-2026\r\n");
+  append(`--${input.boundary}\r\n`);
+  append(`Content-Disposition: form-data; name="seasonId"\r\n\r\n`);
+  append("season-2026\r\n");
+  append(`--${input.boundary}\r\n`);
+  append(`Content-Disposition: form-data; name="file"; filename="${input.fileName}"\r\n`);
+  append("Content-Type: model/step\r\n\r\n");
+  chunks.push(input.fileBuffer);
+  append(`\r\n--${input.boundary}--\r\n`);
+
+  return Buffer.concat(chunks);
+}
+
 test("STEP import creates a snapshot graph with mapping proposals and parser warnings", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -132,6 +159,34 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
         (warning) => warning.code === "step_parser_placeholder_used",
       ),
     );
+  });
+});
+
+test("multipart STEP uploads accept files larger than the old 25 MiB cap", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const boundary = "meco-step-upload-boundary";
+    const body = multipartStepPayload({
+      boundary,
+      fileName: "large-master.step",
+      label: "large-master",
+      fileBuffer: Buffer.alloc((25 * 1024 * 1024) + 1024, " "),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      payload: body,
+    });
+
+    assert.equal(response.statusCode, 201, response.body);
+    resetLimits();
+    assert.equal(response.json().importRun.originalFilename, "large-master.step");
   });
 });
 

@@ -74,6 +74,7 @@ const envSchema = z.object({
   ONSHAPE_OAUTH_TOKEN: z.string().min(1).optional(),
   ONSHAPE_CREDENTIAL_REFERENCE: z.string().min(1).optional(),
   CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
+  CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(250 * 1024 * 1024),
 });
 
 export const env = envSchema.parse(process.env);
@@ -240,4 +241,8 @@ export const onshapeConfig = {
 
 export const cadPersistenceConfig = {
   storeDriver: env.CAD_STORE_DRIVER,
+} as const;
+
+export const cadStepUploadConfig = {
+  maxBytes: env.CAD_STEP_UPLOAD_MAX_BYTES,
 } as const;
