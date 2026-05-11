@@ -7,6 +7,7 @@ export const cadStepImportJsonSchema = z.object({
   projectId: z.string().trim().min(1).nullable().optional(),
   seasonId: z.string().trim().min(1).nullable().optional(),
   requestedBy: z.string().trim().min(1).nullable().optional(),
+  allowPlaceholder: z.boolean().optional(),
 });
 
 export const cadListQuerySchema = z.object({

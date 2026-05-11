@@ -3,7 +3,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { cadStepUploadConfig, resolveCadStepParserMode } from "../config/env";
 import { getCadStore } from "./cadStoreFactory";
 import { buildCadSnapshotDiff } from "./cadDiffService";
-import { CadImportError, runStepImport } from "./cadImportService";
+import {
+  buildStepParserDiagnostics,
+  CadImportError,
+  runStepImport,
+  stepParserUsedPlaceholder,
+} from "./cadImportService";
 import { applyMappingUpdates } from "./cadMappingEngine";
 import type { CadStore } from "./cadStoreTypes";
 import {
@@ -74,6 +79,7 @@ async function readStepImportPayload(request: FastifyRequest) {
       projectId: fieldValue("projectId"),
       seasonId: fieldValue("seasonId"),
       requestedBy: fieldValue("requestedBy"),
+      allowPlaceholder: fieldValue("allowPlaceholder") === "true",
     };
   } catch (error) {
     if (isMultipartFileTooLargeError(error)) {
@@ -164,6 +170,43 @@ async function unresolvedMappings(store: CadStore, snapshotId: string) {
 }
 
 export async function registerCadRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
+  app.post("/api/cad/step-imports/debug-parse", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+    try {
+      const payload = await readStepImportPayload(request);
+      const parserMode = resolveCadStepParserMode();
+      const parsed = await createStepParserClient({ mode: parserMode }).parseStepFile({
+        fileText: payload.fileText,
+        originalFilename: payload.fileName,
+        importRunId: "debug-parse",
+      });
+      const parserUsedPlaceholder = stepParserUsedPlaceholder(parsed);
+      const diagnostics = buildStepParserDiagnostics({
+        parsed,
+        configuredParserMode: parserMode,
+        placeholderUsed: parserUsedPlaceholder,
+      });
+      return {
+        ...diagnostics,
+        rawStats: diagnostics,
+        assemblyCount: parsed.assemblyNodes.length,
+        partDefinitionCount: parsed.partDefinitions.length,
+        partInstanceCount: parsed.partInstances.length,
+        parserVersion: parsed.parserVersion,
+        parserUsedPlaceholder,
+        warnings: parsed.warnings,
+      };
+    } catch (error) {
+      if (error instanceof CadImportError) {
+        return reply.code(error.statusCode).send({ message: error.message });
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return reply.code(422).send({ message });
+    }
+  });
+
   app.post("/api/cad/step-imports", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
       return;
@@ -181,6 +224,7 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
         store: getCadStore(),
         parserClient: createStepParserClient({ mode: parserMode }),
         parserMode,
+        allowPlaceholder: process.env.NODE_ENV === "test" && payload.allowPlaceholder === true,
         input: {
           fileText: payload.fileText,
           originalFilename: payload.fileName,
@@ -250,6 +294,7 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
         configuredParserMode: rawSummaryJson.configuredParserMode ?? rawSummaryJson.parserMode ?? null,
         actualParserVersion: rawSummaryJson.actualParserVersion ?? rawSummaryJson.parserVersion ?? importRun?.parserVersion ?? null,
         parserUsedPlaceholder: rawSummaryJson.parserUsedPlaceholder === true,
+        ...rawSummaryJson,
         rawStats: rawSummaryJson,
       },
     };

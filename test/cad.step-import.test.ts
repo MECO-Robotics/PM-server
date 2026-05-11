@@ -206,9 +206,20 @@ async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").bu
       configuredParserMode?: string;
       actualParserVersion?: string;
       parserUsedPlaceholder?: boolean;
+      entityCount?: number;
+      productCount?: number;
+      productDefinitionFormationCount?: number;
+      productDefinitionCount?: number;
+      nextAssemblyUsageOccurrenceCount?: number;
+      rootNames?: string[];
+      topLevelAssemblyNames?: string[];
+      firstTenAssemblyNames?: string[];
       rawStats?: {
+        entityCount?: number;
         productCount?: number;
+        productDefinitionFormationCount?: number;
         productDefinitionCount?: number;
+        nextAssemblyUsageOccurrenceCount?: number;
         assemblyUsageCount?: number;
         rootCount?: number;
         rootNames?: string[];
@@ -443,6 +454,18 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.equal(result.summary.configuredParserMode, "step_text");
     assert.equal(result.summary.actualParserVersion, "step-text-assembly-parser-1");
     assert.equal(result.summary.parserUsedPlaceholder, false);
+    assert.equal(result.summary.productCount, 14);
+    assert.equal(result.summary.productDefinitionCount, 14);
+    assert.equal(result.summary.nextAssemblyUsageOccurrenceCount, 14);
+    assert.deepEqual(result.summary.rootNames, ["MAIN ASSEMBLY"]);
+    assert.deepEqual(result.summary.topLevelAssemblyNames, [
+      "Intake Cheese",
+      "Hopper Assembly <1>",
+      "Drivetrain Assembly <1>",
+      "Conveyer Assembly <1>",
+      "Detailed Assembly <1>",
+      "Shooter Main Assembly <1>",
+    ]);
     assert.equal(result.summary.rawStats?.productCount, 14);
     assert.equal(result.summary.rawStats?.assemblyUsageCount, 14);
     assert.equal(result.summary.rawStats?.rootCount, 1);
@@ -464,7 +487,94 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.equal(importRun.item.rawSummaryJson.parserMode, "step_text");
     assert.equal(importRun.item.rawSummaryJson.parserVersion, "step-text-assembly-parser-1");
     assert.deepEqual(importRun.item.rawSummaryJson.rootNames, ["MAIN ASSEMBLY"]);
+    resetLimits();
+
+    const snapshotSummaryResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}`,
+    });
+    assert.equal(snapshotSummaryResponse.statusCode, 200);
+    const snapshotSummary = snapshotSummaryResponse.json() as { summary: Record<string, unknown> };
+    assert.equal(snapshotSummary.summary.configuredParserMode, "step_text");
+    assert.equal(snapshotSummary.summary.actualParserVersion, "step-text-assembly-parser-1");
+    assert.equal(snapshotSummary.summary.productCount, 14);
+    assert.deepEqual(snapshotSummary.summary.rootNames, ["MAIN ASSEMBLY"]);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
+});
+
+test("STEP debug parse endpoint returns parser diagnostics without creating a snapshot", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports/debug-parse",
+      payload: {
+        fileName: "onshape-export.step",
+        fileText: uploadedClassStepFixture(),
+      },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    resetLimits();
+    const parsed = response.json() as {
+      parserVersion: string;
+      parserUsedPlaceholder: boolean;
+      productCount: number;
+      productDefinitionCount: number;
+      nextAssemblyUsageOccurrenceCount: number;
+      rootNames: string[];
+      topLevelAssemblyNames: string[];
+      assemblyCount: number;
+      partInstanceCount: number;
+      warnings: Array<{ code: string }>;
+    };
+    assert.equal(parsed.parserVersion, "step-text-assembly-parser-1");
+    assert.equal(parsed.parserUsedPlaceholder, false);
+    assert.equal(parsed.productCount, 14);
+    assert.equal(parsed.productDefinitionCount, 14);
+    assert.equal(parsed.nextAssemblyUsageOccurrenceCount, 14);
+    assert.deepEqual(parsed.rootNames, ["MAIN ASSEMBLY"]);
+    assert.ok(parsed.topLevelAssemblyNames.includes("Shooter Main Assembly <1>"));
+    assert.ok(parsed.assemblyCount > 6);
+    assert.ok(parsed.partInstanceCount > 1);
+    assert.ok(!parsed.warnings.some((warning) => warning.code === "step_parser_placeholder_used"));
+
+    const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
+    assert.equal(snapshotsResponse.statusCode, 200);
+    assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
+});
+
+test("normal STEP upload rejects placeholder parser mode instead of creating a placeholder snapshot", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      payload: {
+        fileName: "placeholder.step",
+        fileText: uploadedClassStepFixture(),
+        label: "placeholder-mode",
+      },
+    });
+    assert.equal(response.statusCode, 422);
+    assert.match(response.body, /Placeholder STEP parser output is disabled/);
+    resetLimits();
+
+    const importRunsResponse = await app.inject({ method: "GET", url: "/api/cad/import-runs" });
+    assert.equal(importRunsResponse.statusCode, 200);
+    const runs = importRunsResponse.json() as {
+      items: Array<{ status: string; errorMessage: string | null }>;
+    };
+    assert.equal(runs.items[0]?.status, "FAILED");
+    assert.match(runs.items[0]?.errorMessage ?? "", /Placeholder STEP parser output is disabled/);
+    resetLimits();
+
+    const snapshotsResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots" });
+    assert.equal(snapshotsResponse.statusCode, 200);
+    assert.equal((snapshotsResponse.json() as { items: unknown[] }).items.length, 0);
+  }, { env: { CAD_STEP_PARSER_MODE: "placeholder" } });
 });
 
 test("multipart STEP uploads accept files larger than the old 25 MiB cap", async () => {

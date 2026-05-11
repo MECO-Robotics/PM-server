@@ -1,9 +1,18 @@
 import "dotenv/config";
 
 import { buildApp } from "./app";
-import { env } from "./config/env";
+import { cadPersistenceConfig, cadStepParserConfig, env } from "./config/env";
 
 async function start() {
+  console.info(
+    `[startup] CAD_STORE_DRIVER=${cadPersistenceConfig.storeDriver} CAD_STEP_PARSER_MODE=${cadStepParserConfig.mode} placeholderMode=${cadStepParserConfig.mode === "placeholder"}`,
+  );
+  if (cadStepParserConfig.mode === "placeholder") {
+    console.warn(
+      "[startup] WARNING: CAD_STEP_PARSER_MODE=placeholder is enabled. STEP uploads will not be treated as real CAD parses.",
+    );
+  }
+
   const app = await buildApp();
 
   await app.listen({

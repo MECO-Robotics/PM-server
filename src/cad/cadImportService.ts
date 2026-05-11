@@ -58,7 +58,7 @@ async function appendWarnings(args: {
   }
 }
 
-function parserUsedPlaceholder(parsed: StepParseResult) {
+export function stepParserUsedPlaceholder(parsed: StepParseResult) {
   return (
     parsed.parserVersion.includes("placeholder") ||
     parsed.warnings.some((warning) => warning.code === "step_parser_placeholder_used") ||
@@ -67,7 +67,17 @@ function parserUsedPlaceholder(parsed: StepParseResult) {
   );
 }
 
-function parserDiagnostics(args: {
+function placeholderWarning(parsed: StepParseResult): NormalizedCadWarning {
+  return parsed.warnings.find((warning) => warning.code === "step_parser_placeholder_used") ?? {
+    severity: "ERROR",
+    code: "step_parser_placeholder_used",
+    title: "Placeholder STEP parser used",
+    message: "Placeholder parser output. This is not from the uploaded STEP file.",
+    metadata: {},
+  };
+}
+
+export function buildStepParserDiagnostics(args: {
   parsed: StepParseResult;
   configuredParserMode: StepParserMode | "custom";
   placeholderUsed: boolean;
@@ -89,6 +99,7 @@ export async function runStepImport(args: {
   store: CadStore;
   parserClient: StepParserClient;
   parserMode?: StepParserMode;
+  allowPlaceholder?: boolean;
   input: StepImportInput;
 }) {
   const filename = args.input.originalFilename.trim();
@@ -122,14 +133,17 @@ export async function runStepImport(args: {
       importRunId: importRun.id,
     });
     const configuredParserMode = args.parserMode ?? "custom";
-    const placeholderUsed = parserUsedPlaceholder(parsed);
-    if (placeholderUsed && configuredParserMode !== "placeholder") {
-      throw new Error("STEP parser returned placeholder output outside explicit placeholder mode.");
+    const placeholderUsed = stepParserUsedPlaceholder(parsed);
+    if (placeholderUsed && (!args.allowPlaceholder || process.env.NODE_ENV === "production")) {
+      await appendWarnings({
+        store: args.store,
+        importRunId: importRun.id,
+        snapshotId: null,
+        warnings: [placeholderWarning(parsed)],
+      });
+      throw new Error("Placeholder STEP parser output is disabled for normal uploads.");
     }
-    if (placeholderUsed && process.env.NODE_ENV === "production") {
-      throw new Error("Production deployments cannot use the placeholder STEP parser.");
-    }
-    const diagnostics = parserDiagnostics({ parsed, configuredParserMode, placeholderUsed });
+    const diagnostics = buildStepParserDiagnostics({ parsed, configuredParserMode, placeholderUsed });
     const parseCompletedAt = new Date().toISOString();
     const snapshot = await args.store.createSnapshot({
       projectId: args.input.projectId ?? null,
@@ -221,6 +235,7 @@ export async function runStepImport(args: {
       importRun: updatedRun,
       snapshot: updatedSnapshot,
       summary: {
+        ...diagnostics,
         assemblyCount: assemblyNodes.length,
         partDefinitionCount: partDefinitions.length,
         partInstanceCount: partInstances.length,
