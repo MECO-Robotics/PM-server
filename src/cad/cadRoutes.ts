@@ -132,6 +132,27 @@ function findSourceName(args: {
   return instance?.instancePath.split("/").filter(Boolean).at(-1) ?? args.sourceId;
 }
 
+function findParentAssemblyName(args: {
+  sourceKind: string;
+  sourceId: string;
+  assemblies: Awaited<ReturnType<CadStore["listAssemblyNodes"]>>;
+  instances: Awaited<ReturnType<CadStore["listPartInstances"]>>;
+}) {
+  if (args.sourceKind === "ASSEMBLY_NODE") {
+    const assembly = args.assemblies.find((item) => item.id === args.sourceId);
+    return assembly?.parentAssemblyNodeId
+      ? args.assemblies.find((item) => item.id === assembly.parentAssemblyNodeId)?.name ?? null
+      : null;
+  }
+  if (args.sourceKind === "PART_INSTANCE") {
+    const instance = args.instances.find((item) => item.id === args.sourceId);
+    return instance?.parentAssemblyNodeId
+      ? args.assemblies.find((item) => item.id === instance.parentAssemblyNodeId)?.name ?? null
+      : null;
+  }
+  return null;
+}
+
 async function snapshotMappings(store: CadStore, snapshotId: string) {
   const assemblies = await store.listAssemblyNodes(snapshotId);
   const parts = await store.listPartDefinitions(snapshotId);
@@ -146,6 +167,12 @@ async function snapshotMappings(store: CadStore, snapshotId: string) {
       parts,
       instances,
     }),
+    parentAssemblyName: findParentAssemblyName({
+      sourceKind: mapping.sourceKind,
+      sourceId: mapping.sourceId,
+      assemblies,
+      instances,
+    }),
     source: [...assemblies, ...parts, ...instances].find((item) => item.id === mapping.sourceId) ?? null,
     rule: mapping.mappingRuleId ? await store.findMappingRule(mapping.mappingRuleId) : null,
   })));
@@ -155,10 +182,13 @@ async function groupedSnapshotMappings(store: CadStore, snapshotId: string) {
   const rawMappings = await snapshotMappings(store, snapshotId);
   const parts = await store.listPartDefinitions(snapshotId);
   const instances = await store.listPartInstances(snapshotId);
+  const assemblies = await store.listAssemblyNodes(snapshotId);
   const definitionsById = new Map(parts.map((part) => [part.id, part] as const));
   const mappingsBySourceId = new Map((await store.listSnapshotMappings(snapshotId)).map((mapping) => [mapping.sourceId, mapping]));
   const partInstanceMappingIds = new Set<string>();
-  const groups = groupPartInstances({ instances, definitionsById, mappingsBySourceId }).map((group) => {
+  const groups = groupPartInstances({ instances, definitionsById, mappingsBySourceId })
+    .filter((group) => group.quantity > 1)
+    .map((group) => {
     for (const mapping of group.mappings) {
       partInstanceMappingIds.add(mapping.id);
     }
@@ -173,6 +203,9 @@ async function groupedSnapshotMappings(store: CadStore, snapshotId: string) {
       sourceId: group.representativeInstanceId,
       sourceIds: group.instanceIds,
       sourceName: group.displayName,
+      parentAssemblyName: group.parentAssemblyNodeId
+        ? assemblies.find((assembly) => assembly.id === group.parentAssemblyNodeId)?.name ?? null
+        : null,
       source: group,
       targetKind: group.hasMixedMappings ? "UNMAPPED" : representativeMapping?.targetKind ?? "UNMAPPED",
       targetId: group.hasMixedMappings ? null : representativeMapping?.targetId ?? null,
@@ -195,7 +228,7 @@ async function groupedSnapshotMappings(store: CadStore, snapshotId: string) {
         ? "Repeated instances have mixed mappings. Review before finalizing."
         : null,
     };
-  });
+    });
 
   return [
     ...rawMappings.filter((mapping) => mapping.sourceKind !== "PART_INSTANCE" || !partInstanceMappingIds.has(mapping.id)),
@@ -209,6 +242,7 @@ async function buildTree(store: CadStore, snapshotId: string, groupInstances = t
   const definitions = await store.listPartDefinitions(snapshotId);
   const mappingsBySourceId = new Map((await store.listSnapshotMappings(snapshotId)).map((mapping) => [mapping.sourceId, mapping]));
   const definitionsById = new Map(definitions.map((part) => [part.id, part] as const));
+  const instancesById = new Map(instances.map((instance) => [instance.id, instance] as const));
   const byParent = new Map<string | null, typeof assemblies>();
   for (const assembly of assemblies) {
     const key = assembly.parentAssemblyNodeId ?? null;
@@ -229,6 +263,18 @@ async function buildTree(store: CadStore, snapshotId: string, groupInstances = t
           instances: instancesByParent.get(assembly.id) ?? [],
           definitionsById,
           mappingsBySourceId,
+        }).map((group) => {
+          if (group.quantity > 1) {
+            return group;
+          }
+          const instance = instancesById.get(group.representativeInstanceId);
+          return instance
+            ? {
+                ...instance,
+                mapping: mappingsBySourceId.get(instance.id) ?? null,
+                partDefinition: definitions.find((part) => part.id === instance.partDefinitionId) ?? null,
+              }
+            : group;
         })
       : (instancesByParent.get(assembly.id) ?? []).map((instance) => ({
           ...instance,

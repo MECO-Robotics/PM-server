@@ -184,6 +184,7 @@ function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) 
 
 function repeatedPartCadFixture(options?: {
   spacerCount?: number;
+  includeSingletonPart?: boolean;
   splitBetweenMechanisms?: boolean;
   labelPrefix?: string;
 }) {
@@ -247,8 +248,30 @@ function repeatedPartCadFixture(options?: {
         stableSignature: "part:number:SHR-001",
         metadata: { configuration: "default" },
       },
+      ...(options?.includeSingletonPart
+        ? [{
+            sourceId: "part-plate",
+            name: "PRT - Shooter - Mounting Plate",
+            partNumber: "SHR-002",
+            material: "aluminum",
+            stableSignature: "part:number:SHR-002",
+            metadata: { configuration: "default" },
+          }]
+        : []),
     ],
-    partInstances,
+    partInstances: [
+      ...partInstances,
+      ...(options?.includeSingletonPart
+        ? [{
+            sourceId: "inst-plate-1",
+            partDefinitionSourceId: "part-plate",
+            parentAssemblySourceId: "asm-shooter",
+            instancePath: "/Robot/MECH - Shooter - Flywheel/Mounting Plate <1>",
+            quantity: 1,
+            stableSignature: "inst:path:/Robot/MECH - Shooter - Flywheel/Mounting Plate <1>",
+          }]
+        : []),
+    ],
   });
 }
 
@@ -532,7 +555,11 @@ test("STEP tree groups repeated part instances by default and preserves raw opt-
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
 
-    const result = await uploadStep(app, "grouped-spacers", repeatedPartCadFixture({ spacerCount: 4 }));
+    const result = await uploadStep(
+      app,
+      "grouped-spacers",
+      repeatedPartCadFixture({ spacerCount: 4, includeSingletonPart: true }),
+    );
     resetLimits();
 
     const groupedResponse = await app.inject({
@@ -546,7 +573,9 @@ test("STEP tree groups repeated part instances by default and preserves raw opt-
           name: string;
           partInstances: Array<{
             kind: string;
+            id?: string;
             displayName: string;
+            partDefinition?: { name: string } | null;
             quantity: number;
             instanceIds: string[];
             hasMixedMappings: boolean;
@@ -555,12 +584,15 @@ test("STEP tree groups repeated part instances by default and preserves raw opt-
       }>;
     };
     const shooter = grouped.rootNodes[0]?.children.find((node) => node.name === "MECH - Shooter - Flywheel");
-    assert.equal(shooter?.partInstances.length, 1);
-    assert.equal(shooter?.partInstances[0]?.kind, "part_instance_group");
-    assert.equal(shooter?.partInstances[0]?.displayName, "PRT - Shooter - Flywheel - Spacer");
-    assert.equal(shooter?.partInstances[0]?.quantity, 4);
-    assert.equal(shooter?.partInstances[0]?.instanceIds.length, 4);
-    assert.equal(shooter?.partInstances[0]?.hasMixedMappings, false);
+    assert.equal(shooter?.partInstances.length, 2);
+    const spacerGroup = shooter?.partInstances.find((instance) => instance.kind === "part_instance_group");
+    assert.equal(spacerGroup?.displayName, "PRT - Shooter - Flywheel - Spacer");
+    assert.equal(spacerGroup?.quantity, 4);
+    assert.equal(spacerGroup?.instanceIds.length, 4);
+    assert.equal(spacerGroup?.hasMixedMappings, false);
+    const singletonPlate = shooter?.partInstances.find((instance) => instance.partDefinition?.name === "PRT - Shooter - Mounting Plate");
+    assert.ok(singletonPlate?.id);
+    assert.equal("kind" in singletonPlate, false);
     resetLimits();
 
     const rawResponse = await app.inject({
@@ -571,8 +603,52 @@ test("STEP tree groups repeated part instances by default and preserves raw opt-
     const raw = rawResponse.json() as {
       rootNodes: Array<{ children: Array<{ partInstances: Array<{ id: string; instancePath: string }> }> }>;
     };
-    assert.equal(raw.rootNodes[0]?.children[0]?.partInstances.length, 4);
+    assert.equal(raw.rootNodes[0]?.children[0]?.partInstances.length, 5);
     assert.ok(raw.rootNodes[0]?.children[0]?.partInstances.every((instance) => !("instanceIds" in instance)));
+  });
+});
+
+test("grouped mapping review keeps singleton part instances as raw rows", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(
+      app,
+      "grouped-singleton-mapping",
+      repeatedPartCadFixture({ spacerCount: 4, includeSingletonPart: true }),
+    );
+    resetLimits();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings`,
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    const mappings = response.json() as {
+      items: Array<{
+        kind?: string;
+        parentAssemblyName?: string | null;
+        sourceKind: string;
+        sourceName: string;
+        quantity?: number;
+        sourceIds?: string[];
+      }>;
+    };
+    const spacerGroup = mappings.items.find(
+      (mapping) => mapping.kind === "part_instance_group" && mapping.sourceName === "PRT - Shooter - Flywheel - Spacer",
+    );
+    assert.equal(spacerGroup?.quantity, 4);
+    assert.equal(spacerGroup?.parentAssemblyName, "MECH - Shooter - Flywheel");
+    assert.equal(spacerGroup?.sourceIds?.length, 4);
+
+    const singletonPlate = mappings.items.find(
+      (mapping) => mapping.sourceKind === "PART_INSTANCE" && mapping.sourceName === "Mounting Plate <1>",
+    );
+    assert.ok(singletonPlate);
+    assert.equal(singletonPlate?.parentAssemblyName, "MECH - Shooter - Flywheel");
+    assert.equal(singletonPlate?.kind, undefined);
+    assert.equal(singletonPlate?.quantity, undefined);
+    assert.equal(singletonPlate?.sourceIds, undefined);
   });
 });
 
@@ -664,6 +740,7 @@ test("grouped mapping rows expose mixed mappings for repeated instances", async 
     const groupedMappings = groupedMappingsResponse.json() as {
       items: Array<{
         kind?: string;
+        parentAssemblyName?: string | null;
         sourceKind: string;
         sourceName: string;
         quantity?: number;
@@ -675,6 +752,7 @@ test("grouped mapping rows expose mixed mappings for repeated instances", async 
     };
     const spacerGroup = groupedMappings.items.find((mapping) => mapping.kind === "part_instance_group");
     assert.equal(spacerGroup?.sourceName, "PRT - Shooter - Flywheel - Spacer");
+    assert.equal(spacerGroup?.parentAssemblyName, "MECH - Shooter - Flywheel");
     assert.equal(spacerGroup?.quantity, 4);
     assert.equal(spacerGroup?.hasMixedMappings, true);
     assert.equal(spacerGroup?.status, "NEEDS_REVIEW");
