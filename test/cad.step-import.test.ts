@@ -182,6 +182,76 @@ function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) 
   });
 }
 
+function repeatedPartCadFixture(options?: {
+  spacerCount?: number;
+  splitBetweenMechanisms?: boolean;
+  labelPrefix?: string;
+}) {
+  const spacerCount = options?.spacerCount ?? 4;
+  const partInstances = Array.from({ length: spacerCount }, (_, index) => {
+    const instanceNumber = index + 1;
+    const parentAssemblySourceId = options?.splitBetweenMechanisms && index >= Math.ceil(spacerCount / 2)
+      ? "asm-intake"
+      : "asm-shooter";
+    const parentPath = parentAssemblySourceId === "asm-intake" ? "MECH - Intake" : "MECH - Shooter - Flywheel";
+    return {
+      sourceId: `inst-spacer-${instanceNumber}`,
+      partDefinitionSourceId: "part-spacer",
+      parentAssemblySourceId,
+      instancePath: `/Robot/${parentPath}/Spacer <${instanceNumber}>`,
+      quantity: 1,
+      stableSignature: `inst:path:/Robot/${parentPath}/Spacer <${instanceNumber}>`,
+    };
+  });
+
+  return JSON.stringify({
+    rootName: "Robot master assembly",
+    units: "millimeter",
+    assemblyNodes: [
+      {
+        sourceId: "asm-root",
+        parentSourceId: null,
+        name: "ASM - Robot",
+        instancePath: "/Robot",
+        depth: 0,
+        inferredType: "ROOT",
+        stableSignature: "asm:path:/Robot",
+      },
+      {
+        sourceId: "asm-shooter",
+        parentSourceId: "asm-root",
+        name: "MECH - Shooter - Flywheel",
+        instancePath: "/Robot/MECH - Shooter - Flywheel",
+        depth: 1,
+        inferredType: "MECHANISM_CANDIDATE",
+        stableSignature: "asm:path:/Robot/MECH - Shooter - Flywheel",
+      },
+      ...(options?.splitBetweenMechanisms
+        ? [{
+            sourceId: "asm-intake",
+            parentSourceId: "asm-root",
+            name: "MECH - Intake",
+            instancePath: "/Robot/MECH - Intake",
+            depth: 1,
+            inferredType: "MECHANISM_CANDIDATE",
+            stableSignature: "asm:path:/Robot/MECH - Intake",
+          }]
+        : []),
+    ],
+    partDefinitions: [
+      {
+        sourceId: "part-spacer",
+        name: `${options?.labelPrefix ?? "PRT"} - Shooter - Flywheel - Spacer`,
+        partNumber: "SHR-001",
+        material: "aluminum",
+        stableSignature: "part:number:SHR-001",
+        metadata: { configuration: "default" },
+      },
+    ],
+    partInstances,
+  });
+}
+
 async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").buildApp>>, label: string, fileText: string) {
   const response = await app.inject({
     method: "POST",
@@ -455,6 +525,262 @@ test("STEP import creates a snapshot graph with mapping proposals and parser war
         (warning) => warning.code === "step_unknown_units",
       ),
     );
+  });
+});
+
+test("STEP tree groups repeated part instances by default and preserves raw opt-out", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(app, "grouped-spacers", repeatedPartCadFixture({ spacerCount: 4 }));
+    resetLimits();
+
+    const groupedResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/tree`,
+    });
+    assert.equal(groupedResponse.statusCode, 200, groupedResponse.body);
+    const grouped = groupedResponse.json() as {
+      rootNodes: Array<{
+        children: Array<{
+          name: string;
+          partInstances: Array<{
+            kind: string;
+            displayName: string;
+            quantity: number;
+            instanceIds: string[];
+            hasMixedMappings: boolean;
+          }>;
+        }>;
+      }>;
+    };
+    const shooter = grouped.rootNodes[0]?.children.find((node) => node.name === "MECH - Shooter - Flywheel");
+    assert.equal(shooter?.partInstances.length, 1);
+    assert.equal(shooter?.partInstances[0]?.kind, "part_instance_group");
+    assert.equal(shooter?.partInstances[0]?.displayName, "PRT - Shooter - Flywheel - Spacer");
+    assert.equal(shooter?.partInstances[0]?.quantity, 4);
+    assert.equal(shooter?.partInstances[0]?.instanceIds.length, 4);
+    assert.equal(shooter?.partInstances[0]?.hasMixedMappings, false);
+    resetLimits();
+
+    const rawResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/tree?groupInstances=false`,
+    });
+    assert.equal(rawResponse.statusCode, 200, rawResponse.body);
+    const raw = rawResponse.json() as {
+      rootNodes: Array<{ children: Array<{ partInstances: Array<{ id: string; instancePath: string }> }> }>;
+    };
+    assert.equal(raw.rootNodes[0]?.children[0]?.partInstances.length, 4);
+    assert.ok(raw.rootNodes[0]?.children[0]?.partInstances.every((instance) => !("instanceIds" in instance)));
+  });
+});
+
+test("STEP tree keeps repeated part groups scoped to each parent assembly", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(
+      app,
+      "grouped-spacers-split",
+      repeatedPartCadFixture({ spacerCount: 4, splitBetweenMechanisms: true }),
+    );
+    resetLimits();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/tree`,
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    const tree = response.json() as {
+      rootNodes: Array<{
+        children: Array<{
+          name: string;
+          partInstances: Array<{ displayName: string; quantity: number; instanceIds: string[] }>;
+        }>;
+      }>;
+    };
+    const groups = tree.rootNodes[0]?.children.map((node) => ({
+      parentName: node.name,
+      group: node.partInstances[0],
+    })) ?? [];
+    assert.deepEqual(
+      groups.map((item) => [item.parentName, item.group?.displayName, item.group?.quantity]).sort(),
+      [
+        ["MECH - Intake", "PRT - Shooter - Flywheel - Spacer", 2],
+        ["MECH - Shooter - Flywheel", "PRT - Shooter - Flywheel - Spacer", 2],
+      ],
+    );
+  });
+});
+
+test("grouped mapping rows expose mixed mappings for repeated instances", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(app, "mixed-spacers", repeatedPartCadFixture({ spacerCount: 4 }));
+    resetLimits();
+    const rawMappingsResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings?groupInstances=false`,
+    });
+    assert.equal(rawMappingsResponse.statusCode, 200, rawMappingsResponse.body);
+    const rawMappings = (rawMappingsResponse.json() as {
+      items: Array<{ id: string; sourceKind: string; sourceName: string }>;
+    }).items.filter((mapping) => mapping.sourceKind === "PART_INSTANCE" && mapping.sourceName.includes("Spacer"));
+    assert.equal(rawMappings.length, 4);
+    resetLimits();
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings/apply`,
+      payload: {
+        updates: [
+          {
+            mappingId: rawMappings[0]?.id,
+            targetKind: "PART_INSTANCE",
+            targetId: "mc-spacer-a",
+            confidence: "MANUAL",
+            status: "CONFIRMED",
+          },
+          {
+            mappingId: rawMappings[1]?.id,
+            targetKind: "PART_INSTANCE",
+            targetId: "mc-spacer-b",
+            confidence: "MANUAL",
+            status: "CONFIRMED",
+          },
+        ],
+      },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+    resetLimits();
+
+    const groupedMappingsResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings`,
+    });
+    assert.equal(groupedMappingsResponse.statusCode, 200, groupedMappingsResponse.body);
+    const groupedMappings = groupedMappingsResponse.json() as {
+      items: Array<{
+        kind?: string;
+        sourceKind: string;
+        sourceName: string;
+        quantity?: number;
+        status: string;
+        hasMixedMappings?: boolean;
+        warning?: string;
+        sourceIds?: string[];
+      }>;
+    };
+    const spacerGroup = groupedMappings.items.find((mapping) => mapping.kind === "part_instance_group");
+    assert.equal(spacerGroup?.sourceName, "PRT - Shooter - Flywheel - Spacer");
+    assert.equal(spacerGroup?.quantity, 4);
+    assert.equal(spacerGroup?.hasMixedMappings, true);
+    assert.equal(spacerGroup?.status, "NEEDS_REVIEW");
+    assert.match(spacerGroup?.warning ?? "", /mixed mappings/i);
+    assert.equal(spacerGroup?.sourceIds?.length, 4);
+  });
+});
+
+test("mapping a grouped part row updates all instances and creates one future rule", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(app, "grouped-apply", repeatedPartCadFixture({ spacerCount: 4 }));
+    resetLimits();
+    const groupedMappingsResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings`,
+    });
+    assert.equal(groupedMappingsResponse.statusCode, 200, groupedMappingsResponse.body);
+    const spacerGroup = (groupedMappingsResponse.json() as {
+      items: Array<{ kind?: string; sourceKind: string; sourceIds?: string[]; quantity?: number }>;
+    }).items.find((mapping) => mapping.kind === "part_instance_group");
+    assert.equal(spacerGroup?.sourceKind, "PART_INSTANCE");
+    assert.equal(spacerGroup?.quantity, 4);
+    assert.equal(spacerGroup?.sourceIds?.length, 4);
+    resetLimits();
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings/apply`,
+      payload: {
+        updates: [
+          {
+            sourceKind: "PART_INSTANCE",
+            sourceIds: spacerGroup?.sourceIds,
+            targetKind: "PART_DEFINITION",
+            targetId: "mc-spacer-definition",
+            confidence: "MANUAL",
+            status: "CONFIRMED",
+            applyToFuture: true,
+          },
+        ],
+      },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+    const applied = applyResponse.json() as {
+      updated: Array<{ sourceId: string; targetKind: string; targetId: string | null; status: string }>;
+      mappingRules: Array<{ sourceKind: string; matchValue: string; targetId: string | null }>;
+    };
+    assert.equal(applied.updated.length, 4);
+    assert.ok(applied.updated.every((mapping) => mapping.targetKind === "PART_DEFINITION"));
+    assert.ok(applied.updated.every((mapping) => mapping.targetId === "mc-spacer-definition"));
+    assert.ok(applied.updated.every((mapping) => mapping.status === "CONFIRMED"));
+    assert.equal(applied.mappingRules.length, 1);
+    assert.equal(applied.mappingRules[0]?.sourceKind, "PART_INSTANCE");
+    assert.equal(applied.mappingRules[0]?.matchValue, "part:number:SHR-001");
+    resetLimits();
+
+    const rawMappingsResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings?groupInstances=false`,
+    });
+    assert.equal(rawMappingsResponse.statusCode, 200, rawMappingsResponse.body);
+    const rawSpacerMappings = (rawMappingsResponse.json() as {
+      items: Array<{ sourceKind: string; sourceName: string; targetId: string | null; status: string }>;
+    }).items.filter((mapping) => mapping.sourceKind === "PART_INSTANCE" && mapping.sourceName.includes("Spacer"));
+    assert.equal(rawSpacerMappings.length, 4);
+    assert.ok(rawSpacerMappings.every((mapping) => mapping.targetId === "mc-spacer-definition"));
+    assert.ok(rawSpacerMappings.every((mapping) => mapping.status === "CONFIRMED"));
+  });
+});
+
+test("snapshot diff reports grouped repeated-instance quantity changes", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    await uploadStep(app, "quantity-iteration-1", repeatedPartCadFixture({ spacerCount: 3 }));
+    resetLimits();
+    const second = await uploadStep(app, "quantity-iteration-2", repeatedPartCadFixture({ spacerCount: 4 }));
+    resetLimits();
+
+    const diffResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${second.snapshot.id}/diff`,
+    });
+    assert.equal(diffResponse.statusCode, 200, diffResponse.body);
+    const diff = diffResponse.json() as {
+      quantityChangedPartGroups?: Array<{
+        parentAssemblyName: string | null;
+        partName: string;
+        previousQuantity: number;
+        currentQuantity: number;
+        addedInstancePaths: string[];
+        removedInstancePaths: string[];
+      }>;
+    };
+    assert.deepEqual(diff.quantityChangedPartGroups, [
+      {
+        parentAssemblyName: "MECH - Shooter - Flywheel",
+        partName: "PRT - Shooter - Flywheel - Spacer",
+        previousQuantity: 3,
+        currentQuantity: 4,
+        addedInstancePaths: ["/Robot/MECH - Shooter - Flywheel/Spacer <4>"],
+        removedInstancePaths: [],
+      },
+    ]);
   });
 });
 

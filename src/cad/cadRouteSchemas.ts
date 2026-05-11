@@ -17,12 +17,17 @@ export const cadListQuerySchema = z.object({
   status: z.string().trim().min(1).optional(),
 });
 
+export const cadGroupInstancesQuerySchema = z.object({
+  groupInstances: z.enum(["true", "false"]).optional(),
+});
+
 export const cadMappingUpdateSchema = z.object({
   updates: z.array(
     z.object({
       mappingId: z.string().trim().min(1).optional(),
       sourceKind: z.enum(["ASSEMBLY_NODE", "PART_DEFINITION", "PART_INSTANCE"]).optional(),
       sourceId: z.string().trim().min(1).optional(),
+      sourceIds: z.array(z.string().trim().min(1)).optional(),
       targetKind: z.enum([
         "SUBSYSTEM",
         "MECHANISM",

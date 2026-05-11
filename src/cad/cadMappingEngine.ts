@@ -11,11 +11,12 @@ import type {
 } from "./cadTypes";
 import type { CadStore } from "./cadStoreTypes";
 import { normalizeCadName, sourceNameWithParent } from "./cadUtils";
+import { partInstanceRuleSignature } from "./cadInstanceGrouping";
 
 type CadSourceRecord =
-  | { kind: "ASSEMBLY_NODE"; item: CadAssemblyNode; parentName: string | null }
-  | { kind: "PART_DEFINITION"; item: CadPartDefinition; parentName: null }
-  | { kind: "PART_INSTANCE"; item: CadPartInstance; parentName: string | null };
+  | { kind: "ASSEMBLY_NODE"; item: CadAssemblyNode; parentName: string | null; stableSignatures: string[] }
+  | { kind: "PART_DEFINITION"; item: CadPartDefinition; parentName: null; stableSignatures: string[] }
+  | { kind: "PART_INSTANCE"; item: CadPartInstance; parentName: string | null; stableSignatures: string[] };
 
 const strategyPriority = new Map([
   ["STABLE_SIGNATURE", 1],
@@ -45,7 +46,7 @@ function itemName(source: CadSourceRecord) {
 
 function matchValueForRule(source: CadSourceRecord, rule: CadMappingRule) {
   if (rule.matchStrategy === "STABLE_SIGNATURE") {
-    return source.item.stableSignature;
+    return source.stableSignatures;
   }
   if (rule.matchStrategy === "INSTANCE_PATH") {
     return "instancePath" in source.item ? source.item.instancePath : null;
@@ -65,17 +66,25 @@ function sourceRecords(args: {
   partInstances: CadPartInstance[];
 }) {
   const assembliesById = new Map(args.assemblyNodes.map((node) => [node.id, node] as const));
+  const definitionsById = new Map(args.partDefinitions.map((part) => [part.id, part] as const));
   return [
     ...args.assemblyNodes.map((item): CadSourceRecord => ({
       kind: "ASSEMBLY_NODE",
       item,
       parentName: item.parentAssemblyNodeId ? assembliesById.get(item.parentAssemblyNodeId)?.name ?? null : null,
+      stableSignatures: [item.stableSignature],
     })),
-    ...args.partDefinitions.map((item): CadSourceRecord => ({ kind: "PART_DEFINITION", item, parentName: null })),
+    ...args.partDefinitions.map((item): CadSourceRecord => ({
+      kind: "PART_DEFINITION",
+      item,
+      parentName: null,
+      stableSignatures: [item.stableSignature],
+    })),
     ...args.partInstances.map((item): CadSourceRecord => ({
       kind: "PART_INSTANCE",
       item,
       parentName: item.parentAssemblyNodeId ? assembliesById.get(item.parentAssemblyNodeId)?.name ?? null : null,
+      stableSignatures: Array.from(new Set([partInstanceRuleSignature(item, definitionsById), item.stableSignature])),
     })),
   ];
 }
@@ -128,7 +137,10 @@ async function addMappingWarning(args: {
 function findMatches(source: CadSourceRecord, rules: CadMappingRule[]) {
   return rules
     .filter((rule) => rule.sourceKind === source.kind)
-    .filter((rule) => matchValueForRule(source, rule) === rule.matchValue)
+    .filter((rule) => {
+      const matchValue = matchValueForRule(source, rule);
+      return Array.isArray(matchValue) ? matchValue.includes(rule.matchValue) : matchValue === rule.matchValue;
+    })
     .sort(
       (left, right) =>
         (strategyPriority.get(left.matchStrategy) ?? 99) - (strategyPriority.get(right.matchStrategy) ?? 99),
@@ -223,6 +235,7 @@ export interface MappingUpdateInput {
   mappingId?: string;
   sourceKind?: CadMappingSourceKind;
   sourceId?: string;
+  sourceIds?: string[];
   targetKind: CadMappingTargetKind;
   targetId?: string | null;
   confidence?: CadMappingConfidence;
@@ -246,11 +259,11 @@ function sourceRecordForMapping(args: {
     const parentName = item.parentAssemblyNodeId
       ? args.assemblyNodes.find((node) => node.id === item.parentAssemblyNodeId)?.name ?? null
       : null;
-    return { kind: "ASSEMBLY_NODE", item, parentName } satisfies CadSourceRecord;
+    return { kind: "ASSEMBLY_NODE", item, parentName, stableSignatures: [item.stableSignature] } satisfies CadSourceRecord;
   }
   if (args.mapping.sourceKind === "PART_DEFINITION") {
     const item = args.partDefinitions.find((part) => part.id === args.mapping.sourceId);
-    return item ? ({ kind: "PART_DEFINITION", item, parentName: null } satisfies CadSourceRecord) : null;
+    return item ? ({ kind: "PART_DEFINITION", item, parentName: null, stableSignatures: [item.stableSignature] } satisfies CadSourceRecord) : null;
   }
   const item = args.partInstances.find((instance) => instance.id === args.mapping.sourceId);
   if (!item) {
@@ -259,7 +272,13 @@ function sourceRecordForMapping(args: {
   const parentName = item.parentAssemblyNodeId
     ? args.assemblyNodes.find((node) => node.id === item.parentAssemblyNodeId)?.name ?? null
     : null;
-  return { kind: "PART_INSTANCE", item, parentName } satisfies CadSourceRecord;
+  const definitionsById = new Map(args.partDefinitions.map((part) => [part.id, part] as const));
+  return {
+    kind: "PART_INSTANCE",
+    item,
+    parentName,
+    stableSignatures: Array.from(new Set([partInstanceRuleSignature(item, definitionsById), item.stableSignature])),
+  } satisfies CadSourceRecord;
 }
 
 async function supersedeMatchingRules(args: {
@@ -280,7 +299,7 @@ async function supersedeMatchingRules(args: {
     if (rule.sourceKind !== args.source.kind || rule.matchStrategy !== "STABLE_SIGNATURE") {
       continue;
     }
-    if (rule.matchValue === args.source.item.stableSignature && rule.id !== args.newRuleId) {
+    if (args.source.stableSignatures.includes(rule.matchValue) && rule.id !== args.newRuleId) {
       await args.store.updateMappingRule(rule.id, {
         active: false,
         supersededByRuleId: args.newRuleId,
@@ -303,22 +322,29 @@ export async function applyMappingUpdates(args: {
   const mappingRules = [];
 
   for (const update of args.updates) {
-    const mapping = update.mappingId
-      ? existingMappings.find((item) => item.id === update.mappingId)
-      : existingMappings.find((item) => item.sourceKind === update.sourceKind && item.sourceId === update.sourceId);
-    if (!mapping) {
+    const mappings = update.mappingId
+      ? existingMappings.filter((item) => item.id === update.mappingId)
+      : update.sourceIds?.length
+        ? existingMappings.filter(
+            (item) => item.sourceKind === update.sourceKind && update.sourceIds?.includes(item.sourceId),
+          )
+        : existingMappings.filter((item) => item.sourceKind === update.sourceKind && item.sourceId === update.sourceId);
+    if (mappings.length === 0) {
       continue;
     }
 
-    let mappingRuleId = mapping.mappingRuleId;
-    const source = sourceRecordForMapping({ mapping, assemblyNodes, partDefinitions, partInstances });
-    if (update.applyToFuture && source && args.snapshot.projectId) {
+    const sourceRecordsForUpdate = mappings
+      .map((mapping) => sourceRecordForMapping({ mapping, assemblyNodes, partDefinitions, partInstances }))
+      .filter((source): source is CadSourceRecord => Boolean(source));
+    let mappingRuleId = mappings[0]?.mappingRuleId ?? null;
+    if (update.applyToFuture && sourceRecordsForUpdate[0] && args.snapshot.projectId) {
+      const source = sourceRecordsForUpdate[0];
       const rule = await args.store.createMappingRule({
         projectId: args.snapshot.projectId,
         seasonId: args.snapshot.seasonId,
-        sourceKind: mapping.sourceKind,
+        sourceKind: source.kind,
         matchStrategy: "STABLE_SIGNATURE",
-        matchValue: source.item.stableSignature,
+        matchValue: source.stableSignatures[0] ?? source.item.stableSignature,
         targetKind: update.targetKind,
         targetId: update.targetId ?? null,
         confidence: "MANUAL",
@@ -331,17 +357,19 @@ export async function applyMappingUpdates(args: {
       mappingRules.push(rule);
     }
 
-    updated.push(
-      await args.store.updateSnapshotMapping(mapping.id, {
-        mappingRuleId,
-        targetKind: update.targetKind,
-        targetId: update.targetId ?? null,
-        confidence: update.confidence ?? (update.applyToFuture ? "MANUAL" : mapping.confidence),
-        status: update.status ?? "CONFIRMED",
-        reviewedBy: update.reviewedBy ?? args.reviewedBy ?? null,
-        reviewedAt: new Date().toISOString(),
-      }),
-    );
+    for (const mapping of mappings) {
+      updated.push(
+        await args.store.updateSnapshotMapping(mapping.id, {
+          mappingRuleId,
+          targetKind: update.targetKind,
+          targetId: update.targetId ?? null,
+          confidence: update.confidence ?? (update.applyToFuture ? "MANUAL" : mapping.confidence),
+          status: update.status ?? "CONFIRMED",
+          reviewedBy: update.reviewedBy ?? args.reviewedBy ?? null,
+          reviewedAt: new Date().toISOString(),
+        }),
+      );
+    }
   }
 
   return {

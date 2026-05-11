@@ -37,6 +37,92 @@ function compactPart(item: CadPartDefinition) {
   };
 }
 
+function partDefinitionForInstance(parts: CadPartDefinition[], instance: CadPartInstance) {
+  return instance.partDefinitionId ? parts.find((part) => part.id === instance.partDefinitionId) ?? null : null;
+}
+
+function partGroupKey(args: {
+  assemblies: CadAssemblyNode[];
+  parts: CadPartDefinition[];
+  instance: CadPartInstance;
+}) {
+  const parent = args.assemblies.find((assembly) => assembly.id === args.instance.parentAssemblyNodeId) ?? null;
+  const part = partDefinitionForInstance(args.parts, args.instance);
+  return [
+    parent?.stableSignature ?? args.instance.parentAssemblyNodeId ?? "root",
+    part?.stableSignature ?? args.instance.stableSignature,
+  ].join("|");
+}
+
+function groupedInstanceQuantities(args: {
+  assemblies: CadAssemblyNode[];
+  parts: CadPartDefinition[];
+  instances: CadPartInstance[];
+}) {
+  const groups = new Map<string, {
+    parentAssemblyName: string | null;
+    partName: string;
+    quantity: number;
+    instancePaths: string[];
+  }>();
+
+  for (const instance of args.instances) {
+    const key = partGroupKey({ assemblies: args.assemblies, parts: args.parts, instance });
+    const parentAssemblyName = assemblyName(args.assemblies, instance.parentAssemblyNodeId);
+    const part = partDefinitionForInstance(args.parts, instance);
+    const group = groups.get(key) ?? {
+      parentAssemblyName,
+      partName: part?.name ?? instance.instancePath.split("/").filter(Boolean).at(-1) ?? instance.sourceId,
+      quantity: 0,
+      instancePaths: [],
+    };
+    group.quantity += Math.max(instance.quantity, 1);
+    group.instancePaths.push(instance.instancePath);
+    groups.set(key, group);
+  }
+
+  return groups;
+}
+
+function changedQuantityGroups(args: {
+  previousAssemblies: CadAssemblyNode[];
+  previousParts: CadPartDefinition[];
+  previousInstances: CadPartInstance[];
+  currentAssemblies: CadAssemblyNode[];
+  currentParts: CadPartDefinition[];
+  currentInstances: CadPartInstance[];
+}) {
+  const previousGroups = groupedInstanceQuantities({
+    assemblies: args.previousAssemblies,
+    parts: args.previousParts,
+    instances: args.previousInstances,
+  });
+  const currentGroups = groupedInstanceQuantities({
+    assemblies: args.currentAssemblies,
+    parts: args.currentParts,
+    instances: args.currentInstances,
+  });
+
+  return Array.from(currentGroups.entries())
+    .map(([key, current]) => {
+      const previous = previousGroups.get(key);
+      if (!previous || previous.quantity === current.quantity) {
+        return null;
+      }
+      const previousPaths = new Set(previous.instancePaths);
+      const currentPaths = new Set(current.instancePaths);
+      return {
+        parentAssemblyName: current.parentAssemblyName,
+        partName: current.partName,
+        previousQuantity: previous.quantity,
+        currentQuantity: current.quantity,
+        addedInstancePaths: current.instancePaths.filter((path) => !previousPaths.has(path)),
+        removedInstancePaths: previous.instancePaths.filter((path) => !currentPaths.has(path)),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+}
+
 export async function buildCadSnapshotDiff(args: { store: CadStore; snapshotId: string }) {
   const current = await args.store.findSnapshot(args.snapshotId);
   if (!current) {
@@ -61,6 +147,7 @@ export async function buildCadSnapshotDiff(args: { store: CadStore; snapshotId: 
       removedPartInstances: [],
       movedPartInstances: [],
       mappingChanges: [],
+      quantityChangedPartGroups: [],
       warnings,
     };
   }
@@ -148,6 +235,14 @@ export async function buildCadSnapshotDiff(args: { store: CadStore; snapshotId: 
       (instance) => !currentInstancesBySignature.has(instance.stableSignature),
     ),
     movedPartInstances,
+    quantityChangedPartGroups: changedQuantityGroups({
+      previousAssemblies,
+      previousParts,
+      previousInstances,
+      currentAssemblies,
+      currentParts,
+      currentInstances,
+    }),
     mappingChanges,
     warnings,
   };
