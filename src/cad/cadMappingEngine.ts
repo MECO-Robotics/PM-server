@@ -101,6 +101,9 @@ function suggestedTargetKind(source: CadSourceRecord): CadMappingTargetKind {
     if (source.item.inferredType === "MECHANISM_CANDIDATE") {
       return "MECHANISM";
     }
+    if (source.item.inferredType === "COMPONENT_ASSEMBLY_CANDIDATE") {
+      return "COMPONENT_ASSEMBLY";
+    }
     return "UNMAPPED";
   }
   if (source.kind === "PART_DEFINITION") {

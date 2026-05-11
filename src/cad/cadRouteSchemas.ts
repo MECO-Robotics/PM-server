@@ -31,6 +31,7 @@ export const cadMappingUpdateSchema = z.object({
       targetKind: z.enum([
         "SUBSYSTEM",
         "MECHANISM",
+        "COMPONENT_ASSEMBLY",
         "PART_DEFINITION",
         "PART_INSTANCE",
         "IGNORE",
@@ -48,6 +49,53 @@ export const cadMappingUpdateSchema = z.object({
   reviewedBy: z.string().trim().min(1).nullable().optional(),
 });
 
+export const cadHierarchyApplySchema = z.object({
+  reviewedBy: z.string().trim().min(1).nullable().optional(),
+  decisions: z.array(
+    z.object({
+      nodeId: z.string().trim().min(1),
+      sourceId: z.string().trim().min(1).optional(),
+      sourceKind: z.enum(["ASSEMBLY_NODE", "PART_DEFINITION", "PART_INSTANCE"]).optional(),
+      targetKind: z.enum(["SUBSYSTEM", "MECHANISM", "COMPONENT_ASSEMBLY", "PART_DEFINITION", "IGNORE", "REFERENCE_GEOMETRY", "UNMAPPED"]),
+      targetId: z.string().trim().min(1).nullable().optional(),
+      parentSubsystemId: z.string().trim().min(1).nullable().optional(),
+      parentMechanismId: z.string().trim().min(1).nullable().optional(),
+      status: z.enum(["CONFIRMED", "REJECTED", "NEEDS_REVIEW"]).optional(),
+      applyToFuture: z.boolean().optional(),
+      notes: z.string().trim().nullable().optional(),
+    }),
+  ).optional(),
+  assemblyDecisions: z.array(
+    z.object({
+      sourceId: z.string().trim().min(1),
+      targetKind: z.enum(["SUBSYSTEM", "MECHANISM", "COMPONENT_ASSEMBLY", "IGNORE", "REFERENCE_GEOMETRY", "UNMAPPED"]),
+      targetId: z.string().trim().min(1).nullable().optional(),
+      parentSubsystemId: z.string().trim().min(1).nullable().optional(),
+      parentMechanismId: z.string().trim().min(1).nullable().optional(),
+      confidence: z.enum(["HIGH", "MEDIUM", "LOW", "MANUAL"]).optional(),
+      status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "NEEDS_REVIEW"]).optional(),
+      applyToFuture: z.boolean().optional(),
+      notes: z.string().trim().nullable().optional(),
+    }),
+  ).optional(),
+  partMatchConfirmations: z.array(
+    z.object({
+      cadPartDefinitionSourceId: z.string().trim().min(1),
+      targetPartDefinitionId: z.string().trim().min(1).nullable(),
+      status: z.enum(["CONFIRMED", "REJECTED", "NEEDS_REVIEW"]).optional(),
+      applyToFuture: z.boolean().optional(),
+      notes: z.string().trim().nullable().optional(),
+    }),
+  ).optional(),
+}).refine(
+  (value) =>
+    (value.decisions?.length ?? 0) +
+      (value.assemblyDecisions?.length ?? 0) +
+      (value.partMatchConfirmations?.length ?? 0) >
+    0,
+  { message: "At least one hierarchy decision is required." },
+);
+
 export const cadMappingRuleCreateSchema = z.object({
   projectId: z.string().trim().min(1),
   seasonId: z.string().trim().min(1).nullable().optional(),
@@ -63,6 +111,7 @@ export const cadMappingRuleCreateSchema = z.object({
   targetKind: z.enum([
     "SUBSYSTEM",
     "MECHANISM",
+    "COMPONENT_ASSEMBLY",
     "PART_DEFINITION",
     "PART_INSTANCE",
     "IGNORE",

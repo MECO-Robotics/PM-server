@@ -13,6 +13,7 @@ export type CadMappingSourceKind = "ASSEMBLY_NODE" | "PART_DEFINITION" | "PART_I
 export type CadMappingTargetKind =
   | "SUBSYSTEM"
   | "MECHANISM"
+  | "COMPONENT_ASSEMBLY"
   | "PART_DEFINITION"
   | "PART_INSTANCE"
   | "IGNORE"
@@ -24,6 +25,7 @@ export type CadAssemblyInferredType =
   | "ROOT"
   | "SUBSYSTEM_CANDIDATE"
   | "MECHANISM_CANDIDATE"
+  | "COMPONENT_ASSEMBLY_CANDIDATE"
   | "SUBASSEMBLY"
   | "UNKNOWN";
 export type CadMappingMatchStrategy =

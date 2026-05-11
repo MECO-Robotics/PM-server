@@ -167,6 +167,7 @@ function coerceInferredType(value: unknown, name: string, depth: number): CadAss
     value === "ROOT" ||
     value === "SUBSYSTEM_CANDIDATE" ||
     value === "MECHANISM_CANDIDATE" ||
+    value === "COMPONENT_ASSEMBLY_CANDIDATE" ||
     value === "SUBASSEMBLY" ||
     value === "UNKNOWN"
   ) {
@@ -321,7 +322,7 @@ function inferredChildAssemblyType(depth: number): CadAssemblyInferredType {
   if (depth === 2) {
     return "MECHANISM_CANDIDATE";
   }
-  return "SUBASSEMBLY";
+  return depth === 3 ? "COMPONENT_ASSEMBLY_CANDIDATE" : "SUBASSEMBLY";
 }
 
 function createParserWarning(args: {

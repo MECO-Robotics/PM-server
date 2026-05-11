@@ -3,6 +3,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { cadStepUploadConfig, resolveCadStepParserMode } from "../config/env";
 import { getCadStore } from "./cadStoreFactory";
 import { buildCadSnapshotDiff } from "./cadDiffService";
+import { applyHierarchyReviewDecisions } from "./cadHierarchyApplyService";
+import { buildCadHierarchyReview } from "./cadHierarchyReviewService";
+import { validateCadHierarchyForFinalize } from "./cadHierarchyValidationService";
 import {
   buildStepParserDiagnostics,
   CadImportError,
@@ -14,6 +17,7 @@ import type { CadStore } from "./cadStoreTypes";
 import {
   cadFinalizeSchema,
   cadGroupInstancesQuerySchema,
+  cadHierarchyApplySchema,
   cadListQuerySchema,
   cadMappingRuleCreateSchema,
   cadMappingRulePatchSchema,
@@ -22,6 +26,7 @@ import {
 } from "./cadRouteSchemas";
 import { createStepParserClient } from "./stepParserClient";
 import { groupPartInstances } from "./cadInstanceGrouping";
+import { buildCadPartMatchProposals } from "./cadPartMatchingService";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
 
@@ -289,14 +294,6 @@ async function buildTree(store: CadStore, snapshotId: string, groupInstances = t
   };
 }
 
-async function unresolvedMappings(store: CadStore, snapshotId: string) {
-  return (await store.listSnapshotMappings(snapshotId)).filter(
-    (mapping) =>
-      mapping.status === "NEEDS_REVIEW" ||
-      (mapping.targetKind === "UNMAPPED" && mapping.status !== "REJECTED"),
-  );
-}
-
 export async function registerCadRoutes(app: FastifyInstance, requireApiSession: RequireApiSession) {
   app.post("/api/cad/step-imports/debug-parse", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
@@ -454,6 +451,41 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
     };
   });
 
+  app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/hierarchy-review", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+    const review = await buildCadHierarchyReview({ store: getCadStore(), snapshotId: request.params.snapshotId });
+    return review ?? reply.code(404).send({ message: "CAD snapshot was not found." });
+  });
+
+  app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/part-match-proposals", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+    const store = getCadStore();
+    if (!(await store.findSnapshot(request.params.snapshotId))) {
+      return reply.code(404).send({ message: "CAD snapshot was not found." });
+    }
+    return buildCadPartMatchProposals({ store, snapshotId: request.params.snapshotId });
+  });
+
+  app.post<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/hierarchy-review/apply", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+    const parsed = cadHierarchyApplySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "CAD hierarchy review payload is invalid.", issues: parsed.error.flatten() });
+    }
+    const result = await applyHierarchyReviewDecisions({
+      store: getCadStore(),
+      snapshotId: request.params.snapshotId,
+      input: parsed.data,
+    });
+    return result ?? reply.code(404).send({ message: "CAD snapshot was not found." });
+  });
+
   app.post<{ Params: { snapshotId: string } }>(
     "/api/cad/snapshots/:snapshotId/mappings/apply",
     async (request, reply) => {
@@ -522,11 +554,12 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
     if (!snapshot) {
       return reply.code(404).send({ message: "CAD snapshot was not found." });
     }
-    const unresolved = await unresolvedMappings(store, snapshot.id);
-    if (unresolved.length > 0 && !parsed.data.allowUnresolved) {
+    const hierarchyIssues = await validateCadHierarchyForFinalize({ store, snapshotId: snapshot.id });
+    if (hierarchyIssues.length > 0 && !parsed.data.allowUnresolved) {
       return reply.code(409).send({
-        message: "CAD snapshot still has mappings that need review.",
-        unresolvedCount: unresolved.length,
+        message: "CAD snapshot still has hierarchy review issues.",
+        unresolvedCount: hierarchyIssues.length,
+        issues: hierarchyIssues,
       });
     }
     const item = await store.updateSnapshot(snapshot.id, {
@@ -534,7 +567,7 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
       finalizedAt: new Date().toISOString(),
       finalizedBy: parsed.data.finalizedBy ?? null,
     });
-    return { item };
+    return { item, warnings: hierarchyIssues };
   });
 
   app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/diff", async (request, reply) => {
