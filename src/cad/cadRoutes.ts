@@ -55,31 +55,47 @@ async function readStepImportPayload(request: FastifyRequest) {
   }
 
   const multipartRequest = request as FastifyRequest & {
-    file: (options?: unknown) => Promise<{
+    parts: (options?: unknown) => AsyncIterable<{
+      type: "file" | "field";
+      fieldname: string;
       filename: string;
-      fields: Record<string, { value?: unknown }>;
-      toBuffer: () => Promise<Buffer>;
-    } | undefined>;
+      value?: unknown;
+      toBuffer?: () => Promise<Buffer>;
+    }>;
   };
   try {
-    const part = await multipartRequest.file({ limits: { fileSize: maxStepUploadBytes } });
-    if (!part) {
+    const fields: Record<string, string> = {};
+    let fileName: string | null = null;
+    let fileText: string | null = null;
+
+    for await (const part of multipartRequest.parts({ limits: { fileSize: maxStepUploadBytes, files: 1 } })) {
+      if (part.type === "field") {
+        if (typeof part.value === "string") {
+          fields[part.fieldname] = part.value;
+        }
+        continue;
+      }
+
+      if (part.fieldname !== "file" || !part.toBuffer) {
+        continue;
+      }
+
+      const buffer = await part.toBuffer();
+      fileName = part.filename;
+      fileText = buffer.toString("utf8");
+    }
+
+    if (!fileName || fileText === null) {
       throw new CadImportError("STEP import requires a file.");
     }
-    const buffer = await part.toBuffer();
-    const fields = part.fields as Record<string, { value?: unknown } | undefined>;
-    const fieldValue = (name: string) => {
-      const value = fields[name]?.value;
-      return typeof value === "string" ? value : undefined;
-    };
     return {
-      fileName: part.filename,
-      fileText: buffer.toString("utf8"),
-      label: fieldValue("label"),
-      projectId: fieldValue("projectId"),
-      seasonId: fieldValue("seasonId"),
-      requestedBy: fieldValue("requestedBy"),
-      allowPlaceholder: fieldValue("allowPlaceholder") === "true",
+      fileName,
+      fileText,
+      label: fields.label,
+      projectId: fields.projectId,
+      seasonId: fields.seasonId,
+      requestedBy: fields.requestedBy,
+      allowPlaceholder: fields.allowPlaceholder === "true",
     };
   } catch (error) {
     if (isMultipartFileTooLargeError(error)) {

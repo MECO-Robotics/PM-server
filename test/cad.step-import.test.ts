@@ -249,24 +249,38 @@ function multipartStepPayload(input: {
   fileName: string;
   label: string;
   fileBuffer: Buffer;
+  fileFirst?: boolean;
 }) {
   const chunks: Buffer[] = [];
   const append = (value: string) => chunks.push(Buffer.from(value, "utf8"));
 
-  append(`--${input.boundary}\r\n`);
-  append(`Content-Disposition: form-data; name="label"\r\n\r\n`);
-  append(`${input.label}\r\n`);
-  append(`--${input.boundary}\r\n`);
-  append(`Content-Disposition: form-data; name="projectId"\r\n\r\n`);
-  append("robot-2026\r\n");
-  append(`--${input.boundary}\r\n`);
-  append(`Content-Disposition: form-data; name="seasonId"\r\n\r\n`);
-  append("season-2026\r\n");
-  append(`--${input.boundary}\r\n`);
-  append(`Content-Disposition: form-data; name="file"; filename="${input.fileName}"\r\n`);
-  append("Content-Type: model/step\r\n\r\n");
-  chunks.push(input.fileBuffer);
-  append(`\r\n--${input.boundary}--\r\n`);
+  const appendFields = () => {
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="label"\r\n\r\n`);
+    append(`${input.label}\r\n`);
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="projectId"\r\n\r\n`);
+    append("robot-2026\r\n");
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="seasonId"\r\n\r\n`);
+    append("season-2026\r\n");
+  };
+  const appendFile = () => {
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="file"; filename="${input.fileName}"\r\n`);
+    append("Content-Type: model/step\r\n\r\n");
+    chunks.push(input.fileBuffer);
+    append("\r\n");
+  };
+
+  if (input.fileFirst) {
+    appendFile();
+    appendFields();
+  } else {
+    appendFields();
+    appendFile();
+  }
+  append(`--${input.boundary}--\r\n`);
 
   return Buffer.concat(chunks);
 }
@@ -603,6 +617,45 @@ test("multipart STEP uploads accept files larger than the old 25 MiB cap", async
     resetLimits();
     assert.equal(response.json().importRun.originalFilename, "large-master.step");
   });
+});
+
+test("multipart STEP uploads preserve project context when metadata follows the file part", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const boundary = "meco-step-upload-file-first-boundary";
+    const body = multipartStepPayload({
+      boundary,
+      fileName: "file-first.step",
+      label: "file-first",
+      fileBuffer: Buffer.from(uploadedClassStepFixture(), "utf8"),
+      fileFirst: true,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      payload: body,
+    });
+
+    assert.equal(response.statusCode, 201, response.body);
+    resetLimits();
+    const parsed = response.json() as {
+      importRun: { projectId: string | null; seasonId: string | null };
+      snapshot: { projectId: string | null; seasonId: string | null };
+      summary: { parserUsedPlaceholder?: boolean; rootNames?: string[] };
+    };
+    assert.equal(parsed.importRun.projectId, "robot-2026");
+    assert.equal(parsed.importRun.seasonId, "season-2026");
+    assert.equal(parsed.snapshot.projectId, "robot-2026");
+    assert.equal(parsed.snapshot.seasonId, "season-2026");
+    assert.equal(parsed.summary.parserUsedPlaceholder, false);
+    assert.deepEqual(parsed.summary.rootNames, ["MAIN ASSEMBLY"]);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
 test("confirmed future mappings carry forward to the next STEP snapshot", async () => {
