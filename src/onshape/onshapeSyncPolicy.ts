@@ -1,4 +1,5 @@
 import type { OnshapeRuntimeStore } from "./cadStore";
+import { ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH, ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "./onshapeCadClient";
 import type { OnshapeDocumentRef, SyncLevel } from "./onshapeTypes";
 
 const callsBySyncLevel: Record<SyncLevel, number> = {
@@ -24,9 +25,9 @@ function syncRequestHashes(syncLevel: SyncLevel) {
     return [];
   }
   if (syncLevel === "shallow") {
-    return ["metadata"];
+    return [ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH];
   }
-  return ["metadata", "bom"];
+  return [ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH, ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH];
 }
 
 function cacheEntryMatchesRef(entry: ReturnType<OnshapeRuntimeStore["listCacheEntries"]>[number], ref: OnshapeDocumentRef) {
