@@ -19,6 +19,7 @@ import type {
   CadImportOnshapeClient,
   OnshapeAssemblyBomResponse,
   OnshapeDocumentMetadataResponse,
+  OnshapeReference,
 } from "../src/onshape/onshapeTypes";
 
 const workspaceUrl =
@@ -302,13 +303,21 @@ test("enforces per-sync call budgets before network transport", async () => {
 });
 
 test("rejects BOM fetches without an element id before making an Onshape request", async () => {
-  const reference = parseOnshapeUrl("https://cad.onshape.com/documents/0123456789abcdef01234567/w/abcdefabcdefabcdefabcdef");
+  const parsed = parseOnshapeUrl("https://cad.onshape.com/documents/0123456789abcdef01234567/w/abcdefabcdefabcdefabcdef");
+  assert.equal(parsed.ok, true);
+  assert.ok(parsed.documentId);
+  const reference: OnshapeReference = {
+    documentId: parsed.documentId,
+    workspaceId: parsed.workspaceId,
+    originalUrl: parsed.originalUrl,
+    referenceType: parsed.referenceType,
+  };
   let requestCount = 0;
   const client = createOnshapeCadClient({
     getCallsUsed: () => requestCount,
-    requestJson: async () => {
+    requestJson: async <T = unknown>() => {
       requestCount += 1;
-      return {};
+      return {} as T;
     },
   });
 
