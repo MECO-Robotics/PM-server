@@ -1,10 +1,13 @@
-﻿import type {
+import type {
   CadImportOnshapeClient,
   OnshapeAssemblyBomResponse,
   OnshapeDocumentMetadataResponse,
   OnshapeReference,
 } from "./onshapeTypes";
 import type { createOnshapeApiClient } from "./onshapeApiClient";
+
+export const ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH = "document-metadata:v1";
+export const ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH = "assembly-bom:v1";
 
 type LowLevelClient = ReturnType<typeof createOnshapeApiClient>;
 
@@ -84,7 +87,7 @@ export function createOnshapeCadClient(lowLevelClient: LowLevelClient): CadImpor
         endpoint,
         method: "GET",
         reference,
-        requestHash: "document-metadata:v1",
+        requestHash: ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH,
         importRunId,
         policy,
       });
@@ -100,7 +103,7 @@ export function createOnshapeCadClient(lowLevelClient: LowLevelClient): CadImpor
         endpoint,
         method: "GET",
         reference,
-        requestHash: "assembly-bom:v1",
+        requestHash: ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH,
         importRunId,
         policy,
       });
