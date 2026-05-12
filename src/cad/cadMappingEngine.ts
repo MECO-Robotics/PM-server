@@ -349,7 +349,6 @@ export async function applyMappingUpdates(args: {
       .filter((source): source is CadSourceRecord => Boolean(source));
     const futureRuleIdByMappingKey = new Map<string, string>();
     const futureRuleByRuleKey = new Map<string, CadMappingRule>();
-    let mappingRuleId = mappings[0]?.mappingRuleId ?? null;
     if (update.applyToFuture && args.snapshot.projectId) {
       for (const source of sourceRecordsForUpdate) {
         const matchValue = source.stableSignatures[0] ?? source.item.stableSignature;
@@ -380,7 +379,7 @@ export async function applyMappingUpdates(args: {
     for (const mapping of mappings) {
       updated.push(
         await args.store.updateSnapshotMapping(mapping.id, {
-          mappingRuleId: futureRuleIdByMappingKey.get(mappingSourceKey(mapping)) ?? mappingRuleId,
+          mappingRuleId: futureRuleIdByMappingKey.get(mappingSourceKey(mapping)) ?? mapping.mappingRuleId,
           targetKind: update.targetKind,
           targetId: update.targetId ?? null,
           confidence: update.confidence ?? (update.applyToFuture ? "MANUAL" : mapping.confidence),
