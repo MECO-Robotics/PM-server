@@ -311,6 +311,14 @@ async function supersedeMatchingRules(args: {
   }
 }
 
+function mappingSourceKey(mapping: { sourceKind: CadMappingSourceKind; sourceId: string }) {
+  return `${mapping.sourceKind}:${mapping.sourceId}`;
+}
+
+function futureRuleKey(source: CadSourceRecord, matchValue: string) {
+  return `${source.kind}:STABLE_SIGNATURE:${matchValue}`;
+}
+
 export async function applyMappingUpdates(args: {
   store: CadStore;
   snapshot: CadSnapshot;
@@ -339,31 +347,40 @@ export async function applyMappingUpdates(args: {
     const sourceRecordsForUpdate = mappings
       .map((mapping) => sourceRecordForMapping({ mapping, assemblyNodes, partDefinitions, partInstances }))
       .filter((source): source is CadSourceRecord => Boolean(source));
+    const futureRuleIdByMappingKey = new Map<string, string>();
+    const futureRuleByRuleKey = new Map<string, CadMappingRule>();
     let mappingRuleId = mappings[0]?.mappingRuleId ?? null;
-    if (update.applyToFuture && sourceRecordsForUpdate[0] && args.snapshot.projectId) {
-      const source = sourceRecordsForUpdate[0];
-      const rule = await args.store.createMappingRule({
-        projectId: args.snapshot.projectId,
-        seasonId: args.snapshot.seasonId,
-        sourceKind: source.kind,
-        matchStrategy: "STABLE_SIGNATURE",
-        matchValue: source.stableSignatures[0] ?? source.item.stableSignature,
-        targetKind: update.targetKind,
-        targetId: update.targetId ?? null,
-        confidence: "MANUAL",
-        createdFromSnapshotId: args.snapshot.id,
-        createdBy: update.reviewedBy ?? args.reviewedBy ?? null,
-        notes: update.notes ?? null,
-      });
-      await supersedeMatchingRules({ store: args.store, snapshot: args.snapshot, source, newRuleId: rule.id });
-      mappingRuleId = rule.id;
-      mappingRules.push(rule);
+    if (update.applyToFuture && args.snapshot.projectId) {
+      for (const source of sourceRecordsForUpdate) {
+        const matchValue = source.stableSignatures[0] ?? source.item.stableSignature;
+        const ruleKey = futureRuleKey(source, matchValue);
+        let rule = futureRuleByRuleKey.get(ruleKey);
+        if (!rule) {
+          rule = await args.store.createMappingRule({
+            projectId: args.snapshot.projectId,
+            seasonId: args.snapshot.seasonId,
+            sourceKind: source.kind,
+            matchStrategy: "STABLE_SIGNATURE",
+            matchValue,
+            targetKind: update.targetKind,
+            targetId: update.targetId ?? null,
+            confidence: "MANUAL",
+            createdFromSnapshotId: args.snapshot.id,
+            createdBy: update.reviewedBy ?? args.reviewedBy ?? null,
+            notes: update.notes ?? null,
+          });
+          futureRuleByRuleKey.set(ruleKey, rule);
+          mappingRules.push(rule);
+        }
+        await supersedeMatchingRules({ store: args.store, snapshot: args.snapshot, source, newRuleId: rule.id });
+        futureRuleIdByMappingKey.set(mappingSourceKey({ sourceKind: source.kind, sourceId: source.item.id }), rule.id);
+      }
     }
 
     for (const mapping of mappings) {
       updated.push(
         await args.store.updateSnapshotMapping(mapping.id, {
-          mappingRuleId,
+          mappingRuleId: futureRuleIdByMappingKey.get(mappingSourceKey(mapping)) ?? mappingRuleId,
           targetKind: update.targetKind,
           targetId: update.targetId ?? null,
           confidence: update.confidence ?? (update.applyToFuture ? "MANUAL" : mapping.confidence),

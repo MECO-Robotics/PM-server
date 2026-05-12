@@ -17,7 +17,7 @@ export async function buildApp() {
 
   const app = Fastify({
     logger: true,
-    bodyLimit: 2 * 1024 * 1024,
+    bodyLimit: Math.max(2 * 1024 * 1024, cadStepUploadConfig.maxBytes),
   });
 
   await app.register(cors, {

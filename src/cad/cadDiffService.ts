@@ -13,8 +13,31 @@ function partParentName(assemblies: CadAssemblyNode[], instance: CadPartInstance
   return instance ? assemblyName(assemblies, instance.parentAssemblyNodeId) : null;
 }
 
-function mappingKey(mapping: CadSnapshotMapping) {
-  return `${mapping.sourceKind}:${mapping.sourceId}`;
+function sourceSignatureForMapping(args: {
+  mapping: CadSnapshotMapping;
+  assembliesById: Map<string, CadAssemblyNode>;
+  partsById: Map<string, CadPartDefinition>;
+  instancesById: Map<string, CadPartInstance>;
+}) {
+  if (args.mapping.sourceKind === "ASSEMBLY_NODE") {
+    return args.assembliesById.get(args.mapping.sourceId)?.stableSignature ?? null;
+  }
+  if (args.mapping.sourceKind === "PART_DEFINITION") {
+    return args.partsById.get(args.mapping.sourceId)?.stableSignature ?? null;
+  }
+  return args.instancesById.get(args.mapping.sourceId)?.stableSignature ?? null;
+}
+
+function mappingKey(args: {
+  mapping: CadSnapshotMapping;
+  assembliesById: Map<string, CadAssemblyNode>;
+  partsById: Map<string, CadPartDefinition>;
+  instancesById: Map<string, CadPartInstance>;
+}) {
+  const stableSignature = sourceSignatureForMapping(args);
+  return stableSignature
+    ? `${args.mapping.sourceKind}:stable:${stableSignature}`
+    : `${args.mapping.sourceKind}:source:${args.mapping.sourceId}`;
 }
 
 function compactAssembly(item: CadAssemblyNode) {
@@ -162,6 +185,12 @@ export async function buildCadSnapshotDiff(args: { store: CadStore; snapshotId: 
   const currentPartsBySignature = byStableSignature(currentParts);
   const previousInstancesBySignature = byStableSignature(previousInstances);
   const currentInstancesBySignature = byStableSignature(currentInstances);
+  const previousAssembliesById = new Map(previousAssemblies.map((assembly) => [assembly.id, assembly] as const));
+  const previousPartsById = new Map(previousParts.map((part) => [part.id, part] as const));
+  const previousInstancesById = new Map(previousInstances.map((instance) => [instance.id, instance] as const));
+  const currentAssembliesById = new Map(currentAssemblies.map((assembly) => [assembly.id, assembly] as const));
+  const currentPartsById = new Map(currentParts.map((part) => [part.id, part] as const));
+  const currentInstancesById = new Map(currentInstances.map((instance) => [instance.id, instance] as const));
 
   const addedAssemblies = currentAssemblies
     .filter((assembly) => !previousAssembliesBySignature.has(assembly.stableSignature))
@@ -197,10 +226,27 @@ export async function buildCadSnapshotDiff(args: { store: CadStore; snapshotId: 
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-  const previousMappingByKey = new Map(previousMappings.map((mapping) => [mappingKey(mapping), mapping] as const));
+  const previousMappingByKey = new Map(
+    previousMappings.map((mapping) => [
+      mappingKey({
+        mapping,
+        assembliesById: previousAssembliesById,
+        partsById: previousPartsById,
+        instancesById: previousInstancesById,
+      }),
+      mapping,
+    ] as const),
+  );
   const mappingChanges = currentMappings
     .map((mapping) => {
-      const prior = previousMappingByKey.get(mappingKey(mapping));
+      const prior = previousMappingByKey.get(
+        mappingKey({
+          mapping,
+          assembliesById: currentAssembliesById,
+          partsById: currentPartsById,
+          instancesById: currentInstancesById,
+        }),
+      );
       if (!prior) {
         return mapping.targetKind === "UNMAPPED"
           ? { type: "new_unmapped_candidate", sourceKind: mapping.sourceKind, sourceId: mapping.sourceId }

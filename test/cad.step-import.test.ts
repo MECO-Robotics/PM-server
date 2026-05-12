@@ -825,6 +825,71 @@ test("mapping a grouped part row updates all instances and creates one future ru
   });
 });
 
+test("batch mapping part instances creates future rules per stable signature", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(
+      app,
+      "mixed-signature-batch-apply",
+      repeatedPartCadFixture({ spacerCount: 2, includeSingletonPart: true }),
+    );
+    resetLimits();
+
+    const rawMappingsResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings?groupInstances=false`,
+    });
+    assert.equal(rawMappingsResponse.statusCode, 200, rawMappingsResponse.body);
+    const partInstanceMappings = (rawMappingsResponse.json() as {
+      items: Array<{ sourceKind: string; sourceId: string; sourceName: string }>;
+    }).items.filter((mapping) => mapping.sourceKind === "PART_INSTANCE");
+    assert.equal(partInstanceMappings.length, 3);
+    resetLimits();
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings/apply`,
+      payload: {
+        updates: [
+          {
+            sourceKind: "PART_INSTANCE",
+            sourceIds: partInstanceMappings.map((mapping) => mapping.sourceId),
+            targetKind: "PART_DEFINITION",
+            targetId: "mc-shooter-kit",
+            confidence: "MANUAL",
+            status: "CONFIRMED",
+            applyToFuture: true,
+          },
+        ],
+      },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+    const applied = applyResponse.json() as {
+      updated: Array<{ sourceId: string; mappingRuleId: string | null }>;
+      mappingRules: Array<{ id: string; sourceKind: string; matchValue: string; targetId: string | null }>;
+    };
+    assert.equal(applied.updated.length, 3);
+    assert.equal(applied.mappingRules.length, 2);
+    assert.deepEqual(
+      applied.mappingRules.map((rule) => rule.matchValue).sort(),
+      ["part:number:SHR-001", "part:number:SHR-002"],
+    );
+
+    const spacerRule = applied.mappingRules.find((rule) => rule.matchValue === "part:number:SHR-001");
+    const plateRule = applied.mappingRules.find((rule) => rule.matchValue === "part:number:SHR-002");
+    assert.ok(spacerRule);
+    assert.ok(plateRule);
+    const mappingBySourceId = new Map(applied.updated.map((mapping) => [mapping.sourceId, mapping]));
+    for (const mapping of partInstanceMappings) {
+      assert.equal(
+        mappingBySourceId.get(mapping.sourceId)?.mappingRuleId,
+        mapping.sourceName.includes("Mounting Plate") ? plateRule.id : spacerRule.id,
+      );
+    }
+  });
+});
+
 test("snapshot diff reports grouped repeated-instance quantity changes", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -1158,6 +1223,27 @@ test("snapshot diff reports added assemblies, moved part instances, and unmapped
       currentParentAssemblyName: "MECH - Intake",
     });
     assert.ok(diff.warnings.some((warning) => warning.code === "step_unmapped_assembly"));
+  });
+});
+
+test("snapshot diff matches unchanged mappings by stable source identity", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    await uploadStep(app, "iteration-1", cadFixture());
+    resetLimits();
+    const second = await uploadStep(app, "iteration-2", cadFixture());
+    resetLimits();
+
+    const diffResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${second.snapshot.id}/diff`,
+    });
+    assert.equal(diffResponse.statusCode, 200);
+    const diff = diffResponse.json() as {
+      mappingChanges: Array<{ type: string; sourceKind: string; sourceId: string }>;
+    };
+    assert.deepEqual(diff.mappingChanges, []);
   });
 });
 
