@@ -1,5 +1,6 @@
 ﻿import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createHmac } from "node:crypto";
 
 import { runCadImport } from "../src/onshape/cadImporter";
 import {
@@ -119,6 +120,29 @@ function createFakeClient(options: {
   };
 }
 
+function expectedOnshapeApiKeyAuthorization(args: {
+  accessKey: string;
+  secretKey: string;
+  method: "GET" | "POST";
+  endpoint: string;
+  nonce: string;
+  date: string;
+  contentType: string;
+}) {
+  const url = new URL(args.endpoint, "https://cad.onshape.com/");
+  const signatureInput = [
+    args.method,
+    args.nonce,
+    args.date,
+    args.contentType,
+    url.pathname,
+    url.search ? url.search.slice(1) : "",
+    "",
+  ].join("\n").toLowerCase();
+  const signature = createHmac("sha256", args.secretKey).update(signatureInput).digest("base64");
+  return `On ${args.accessKey}:HmacSHA256:${signature}`;
+}
+
 test("parses common Onshape URL shapes without network access", () => {
   assert.deepEqual(parseOnshapeUrl(workspaceUrl), {
     ok: true,
@@ -159,6 +183,52 @@ test("builds stable cache keys with immutable version identity", () => {
     }),
     "GET:/api/documents/d/0123456789abcdef01234567:d/0123456789abcdef01234567:v/222222222222222222222222:e/111111111111111111111111:metadata",
   );
+});
+
+test("signs API-key Onshape requests with HMAC authorization headers", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = parseOnshapeUrl(workspaceUrl);
+  const date = new Date("2026-01-02T03:04:05.000Z");
+  const nonce = "abcdefghijklmnop";
+  const endpoint = "/api/documents/d/0123456789abcdef01234567?b=2&a=1";
+  let capturedHeaders: Record<string, string> | undefined;
+  const client = createOnshapeApiClient({
+    store,
+    credentials: { mode: "api_key", accessKey: "access-key", secretKey: "secret-key" },
+    now: () => date,
+    nonceFactory: () => nonce,
+    transport: async (request) => {
+      capturedHeaders = request.headers;
+      return { statusCode: 200, headers: {}, json: { ok: true } };
+    },
+  });
+
+  await client.requestJson({
+    endpoint,
+    method: "GET",
+    reference,
+    requestHash: "signed-request",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  const headers = capturedHeaders;
+  assert.ok(headers);
+  assert.equal(headers.Date, date.toUTCString());
+  assert.equal(headers["On-Nonce"], nonce);
+  assert.equal(headers["Content-Type"], "application/json");
+  assert.equal(
+    headers.Authorization,
+    expectedOnshapeApiKeyAuthorization({
+      accessKey: "access-key",
+      secretKey: "secret-key",
+      method: "GET",
+      endpoint,
+      nonce,
+      date: date.toUTCString(),
+      contentType: "application/json",
+    }),
+  );
+  assert.equal(headers["X-Onshape-Auth-Mode"], undefined);
 });
 
 test("serves immutable cached responses without spending calls", async () => {

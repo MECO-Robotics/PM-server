@@ -1,5 +1,6 @@
 ﻿import type { OnshapeCredentials, OnshapeReference, OnshapeTransport, RequestPolicy } from "./onshapeTypes";
 import type { OnshapeRuntimeStore } from "./cadStore";
+import { createHmac, randomBytes } from "node:crypto";
 
 export class OnshapeCallBudgetExceededError extends Error {
   constructor(message = "max_calls_allowed") {
@@ -36,6 +37,8 @@ interface CreateClientArgs {
   credentials: OnshapeCredentials;
   transport?: OnshapeTransport;
   baseUrl?: string;
+  now?: () => Date;
+  nonceFactory?: () => string;
 }
 
 function isImmutableReference(reference: Partial<OnshapeReference>) {
@@ -92,7 +95,38 @@ export function buildOnshapeCacheKey(args: {
   return `${args.method}:${args.endpoint}:${referenceIdentity(args.reference)}:${args.requestHash}`;
 }
 
-function buildAuthHeaders(credentials: OnshapeCredentials): Record<string, string> {
+function apiKeySignature(args: {
+  accessKey: string;
+  secretKey: string;
+  method: "GET" | "POST";
+  url: URL;
+  nonce: string;
+  date: string;
+  contentType: string;
+}) {
+  const query = args.url.search ? args.url.search.slice(1) : "";
+  const signatureInput = [
+    args.method,
+    args.nonce,
+    args.date,
+    args.contentType,
+    args.url.pathname,
+    query,
+    "",
+  ].join("\n").toLowerCase();
+  const signature = createHmac("sha256", args.secretKey).update(signatureInput).digest("base64");
+  return `On ${args.accessKey}:HmacSHA256:${signature}`;
+}
+
+function buildAuthHeaders(args: {
+  credentials: OnshapeCredentials;
+  method: "GET" | "POST";
+  endpoint: string;
+  baseUrl: string;
+  now: () => Date;
+  nonceFactory: () => string;
+}): Record<string, string> {
+  const { credentials } = args;
   if (credentials.mode === "oauth") {
     if (!credentials.bearerToken) {
       throw new OnshapeConfigurationError("Onshape OAuth token is not configured.");
@@ -104,9 +138,23 @@ function buildAuthHeaders(credentials: OnshapeCredentials): Record<string, strin
     throw new OnshapeConfigurationError();
   }
 
+  const contentType = "application/json";
+  const date = args.now().toUTCString();
+  const nonce = args.nonceFactory();
+  const url = new URL(args.endpoint, `${args.baseUrl.replace(/\/+$/, "")}/`);
   return {
-    "X-Onshape-Access-Key": credentials.accessKey,
-    "X-Onshape-Auth-Mode": "api_key_placeholder",
+    Authorization: apiKeySignature({
+      accessKey: credentials.accessKey,
+      secretKey: credentials.secretKey,
+      method: args.method,
+      url,
+      nonce,
+      date,
+      contentType,
+    }),
+    "Content-Type": contentType,
+    Date: date,
+    "On-Nonce": nonce,
   };
 }
 
@@ -136,6 +184,8 @@ export function createOnshapeApiClient({
   credentials,
   transport,
   baseUrl = "https://cad.onshape.com",
+  now = () => new Date(),
+  nonceFactory = () => randomBytes(16).toString("hex"),
 }: CreateClientArgs) {
   let callsUsed = 0;
   const activeTransport: OnshapeTransport = transport ?? ((request) => defaultTransport(baseUrl, request));
@@ -166,7 +216,7 @@ export function createOnshapeApiClient({
       }
 
       assertCallIsAllowed(store, args, callsUsed, cacheKey, requestStartedAt);
-      const headers = buildHeadersOrLogError(store, args, credentials, cacheKey, requestStartedAt);
+      const headers = buildHeadersOrLogError(store, args, credentials, baseUrl, now, nonceFactory, cacheKey, requestStartedAt);
       const response = await activeTransport({ endpoint: args.endpoint, method: args.method, headers });
       callsUsed += 1;
       const responseHeaders = normalizeHeaders(response.headers);
@@ -243,11 +293,21 @@ function buildHeadersOrLogError(
   store: OnshapeRuntimeStore,
   args: OnshapeRequestJsonArgs,
   credentials: OnshapeCredentials,
+  baseUrl: string,
+  now: () => Date,
+  nonceFactory: () => string,
   cacheKey: string,
   requestStartedAt: string,
 ) {
   try {
-    return buildAuthHeaders(credentials);
+    return buildAuthHeaders({
+      credentials,
+      method: args.method,
+      endpoint: args.endpoint,
+      baseUrl,
+      now,
+      nonceFactory,
+    });
   } catch (error) {
     store.appendRequestLog({
       importRunId: args.importRunId ?? null,

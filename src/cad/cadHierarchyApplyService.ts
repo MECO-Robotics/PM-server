@@ -49,13 +49,28 @@ export async function applyHierarchyReviewDecisions(args: {
     args.store.listAssemblyNodes(snapshot.id),
     args.store.listPartDefinitions(snapshot.id),
   ]);
+  const partInstances = await args.store.listPartInstances(snapshot.id);
   const assemblyByCadSourceId = new Map(assemblies.map((assembly) => [assembly.sourceId, assembly] as const));
   const cadPartBySourceId = new Map(cadParts.map((part) => [part.sourceId, part] as const));
+  const partInstanceByCadSourceId = new Map(partInstances.map((part) => [part.sourceId, part] as const));
   const decisions = args.input.decisions ?? [];
   const assemblyTargetId = (decision: { targetKind: CadMappingTargetKind; targetId?: string | null; parentMechanismId?: string | null }) =>
     decision.targetKind === "COMPONENT_ASSEMBLY"
       ? decision.parentMechanismId ?? decision.targetId ?? null
       : decision.targetId ?? null;
+  const partTargetId = (decision: { targetKind: CadMappingTargetKind; targetId?: string | null; status?: string | null }) =>
+    decision.status === "REJECTED" || decision.targetKind === "IGNORE" || decision.targetKind === "REFERENCE_GEOMETRY" || decision.targetKind === "UNMAPPED"
+      ? null
+      : decision.targetId ?? null;
+  const partTargetKind = (decision: { targetKind: CadMappingTargetKind; status?: string | null }) => {
+    if (decision.status === "REJECTED") {
+      return "UNMAPPED" as const;
+    }
+    if (decision.targetKind === "IGNORE" || decision.targetKind === "REFERENCE_GEOMETRY" || decision.targetKind === "UNMAPPED") {
+      return decision.targetKind;
+    }
+    return "PART_DEFINITION" as const;
+  };
   const updates = [
     ...decisions
       .filter((decision) => (decision.sourceKind ?? "ASSEMBLY_NODE") === "ASSEMBLY_NODE")
@@ -78,12 +93,13 @@ export async function applyHierarchyReviewDecisions(args: {
       .filter((decision) => (decision.sourceKind === "PART_DEFINITION" || decision.sourceKind === "PART_INSTANCE"))
       .map((decision) => {
         const sourceId = decision.sourceId ?? decision.nodeId;
-        const cadPart = cadPartBySourceId.get(sourceId);
+        const isPartInstance = decision.sourceKind === "PART_INSTANCE";
+        const cadPart = isPartInstance ? partInstanceByCadSourceId.get(sourceId) : cadPartBySourceId.get(sourceId);
         return {
-          sourceKind: "PART_DEFINITION" as const,
+          sourceKind: isPartInstance ? "PART_INSTANCE" as const : "PART_DEFINITION" as const,
           sourceId: cadPart?.id ?? sourceId,
-          targetKind: decision.status === "REJECTED" ? "UNMAPPED" as const : "PART_DEFINITION" as const,
-          targetId: decision.status === "REJECTED" ? null : decision.targetId ?? null,
+          targetKind: partTargetKind(decision),
+          targetId: partTargetId(decision),
           confidence: "MANUAL" as const,
           status: decision.status ?? "CONFIRMED",
           applyToFuture: decision.applyToFuture,

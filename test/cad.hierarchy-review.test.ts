@@ -345,6 +345,55 @@ test("component assemblies can be assigned to an existing parent mechanism", asy
   });
 });
 
+test("hierarchy apply preserves part-instance decisions", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+    const rivet = createDomainPart({ name: "3/16 Aluminum Rivet", partNumber: "RVT-001", type: "hardware", source: "McMaster-Carr" });
+    const imported = await uploadStep(app, "part-instance-hierarchy-apply", hierarchyCadFixture());
+    resetLimits();
+
+    const mappingsResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/mappings?groupInstances=false`,
+    });
+    assert.equal(mappingsResponse.statusCode, 200, mappingsResponse.body);
+    const instanceMapping = (mappingsResponse.json() as {
+      items: Array<{ sourceKind: string; sourceId: string; targetId: string | null }>;
+    }).items.find((mapping) => mapping.sourceKind === "PART_INSTANCE");
+    assert.ok(instanceMapping);
+    resetLimits();
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review/apply`,
+      payload: {
+        reviewedBy: "mentor@example.com",
+        decisions: [
+          {
+            nodeId: instanceMapping.sourceId,
+            sourceId: instanceMapping.sourceId,
+            sourceKind: "PART_INSTANCE",
+            targetKind: "PART_DEFINITION",
+            targetId: rivet.id,
+            status: "CONFIRMED",
+          },
+        ],
+      },
+    });
+
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+    const applied = applyResponse.json() as {
+      updated: Array<{ sourceKind: string; sourceId: string; targetKind: string; targetId: string | null; status: string }>;
+    };
+    assert.equal(applied.updated.length, 1);
+    assert.equal(applied.updated[0]?.sourceKind, "PART_INSTANCE");
+    assert.equal(applied.updated[0]?.sourceId, instanceMapping.sourceId);
+    assert.equal(applied.updated[0]?.targetKind, "PART_DEFINITION");
+    assert.equal(applied.updated[0]?.targetId, rivet.id);
+    assert.equal(applied.updated[0]?.status, "CONFIRMED");
+  });
+});
+
 test("finalize reports hierarchy validation issues and still honors allowUnresolved", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
