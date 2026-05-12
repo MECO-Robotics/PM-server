@@ -963,6 +963,21 @@ test("STEP debug parse endpoint returns parser diagnostics without creating a sn
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
+test("CAD snapshot list rejects invalid enum filters before querying the store", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const badStatusResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots?status=foo" });
+    assert.equal(badStatusResponse.statusCode, 400);
+    assert.match(badStatusResponse.body, /CAD list query is invalid/);
+    resetLimits();
+
+    const badSourceResponse = await app.inject({ method: "GET", url: "/api/cad/snapshots?source=foo" });
+    assert.equal(badSourceResponse.statusCode, 400);
+    assert.match(badSourceResponse.body, /CAD list query is invalid/);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
+});
+
 test("normal STEP upload rejects placeholder parser mode instead of creating a placeholder snapshot", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();

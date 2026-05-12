@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const cadImportSourceValues = ["STEP_UPLOAD", "ONSHAPE_API", "ONSHAPE_BOM_CSV", "MANUAL_BOM_CSV"] as const;
+export const cadSnapshotStatusValues = ["parsed", "mapping_review", "mapped", "finalized", "superseded"] as const;
+
 export const cadStepImportJsonSchema = z.object({
   fileName: z.string().trim().min(1),
   fileText: z.string().min(1),
@@ -13,8 +16,8 @@ export const cadStepImportJsonSchema = z.object({
 export const cadListQuerySchema = z.object({
   projectId: z.string().trim().min(1).optional(),
   seasonId: z.string().trim().min(1).optional(),
-  source: z.string().trim().min(1).optional(),
-  status: z.string().trim().min(1).optional(),
+  source: z.enum(cadImportSourceValues).optional(),
+  status: z.enum(cadSnapshotStatusValues).optional(),
 });
 
 export const cadGroupInstancesQuerySchema = z.object({

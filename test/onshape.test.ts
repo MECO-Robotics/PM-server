@@ -12,6 +12,7 @@ import {
   OnshapeCallBudgetExceededError,
   OnshapeRateLimitError,
 } from "../src/onshape/onshapeApiClient";
+import { createOnshapeCadClient } from "../src/onshape/onshapeCadClient";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "../src/onshape/onshapeSyncPolicy";
 import type {
@@ -298,6 +299,29 @@ test("enforces per-sync call budgets before network transport", async () => {
     OnshapeCallBudgetExceededError,
   );
   assert.equal(transportCalls, 1);
+});
+
+test("rejects BOM fetches without an element id before making an Onshape request", async () => {
+  const reference = parseOnshapeUrl("https://cad.onshape.com/documents/0123456789abcdef01234567/w/abcdefabcdefabcdefabcdef");
+  let requestCount = 0;
+  const client = createOnshapeCadClient({
+    getCallsUsed: () => requestCount,
+    requestJson: async () => {
+      requestCount += 1;
+      return {};
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.fetchAssemblyBom({
+        reference,
+        importRunId: "import-1",
+        policy: { priority: "snapshot", maxCallsAllowed: 2, allowCached: false, requireFresh: true },
+      }),
+    /requires an elementId/,
+  );
+  assert.equal(requestCount, 0);
 });
 
 test("turns 429 responses into rate-limit errors and auditable logs", async () => {

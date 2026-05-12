@@ -48,7 +48,10 @@ function isMultipartFileTooLargeError(error: unknown) {
 
 function readListQuery(query: unknown) {
   const parsed = cadListQuerySchema.safeParse(query ?? {});
-  return parsed.success ? parsed.data : {};
+  if (!parsed.success) {
+    throw new CadImportError("CAD list query is invalid.", 400);
+  }
+  return parsed.data;
 }
 
 function readGroupInstancesQuery(query: unknown) {
@@ -372,7 +375,14 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
     if (!requireApiSession(request, reply)) {
       return;
     }
-    return { items: await getCadStore().listImportRuns(readListQuery(request.query)) };
+    try {
+      return { items: await getCadStore().listImportRuns(readListQuery(request.query)) };
+    } catch (error) {
+      if (error instanceof CadImportError) {
+        return reply.code(error.statusCode).send({ message: error.message });
+      }
+      throw error;
+    }
   });
 
   app.get<{ Params: { importRunId: string } }>("/api/cad/import-runs/:importRunId", async (request, reply) => {
@@ -392,7 +402,14 @@ export async function registerCadRoutes(app: FastifyInstance, requireApiSession:
     if (!requireApiSession(request, reply)) {
       return;
     }
-    return { items: await getCadStore().listSnapshots(readListQuery(request.query)) };
+    try {
+      return { items: await getCadStore().listSnapshots(readListQuery(request.query)) };
+    } catch (error) {
+      if (error instanceof CadImportError) {
+        return reply.code(error.statusCode).send({ message: error.message });
+      }
+      throw error;
+    }
   });
 
   app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId", async (request, reply) => {
