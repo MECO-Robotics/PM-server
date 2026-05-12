@@ -1242,8 +1242,10 @@ test("snapshot diff matches unchanged mappings by stable source identity", async
     assert.equal(diffResponse.statusCode, 200);
     const diff = diffResponse.json() as {
       mappingChanges: Array<{ type: string; sourceKind: string; sourceId: string }>;
+      movedPartInstances: Array<{ sourceId: string }>;
     };
     assert.deepEqual(diff.mappingChanges, []);
+    assert.deepEqual(diff.movedPartInstances, []);
   });
 });
 

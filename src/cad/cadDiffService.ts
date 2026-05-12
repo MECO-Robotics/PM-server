@@ -13,6 +13,13 @@ function partParentName(assemblies: CadAssemblyNode[], instance: CadPartInstance
   return instance ? assemblyName(assemblies, instance.parentAssemblyNodeId) : null;
 }
 
+function partParentKey(assembliesById: Map<string, CadAssemblyNode>, instance: CadPartInstance) {
+  if (!instance.parentAssemblyNodeId) {
+    return null;
+  }
+  return assembliesById.get(instance.parentAssemblyNodeId)?.stableSignature ?? instance.parentAssemblyNodeId;
+}
+
 function sourceSignatureForMapping(args: {
   mapping: CadSnapshotMapping;
   assembliesById: Map<string, CadAssemblyNode>;
@@ -215,7 +222,10 @@ export async function buildCadSnapshotDiff(args: { store: CadStore; snapshotId: 
   const movedPartInstances = currentInstances
     .map((instance) => {
       const prior = previousInstancesBySignature.get(instance.stableSignature);
-      if (!prior || prior.parentAssemblyNodeId === instance.parentAssemblyNodeId) {
+      if (
+        !prior ||
+        partParentKey(previousAssembliesById, prior) === partParentKey(currentAssembliesById, instance)
+      ) {
         return null;
       }
       return {
