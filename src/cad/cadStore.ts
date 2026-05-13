@@ -84,9 +84,11 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
       Object.assign(item, patch, { updatedAt: nowIso() });
       return clone(item);
     },
-    listImportRuns(filter?: { projectId?: string | null; seasonId?: string | null }) {
+    listImportRuns(filter) {
       return clone(
         filterProjectSeason(state.importRuns, filter?.projectId, filter?.seasonId)
+          .filter((run) => !filter?.source || run.source === filter.source)
+          .filter((run) => !filter?.status || run.status === filter.status)
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       );
     },

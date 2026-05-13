@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 
 import { buildCadHierarchyReview } from "../cadHierarchyReviewService";
 import { getCadStore } from "../cadStoreFactory";
-import { readGroupInstancesQuery, readListQuery } from "./cadRouteQueries";
+import { readGroupInstancesQuery, readImportRunListQuery, readSnapshotListQuery } from "./cadRouteQueries";
 import type { RequireApiSession } from "./cadRouteTypes";
 import { registerCadSnapshotActionRoutes } from "./cadSnapshotActionRoutes";
 import { buildTree, groupedSnapshotMappings, snapshotMappings } from "./cadSnapshotViewService";
@@ -13,7 +13,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
       return;
     }
     try {
-      return { items: await getCadStore().listImportRuns(readListQuery(request.query)) };
+      return { items: await getCadStore().listImportRuns(readImportRunListQuery(request.query)) };
     } catch (error) {
       return handleCadQueryError(error, reply);
     }
@@ -37,7 +37,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
       return;
     }
     try {
-      return { items: await getCadStore().listSnapshots(readListQuery(request.query)) };
+      return { items: await getCadStore().listSnapshots(readSnapshotListQuery(request.query)) };
     } catch (error) {
       return handleCadQueryError(error, reply);
     }

@@ -1,6 +1,8 @@
 import type {
   CadAssemblyNode,
+  CadImportSource,
   CadImportRun,
+  CadImportStatus,
   CadImportWarning,
   CadMappingRule,
   CadPartDefinition,
@@ -39,7 +41,12 @@ export type CadWarningCreateInput = Omit<CadImportWarning, "id" | "createdAt">;
 export interface CadStore {
   createImportRun(input: CadImportRunCreateInput): Awaitable<CadImportRun>;
   updateImportRun(id: string, patch: CadImportRunPatchInput): Awaitable<CadImportRun | null>;
-  listImportRuns(filter?: { projectId?: string | null; seasonId?: string | null }): Awaitable<CadImportRun[]>;
+  listImportRuns(filter?: {
+    projectId?: string | null;
+    seasonId?: string | null;
+    source?: CadImportSource;
+    status?: CadImportStatus;
+  }): Awaitable<CadImportRun[]>;
   findImportRun(id: string): Awaitable<CadImportRun | null>;
   createSnapshot(input: CadSnapshotCreateInput): Awaitable<CadSnapshot>;
   updateSnapshot(id: string, patch: CadSnapshotPatchInput): Awaitable<CadSnapshot | null>;

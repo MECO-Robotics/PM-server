@@ -179,7 +179,12 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
     },
     async listImportRuns(filter) {
       const items = await prisma.cadImportRun.findMany({
-        where: { projectId: filter?.projectId, seasonId: filter?.seasonId },
+        where: {
+          projectId: filter?.projectId,
+          seasonId: filter?.seasonId,
+          source: filter?.source,
+          status: filter?.status,
+        },
         orderBy: { createdAt: "desc" },
       });
       return items.map(importRunFromDb);

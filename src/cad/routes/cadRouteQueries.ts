@@ -1,8 +1,20 @@
 import { CadImportError } from "../cadImportService";
-import { cadGroupInstancesQuerySchema, cadListQuerySchema } from "../cadRouteSchemas";
+import {
+  cadGroupInstancesQuerySchema,
+  cadImportRunListQuerySchema,
+  cadSnapshotListQuerySchema,
+} from "../cadRouteSchemas";
 
-export function readListQuery(query: unknown) {
-  const parsed = cadListQuerySchema.safeParse(query ?? {});
+export function readImportRunListQuery(query: unknown) {
+  const parsed = cadImportRunListQuerySchema.safeParse(query ?? {});
+  if (!parsed.success) {
+    throw new CadImportError("CAD list query is invalid.", 400);
+  }
+  return parsed.data;
+}
+
+export function readSnapshotListQuery(query: unknown) {
+  const parsed = cadSnapshotListQuerySchema.safeParse(query ?? {});
   if (!parsed.success) {
     throw new CadImportError("CAD list query is invalid.", 400);
   }
