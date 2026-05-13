@@ -227,16 +227,26 @@ test("Onshape OAuth routes issue authorization URLs and store callback tokens", 
         state: string;
       };
       const authorizationUrl = new URL(authorizationBody.authorizationUrl);
+      const setCookieHeader = authorizationResponse.headers["set-cookie"];
+      const sessionCookie = Array.isArray(setCookieHeader) ? setCookieHeader[0] : setCookieHeader;
+      assert.equal(typeof sessionCookie, "string");
+      const sessionCookiePair = sessionCookie.split(";")[0];
+      const sessionKey = decodeURIComponent(sessionCookiePair.split("=").slice(1).join("="));
+
       assert.equal(authorizationUrl.origin, "https://oauth.onshape.com");
       assert.equal(authorizationUrl.searchParams.get("client_id"), "test-onshape-client");
       assert.equal(authorizationUrl.searchParams.get("client_secret"), null);
       assert.equal(authorizationUrl.searchParams.get("state"), authorizationBody.state);
+      assert.equal(authorizationBody.state.includes(sessionKey), false);
 
       resetLimits();
 
       const callbackResponse = await app.inject({
         method: "GET",
         url: `/api/onshape/oauth/callback?code=oauth-code&state=${authorizationBody.state}`,
+        headers: {
+          cookie: sessionCookiePair,
+        },
       });
       assert.equal(callbackResponse.statusCode, 200);
       assert.match(callbackResponse.body, /Onshape OAuth connection complete/i);

@@ -117,22 +117,6 @@ function buildExpiredOAuthSessionCookie() {
   return `${ONSHAPE_OAUTH_SESSION_COOKIE}=; Path=/api/onshape/oauth/callback; Max-Age=0; HttpOnly; SameSite=Lax`;
 }
 
-function buildCallbackOAuthState(sessionKey: string, state: string) {
-  return `${sessionKey}.${state}`;
-}
-
-function parseCallbackOAuthState(state: string) {
-  const separator = state.indexOf(".");
-  if (separator <= 0 || separator === state.length - 1) {
-    return { state, sessionKey: null };
-  }
-
-  return {
-    sessionKey: state.slice(0, separator),
-    state: state.slice(separator + 1),
-  };
-}
-
 function resolveOAuthCallbackSessionKey(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -207,7 +191,6 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
 
     const sessionKey = randomUUID();
     const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
-    const callbackState = buildCallbackOAuthState(sessionKey, state);
     reply.header("Set-Cookie", buildOAuthSessionCookie(sessionKey));
     return {
       authorizationUrl: buildOnshapeOAuthAuthorizationUrl({
@@ -215,9 +198,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
         clientId: config.clientId!,
         redirectUri: config.redirectUri!,
         scopes: config.scopes,
-        state: callbackState,
+        state,
       }).toString(),
-      state: callbackState,
+      state,
     };
   });
 
@@ -232,14 +215,13 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
         .send({ message: "Onshape OAuth callback requires code and state." });
     }
 
-    const callbackState = parseCallbackOAuthState(state);
     const sessionKey = resolveOAuthCallbackSessionKey(request, reply);
     if (!sessionKey) {
       return;
     }
 
     const store = getOnshapeRuntimeStore();
-    if (!store.consumeOAuthState(callbackState.state, { sessionKey })) {
+    if (!store.consumeOAuthState(state, { sessionKey })) {
       return reply
         .header("Set-Cookie", buildExpiredOAuthSessionCookie())
         .code(400)
