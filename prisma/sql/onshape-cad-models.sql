@@ -1,4 +1,4 @@
-﻿CREATE TYPE "OnshapeAuthMode" AS ENUM ('API_KEY', 'OAUTH');
+CREATE TYPE "OnshapeAuthMode" AS ENUM ('API_KEY', 'OAUTH');
 CREATE TYPE "CadSyncLevel" AS ENUM ('LINK_ONLY', 'SHALLOW', 'BOM', 'DEEP_RELEASE');
 CREATE TYPE "CadImportStatus" AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'PARTIAL', 'FAILED', 'CANCELED');
 CREATE TYPE "CadSnapshotSource" AS ENUM ('MANUAL_SNAPSHOT', 'DESIGN_REVIEW', 'MANUFACTURING_RELEASE', 'AS_BUILT', 'SCHEDULED_CANDIDATE');
@@ -39,8 +39,8 @@ CREATE TABLE "OnshapeDocumentRef" (
 
 CREATE TABLE "CadImportRun" (
   "id" TEXT PRIMARY KEY,
-  "onshapeDocumentRefId" TEXT NOT NULL REFERENCES "OnshapeDocumentRef"("id"),
-  "syncLevel" "CadSyncLevel" NOT NULL,
+  "onshapeDocumentRefId" TEXT REFERENCES "OnshapeDocumentRef"("id"),
+  "syncLevel" "CadSyncLevel",
   "status" "CadImportStatus" NOT NULL DEFAULT 'PENDING',
   "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "completedAt" TIMESTAMP(3),
