@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   CadAssemblyNode,
   CadImportRun,
   CadImportWarning,
@@ -27,7 +27,7 @@ export interface OnshapeRuntimeState {
   warnings: CadImportWarning[];
   budget: OnshapeApiBudget;
   oauthTokenSet: OnshapeOAuthTokenSet | null;
-  oauthStates: Array<{ state: string; createdAt: string }>;
+  oauthStates: Array<{ state: string; createdAt: string; sessionKey: string }>;
 }
 
 export interface OnshapeRuntimeStore {
@@ -118,8 +118,8 @@ export interface OnshapeRuntimeStore {
   listWarnings(filter?: { importRunId?: string; snapshotId?: string }): CadImportWarning[];
   getBudget(): OnshapeApiBudget;
   recordApiCall(count: number, rateLimitRemaining?: number | null): OnshapeApiBudget;
-  createOAuthState(): { state: string; createdAt: string };
-  consumeOAuthState(state: string): boolean;
+  createOAuthState(input: { sessionKey: string }): { state: string; createdAt: string; sessionKey: string };
+  consumeOAuthState(state: string, input: { sessionKey: string }): boolean;
   getOAuthTokenSet(): OnshapeOAuthTokenSet | null;
   setOAuthTokenSet(tokenSet: OnshapeOAuthTokenSet | null): OnshapeOAuthTokenSet | null;
   reset(): void;
