@@ -20,6 +20,12 @@ function isMultipartFileTooLargeError(error: unknown) {
   );
 }
 
+async function consumeMultipartFile(part: { toBuffer?: () => Promise<Buffer> }) {
+  if (part.toBuffer) {
+    await part.toBuffer();
+  }
+}
+
 export async function readStepImportPayload(request: FastifyRequest) {
   const contentType = String(request.headers["content-type"] ?? "");
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
@@ -53,6 +59,7 @@ export async function readStepImportPayload(request: FastifyRequest) {
         continue;
       }
       if (part.fieldname !== "file" || !part.toBuffer) {
+        await consumeMultipartFile(part);
         continue;
       }
       const buffer = await part.toBuffer();
