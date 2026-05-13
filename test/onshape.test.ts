@@ -13,7 +13,7 @@ import {
   OnshapeCallBudgetExceededError,
   OnshapeRateLimitError,
 } from "../src/onshape/onshapeApiClient";
-import { createOnshapeCadClient } from "../src/onshape/onshapeCadClient";
+import { createOnshapeCadClient, ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "../src/onshape/onshapeCadClient";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "../src/onshape/onshapeSyncPolicy";
 import type {
@@ -496,7 +496,7 @@ test("estimates sync calls and cache behavior from local reference state", () =>
     cacheKey: "metadata-cache",
     endpoint: "/api/documents/d/0123456789abcdef01234567",
     method: "GET",
-    requestHash: "metadata",
+    requestHash: ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH,
     responseJson: { ok: true },
     responseHeadersJson: {},
     reference: parseOnshapeUrl(versionUrl),
