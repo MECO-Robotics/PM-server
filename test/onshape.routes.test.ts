@@ -230,6 +230,9 @@ test("Onshape OAuth routes issue authorization URLs and store callback tokens", 
       const setCookieHeader = authorizationResponse.headers["set-cookie"];
       const sessionCookie = Array.isArray(setCookieHeader) ? setCookieHeader[0] : setCookieHeader;
       assert.equal(typeof sessionCookie, "string");
+      if (typeof sessionCookie !== "string") {
+        throw new Error("Expected OAuth session cookie to be set.");
+      }
       const sessionCookiePair = sessionCookie.split(";")[0];
       const sessionKey = decodeURIComponent(sessionCookiePair.split("=").slice(1).join("="));
 

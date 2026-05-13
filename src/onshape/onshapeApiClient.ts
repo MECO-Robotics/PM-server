@@ -101,13 +101,12 @@ function buildAuthHeaders(credentials: OnshapeCredentials): Record<string, strin
   }
 
   if (!credentials.accessKey || !credentials.secretKey) {
-    throw new OnshapeConfigurationError();
+    throw new OnshapeConfigurationError("Onshape API key access and secret keys are not configured.");
   }
 
-  return {
-    "X-Onshape-Access-Key": credentials.accessKey,
-    "X-Onshape-Auth-Mode": "api_key_placeholder",
-  };
+  throw new OnshapeConfigurationError(
+    "Onshape API key authentication requires signed Authorization headers; configure OAuth credentials instead.",
+  );
 }
 
 async function defaultTransport(baseUrl: string, request: Parameters<OnshapeTransport>[0]) {

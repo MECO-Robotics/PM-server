@@ -2,6 +2,7 @@
 import { test } from "node:test";
 
 import { runCadImport } from "../src/onshape/cadImporter";
+import { ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "../src/onshape/onshapeCadClient";
 import {
   createOnshapeRuntimeStore,
   type OnshapeRuntimeStore,
@@ -10,6 +11,7 @@ import {
   buildOnshapeCacheKey,
   createOnshapeApiClient,
   OnshapeCallBudgetExceededError,
+  OnshapeConfigurationError,
   OnshapeRateLimitError,
 } from "../src/onshape/onshapeApiClient";
 import {
@@ -224,7 +226,7 @@ test("serves immutable cached responses without spending calls", async () => {
   let transportCalls = 0;
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => {
       transportCalls += 1;
       return { statusCode: 200, headers: {}, json: { cached: false } };
@@ -243,6 +245,40 @@ test("serves immutable cached responses without spending calls", async () => {
   assert.equal(transportCalls, 0);
   assert.equal(client.getCallsUsed(), 0);
   assert.equal(store.listRequestLogs().at(-1)?.usedCache, true);
+});
+
+test("fails fast for API key credentials until signed Authorization headers are supported", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = parseOnshapeUrl(workspaceUrl);
+  let transportCalls = 0;
+  const client = createOnshapeApiClient({
+    store,
+    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    transport: async () => {
+      transportCalls += 1;
+      return { statusCode: 200, headers: {}, json: { ok: true } };
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.requestJson({
+        endpoint: "/api/documents/d/0123456789abcdef01234567",
+        method: "GET",
+        reference,
+        requestHash: "metadata",
+        policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+      }),
+    (error) =>
+      error instanceof OnshapeConfigurationError &&
+      error.message ===
+        "Onshape API key authentication requires signed Authorization headers; configure OAuth credentials instead.",
+  );
+  assert.equal(transportCalls, 0);
+  assert.equal(
+    store.listRequestLogs().at(-1)?.errorMessage,
+    "Onshape API key authentication requires signed Authorization headers; configure OAuth credentials instead.",
+  );
 });
 
 test("expires workspace cache entries but keeps fresh workspace entries local", async () => {
@@ -266,7 +302,7 @@ test("expires workspace cache entries but keeps fresh workspace entries local", 
   let transportCalls = 0;
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => {
       transportCalls += 1;
       return { statusCode: 200, headers: {}, json: { cached: "network" } };
@@ -316,7 +352,7 @@ test("enforces per-sync call budgets before network transport", async () => {
   let transportCalls = 0;
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => {
       transportCalls += 1;
       return { statusCode: 200, headers: {}, json: { ok: true } };
@@ -350,7 +386,7 @@ test("turns 429 responses into rate-limit errors and auditable logs", async () =
   const reference = parseOnshapeUrl(workspaceUrl);
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => ({
       statusCode: 429,
       headers: { "x-rate-limit-remaining": "0" },
@@ -441,7 +477,7 @@ test("estimates sync calls and cache behavior from local reference state", () =>
     cacheKey: "metadata-cache",
     endpoint: "/api/documents/d/0123456789abcdef01234567",
     method: "GET",
-    requestHash: "metadata",
+    requestHash: ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH,
     responseJson: { ok: true },
     responseHeadersJson: {},
     reference: parseOnshapeUrl(versionUrl),
