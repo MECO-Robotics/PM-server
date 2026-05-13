@@ -150,6 +150,7 @@ export async function buildCadHierarchyReview(args: { store: CadStore; snapshotI
   return {
     snapshotId: args.snapshotId,
     root,
+    roots,
     unresolved,
     partMatchProposals: proposals.items,
     warnings: issues.filter((issue) => issue.severity !== "BLOCKING").map(warningFromIssue),
