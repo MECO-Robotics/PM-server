@@ -75,7 +75,8 @@ export function registerCadSnapshotActionRoutes(app: FastifyInstance, requireApi
       finalizedAt: new Date().toISOString(),
       finalizedBy: parsed.data.finalizedBy ?? null,
     });
-    return { item, warnings: hierarchyIssues };
+    const importRun = item ? await store.updateImportRun(item.importRunId, { status: "FINALIZED" }) : null;
+    return { item, importRun, warnings: hierarchyIssues };
   });
 
   app.get<{ Params: { snapshotId: string } }>("/api/cad/snapshots/:snapshotId/diff", async (request, reply) => {

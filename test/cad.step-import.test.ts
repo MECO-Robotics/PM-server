@@ -890,6 +890,62 @@ test("batch mapping part instances creates future rules per stable signature", a
   });
 });
 
+test("mapping updates refresh snapshot and import-run lifecycle status", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const result = await uploadStep(app, "review-status", cadFixture());
+    assert.equal(result.snapshot.status, "mapping_review");
+    assert.equal(result.importRun.status, "MAPPING_REVIEW");
+    resetLimits();
+
+    const rawMappingsResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings?groupInstances=false`,
+    });
+    assert.equal(rawMappingsResponse.statusCode, 200, rawMappingsResponse.body);
+    const rawMappings = (rawMappingsResponse.json() as { items: Array<{ id: string }> }).items;
+    resetLimits();
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${result.snapshot.id}/mappings/apply`,
+      payload: {
+        updates: rawMappings.map((mapping) => ({
+          mappingId: mapping.id,
+          targetKind: "IGNORE",
+          status: "CONFIRMED",
+        })),
+      },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+    const applyBody = applyResponse.json() as {
+      lifecycle: {
+        snapshot: { status: string };
+        importRun: { status: string } | null;
+      };
+    };
+    assert.equal(applyBody.lifecycle.snapshot.status, "mapped");
+    assert.equal(applyBody.lifecycle.importRun?.status, "MAPPED");
+    resetLimits();
+
+    const snapshotResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}`,
+    });
+    assert.equal(snapshotResponse.statusCode, 200, snapshotResponse.body);
+    assert.equal((snapshotResponse.json() as { item: { status: string } }).item.status, "mapped");
+    resetLimits();
+
+    const importRunResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/import-runs/${result.importRun.id}`,
+    });
+    assert.equal(importRunResponse.statusCode, 200, importRunResponse.body);
+    assert.equal((importRunResponse.json() as { item: { status: string } }).item.status, "MAPPED");
+  });
+});
+
 test("snapshot diff reports grouped repeated-instance quantity changes", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
@@ -1300,7 +1356,20 @@ test("finalize is blocked while required mappings need review", async () => {
       payload: { allowUnresolved: true, finalizedBy: "mentor@example.com" },
     });
     assert.equal(forced.statusCode, 200, forced.body);
-    assert.equal((forced.json() as { item: { status: string; finalizedBy: string | null } }).item.status, "finalized");
-    assert.equal((forced.json() as { item: { finalizedBy: string | null } }).item.finalizedBy, "mentor@example.com");
+    const forcedBody = forced.json() as {
+      item: { status: string; finalizedBy: string | null };
+      importRun: { status: string } | null;
+    };
+    assert.equal(forcedBody.item.status, "finalized");
+    assert.equal(forcedBody.item.finalizedBy, "mentor@example.com");
+    assert.equal(forcedBody.importRun?.status, "FINALIZED");
+    resetLimits();
+
+    const importRunResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/import-runs/${result.importRun.id}`,
+    });
+    assert.equal(importRunResponse.statusCode, 200, importRunResponse.body);
+    assert.equal((importRunResponse.json() as { item: { status: string } }).item.status, "FINALIZED");
   });
 });

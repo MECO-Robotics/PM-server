@@ -319,6 +319,34 @@ function futureRuleKey(source: CadSourceRecord, matchValue: string) {
   return `${source.kind}:STABLE_SIGNATURE:${matchValue}`;
 }
 
+async function syncSnapshotLifecycleAfterMappingUpdates(store: CadStore, snapshot: CadSnapshot) {
+  if (snapshot.status === "finalized") {
+    return {
+      snapshot,
+      importRun: await store.findImportRun(snapshot.importRunId),
+    };
+  }
+
+  const mappings = await store.listSnapshotMappings(snapshot.id);
+  const hasUnresolvedMappings = mappings.some((mapping) => mapping.status === "NEEDS_REVIEW");
+  const snapshotStatus = hasUnresolvedMappings ? "mapping_review" : "mapped";
+  const importRunStatus = hasUnresolvedMappings ? "MAPPING_REVIEW" : "MAPPED";
+  const updatedSnapshot =
+    snapshot.status === snapshotStatus
+      ? snapshot
+      : (await store.updateSnapshot(snapshot.id, { status: snapshotStatus })) ?? snapshot;
+  const importRun = await store.findImportRun(snapshot.importRunId);
+  const updatedImportRun =
+    importRun && importRun.status !== importRunStatus
+      ? (await store.updateImportRun(importRun.id, { status: importRunStatus })) ?? importRun
+      : importRun;
+
+  return {
+    snapshot: updatedSnapshot,
+    importRun: updatedImportRun,
+  };
+}
+
 export async function applyMappingUpdates(args: {
   store: CadStore;
   snapshot: CadSnapshot;
@@ -394,5 +422,6 @@ export async function applyMappingUpdates(args: {
   return {
     updated: updated.filter((item): item is NonNullable<typeof item> => Boolean(item)),
     mappingRules,
+    lifecycle: await syncSnapshotLifecycleAfterMappingUpdates(args.store, args.snapshot),
   };
 }
