@@ -1,4 +1,4 @@
-﻿import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { getSessionFromRequest, isAuthEnabled } from "../auth/authService";
 import { onshapeConfig } from "../config/env";
@@ -76,6 +76,25 @@ function getOAuthConfig() {
   };
 }
 
+function getOAuthSessionKey(request: FastifyRequest) {
+  if (!isAuthEnabled()) {
+    return "auth-disabled";
+  }
+
+  const session = getSessionFromRequest(request);
+  return session ? `${session.authProvider}:${session.accountId}:${session.email}` : null;
+}
+
+function requireOAuthSessionKey(request: FastifyRequest, reply: FastifyReply) {
+  const sessionKey = getOAuthSessionKey(request);
+  if (sessionKey) {
+    return sessionKey;
+  }
+
+  reply.code(401).send({ message: "Onshape OAuth state must match the initiating MECO session." });
+  return null;
+}
+
 function getOAuthStatus(store: ReturnType<typeof getOnshapeRuntimeStore>) {
   const tokenSet = store.getOAuthTokenSet();
   const envConnected = Boolean(onshapeConfig.oauthAccessToken || onshapeConfig.oauthRefreshToken);
@@ -128,6 +147,11 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       return;
     }
 
+    const sessionKey = requireOAuthSessionKey(request, reply);
+    if (!sessionKey) {
+      return;
+    }
+
     const config = getOAuthConfig();
     if (!isOnshapeOAuthClientConfigured(config)) {
       return reply.code(409).send({
@@ -135,7 +159,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       });
     }
 
-    const { state } = getOnshapeRuntimeStore().createOAuthState();
+    const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
     return {
       authorizationUrl: buildOnshapeOAuthAuthorizationUrl({
         authorizationUrl: config.authorizationUrl,
@@ -149,6 +173,11 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
   });
 
   app.get("/api/onshape/oauth/callback", async (request, reply) => {
+    const sessionKey = requireOAuthSessionKey(request, reply);
+    if (!sessionKey) {
+      return;
+    }
+
     const query = request.query as Record<string, unknown>;
     const code = typeof query.code === "string" ? query.code : null;
     const state = typeof query.state === "string" ? query.state : null;
@@ -157,8 +186,8 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     }
 
     const store = getOnshapeRuntimeStore();
-    if (!store.consumeOAuthState(state)) {
-      return reply.code(400).send({ message: "Onshape OAuth state is invalid or expired." });
+    if (!store.consumeOAuthState(state, { sessionKey })) {
+      return reply.code(400).send({ message: "Onshape OAuth state is invalid, expired, or belongs to a different session." });
     }
 
     const tokenSet = await exchangeOnshapeOAuthCode({ config: getOAuthConfig(), code });
