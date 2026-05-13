@@ -720,6 +720,7 @@ model CadAssemblyNode {
   snapshot              CadSnapshot             @relation(fields: [snapshotId], references: [id])
   parentAssemblyNode    CadAssemblyNode?         @relation("CadAssemblyTree", fields: [parentAssemblyNodeId], references: [id])
   childAssemblyNodes    CadAssemblyNode[]        @relation("CadAssemblyTree")
+  partInstances         CadPartInstance[]        @relation("CadAssemblyPartInstances")
   warnings              CadImportWarning[]
   createdAt             DateTime                @default(now())
 
@@ -779,6 +780,7 @@ model CadPartInstance {
   metadataJson         Json
   snapshot             CadSnapshot        @relation(fields: [snapshotId], references: [id])
   cadPartDefinition    CadPartDefinition? @relation(fields: [cadPartDefinitionId], references: [id])
+  parentAssemblyNode   CadAssemblyNode?   @relation("CadAssemblyPartInstances", fields: [parentAssemblyNodeId], references: [id])
   warnings             CadImportWarning[]
   createdAt            DateTime           @default(now())
 
