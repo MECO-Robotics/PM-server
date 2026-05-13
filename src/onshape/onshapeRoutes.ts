@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { getSessionFromRequest, isAuthEnabled } from "../auth/authService";
@@ -23,6 +24,9 @@ import { parseOnshapeUrl } from "./onshapeUrlParser";
 import type { CadImportOnshapeClient } from "./onshapeTypes";
 
 type RequireApiSession = (request: FastifyRequest, reply: FastifyReply) => boolean;
+
+const ONSHAPE_OAUTH_SESSION_COOKIE = "meco_onshape_oauth_session";
+const ONSHAPE_OAUTH_STATE_TTL_SECONDS = 10 * 60;
 
 function createNoopClient(): CadImportOnshapeClient {
   return {
@@ -76,22 +80,46 @@ function getOAuthConfig() {
   };
 }
 
-function getOAuthSessionKey(request: FastifyRequest) {
-  if (!isAuthEnabled()) {
-    return "auth-disabled";
-  }
-
-  const session = getSessionFromRequest(request);
-  return session ? `${session.authProvider}:${session.accountId}:${session.email}` : null;
+function getCookieHeader(request: FastifyRequest) {
+  const header = request.headers.cookie;
+  return Array.isArray(header) ? header.join(";") : (header ?? "");
 }
 
-function requireOAuthSessionKey(request: FastifyRequest, reply: FastifyReply) {
-  const sessionKey = getOAuthSessionKey(request);
+function readCookieValue(request: FastifyRequest, name: string) {
+  const cookieHeader = getCookieHeader(request);
+  for (const part of cookieHeader.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === name) {
+      return decodeURIComponent(rawValue.join("="));
+    }
+  }
+
+  return null;
+}
+
+function buildOAuthSessionCookie(sessionKey: string) {
+  const secureAttribute = onshapeConfig.oauthRedirectUri?.startsWith("https://") ? "; Secure" : "";
+  return [
+    `${ONSHAPE_OAUTH_SESSION_COOKIE}=${encodeURIComponent(sessionKey)}`,
+    "Path=/api/onshape/oauth/callback",
+    `Max-Age=${ONSHAPE_OAUTH_STATE_TTL_SECONDS}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    secureAttribute.trim(),
+  ].filter(Boolean).join("; ");
+}
+
+function buildExpiredOAuthSessionCookie() {
+  return `${ONSHAPE_OAUTH_SESSION_COOKIE}=; Path=/api/onshape/oauth/callback; Max-Age=0; HttpOnly; SameSite=Lax`;
+}
+
+function requireOAuthCallbackSessionKey(request: FastifyRequest, reply: FastifyReply) {
+  const sessionKey = readCookieValue(request, ONSHAPE_OAUTH_SESSION_COOKIE);
   if (sessionKey) {
     return sessionKey;
   }
 
-  reply.code(401).send({ message: "Onshape OAuth state must match the initiating MECO session." });
+  reply.code(400).send({ message: "Onshape OAuth session cookie is missing or expired. Start the connection again." });
   return null;
 }
 
@@ -147,11 +175,6 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       return;
     }
 
-    const sessionKey = requireOAuthSessionKey(request, reply);
-    if (!sessionKey) {
-      return;
-    }
-
     const config = getOAuthConfig();
     if (!isOnshapeOAuthClientConfigured(config)) {
       return reply.code(409).send({
@@ -159,7 +182,9 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       });
     }
 
+    const sessionKey = randomUUID();
     const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
+    reply.header("Set-Cookie", buildOAuthSessionCookie(sessionKey));
     return {
       authorizationUrl: buildOnshapeOAuthAuthorizationUrl({
         authorizationUrl: config.authorizationUrl,
@@ -173,7 +198,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
   });
 
   app.get("/api/onshape/oauth/callback", async (request, reply) => {
-    const sessionKey = requireOAuthSessionKey(request, reply);
+    const sessionKey = requireOAuthCallbackSessionKey(request, reply);
     if (!sessionKey) {
       return;
     }
@@ -182,19 +207,28 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     const code = typeof query.code === "string" ? query.code : null;
     const state = typeof query.state === "string" ? query.state : null;
     if (!code || !state) {
-      return reply.code(400).send({ message: "Onshape OAuth callback requires code and state." });
+      return reply
+        .header("Set-Cookie", buildExpiredOAuthSessionCookie())
+        .code(400)
+        .send({ message: "Onshape OAuth callback requires code and state." });
     }
 
     const store = getOnshapeRuntimeStore();
     if (!store.consumeOAuthState(state, { sessionKey })) {
-      return reply.code(400).send({ message: "Onshape OAuth state is invalid, expired, or belongs to a different session." });
+      return reply
+        .header("Set-Cookie", buildExpiredOAuthSessionCookie())
+        .code(400)
+        .send({ message: "Onshape OAuth state is invalid, expired, or belongs to a different browser session." });
     }
 
     const tokenSet = await exchangeOnshapeOAuthCode({ config: getOAuthConfig(), code });
     store.setOAuthTokenSet(tokenSet);
-    return reply.type("text/html").send(
-      "<!doctype html><title>Onshape connected</title><p>Onshape OAuth connection complete. You can close this tab and return to Mission Control.</p>",
-    );
+    return reply
+      .header("Set-Cookie", buildExpiredOAuthSessionCookie())
+      .type("text/html")
+      .send(
+        "<!doctype html><title>Onshape connected</title><p>Onshape OAuth connection complete. You can close this tab and return to Mission Control.</p>",
+      );
   });
 
   app.post("/api/onshape/oauth/refresh", async (request, reply) => {
