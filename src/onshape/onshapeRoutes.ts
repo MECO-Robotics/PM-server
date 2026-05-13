@@ -90,7 +90,11 @@ function readCookieValue(request: FastifyRequest, name: string) {
   for (const part of cookieHeader.split(";")) {
     const [rawName, ...rawValue] = part.trim().split("=");
     if (rawName === name) {
-      return decodeURIComponent(rawValue.join("="));
+      try {
+        return decodeURIComponent(rawValue.join("="));
+      } catch {
+        return null;
+      }
     }
   }
 
@@ -98,14 +102,14 @@ function readCookieValue(request: FastifyRequest, name: string) {
 }
 
 function buildOAuthSessionCookie(sessionKey: string) {
-  const secureAttribute = onshapeConfig.oauthRedirectUri?.startsWith("https://") ? "; Secure" : "";
+  const secureAttribute = onshapeConfig.oauthRedirectUri?.startsWith("https://") ? "Secure" : "";
   return [
     `${ONSHAPE_OAUTH_SESSION_COOKIE}=${encodeURIComponent(sessionKey)}`,
     "Path=/api/onshape/oauth/callback",
     `Max-Age=${ONSHAPE_OAUTH_STATE_TTL_SECONDS}`,
     "HttpOnly",
     "SameSite=Lax",
-    secureAttribute.trim(),
+    secureAttribute,
   ].filter(Boolean).join("; ");
 }
 
@@ -113,13 +117,33 @@ function buildExpiredOAuthSessionCookie() {
   return `${ONSHAPE_OAUTH_SESSION_COOKIE}=; Path=/api/onshape/oauth/callback; Max-Age=0; HttpOnly; SameSite=Lax`;
 }
 
-function requireOAuthCallbackSessionKey(request: FastifyRequest, reply: FastifyReply) {
-  const sessionKey = readCookieValue(request, ONSHAPE_OAUTH_SESSION_COOKIE);
+function buildCallbackOAuthState(sessionKey: string, state: string) {
+  return `${sessionKey}.${state}`;
+}
+
+function parseCallbackOAuthState(state: string) {
+  const separator = state.indexOf(".");
+  if (separator <= 0 || separator === state.length - 1) {
+    return { state, sessionKey: null };
+  }
+
+  return {
+    sessionKey: state.slice(0, separator),
+    state: state.slice(separator + 1),
+  };
+}
+
+function resolveOAuthCallbackSessionKey(
+  request: FastifyRequest,
+  callbackState: ReturnType<typeof parseCallbackOAuthState>,
+  reply: FastifyReply,
+) {
+  const sessionKey = readCookieValue(request, ONSHAPE_OAUTH_SESSION_COOKIE) ?? callbackState.sessionKey;
   if (sessionKey) {
     return sessionKey;
   }
 
-  reply.code(400).send({ message: "Onshape OAuth session cookie is missing or expired. Start the connection again." });
+  reply.code(400).send({ message: "Onshape OAuth session state is missing or expired. Start the connection again." });
   return null;
 }
 
@@ -184,6 +208,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
 
     const sessionKey = randomUUID();
     const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
+    const callbackState = buildCallbackOAuthState(sessionKey, state);
     reply.header("Set-Cookie", buildOAuthSessionCookie(sessionKey));
     return {
       authorizationUrl: buildOnshapeOAuthAuthorizationUrl({
@@ -191,18 +216,13 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
         clientId: config.clientId!,
         redirectUri: config.redirectUri!,
         scopes: config.scopes,
-        state,
+        state: callbackState,
       }).toString(),
-      state,
+      state: callbackState,
     };
   });
 
   app.get("/api/onshape/oauth/callback", async (request, reply) => {
-    const sessionKey = requireOAuthCallbackSessionKey(request, reply);
-    if (!sessionKey) {
-      return;
-    }
-
     const query = request.query as Record<string, unknown>;
     const code = typeof query.code === "string" ? query.code : null;
     const state = typeof query.state === "string" ? query.state : null;
@@ -213,8 +233,14 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
         .send({ message: "Onshape OAuth callback requires code and state." });
     }
 
+    const callbackState = parseCallbackOAuthState(state);
+    const sessionKey = resolveOAuthCallbackSessionKey(request, callbackState, reply);
+    if (!sessionKey) {
+      return;
+    }
+
     const store = getOnshapeRuntimeStore();
-    if (!store.consumeOAuthState(state, { sessionKey })) {
+    if (!store.consumeOAuthState(callbackState.state, { sessionKey })) {
       return reply
         .header("Set-Cookie", buildExpiredOAuthSessionCookie())
         .code(400)
