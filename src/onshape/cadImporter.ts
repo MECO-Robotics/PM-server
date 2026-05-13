@@ -1,4 +1,4 @@
-﻿import type { OnshapeRuntimeStore } from "./cadStore";
+import type { OnshapeRuntimeStore } from "./cadStore";
 import {
   OnshapeCallBudgetExceededError,
   OnshapeRateLimitError,
@@ -34,9 +34,12 @@ function toReference(documentRef: OnshapeDocumentRef): OnshapeReference {
 
 function buildPolicy(store: OnshapeRuntimeStore, syncLevel: SyncLevel): RequestPolicy {
   const budget = store.getBudget();
+  const maxCallsAllowed = typeof budget.perSyncSoftBudget === "number"
+    ? budget.perSyncSoftBudget
+    : Number.POSITIVE_INFINITY;
   return {
     priority: syncLevel === "deep_release" ? "interactive" : "snapshot",
-    maxCallsAllowed: budget.perSyncSoftBudget ?? 25,
+    maxCallsAllowed,
     allowCached: true,
     requireFresh: false,
     stopIfRemainingBelow: 5,
