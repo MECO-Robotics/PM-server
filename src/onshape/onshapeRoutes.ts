@@ -135,15 +135,14 @@ function parseCallbackOAuthState(state: string) {
 
 function resolveOAuthCallbackSessionKey(
   request: FastifyRequest,
-  callbackState: ReturnType<typeof parseCallbackOAuthState>,
   reply: FastifyReply,
 ) {
-  const sessionKey = readCookieValue(request, ONSHAPE_OAUTH_SESSION_COOKIE) ?? callbackState.sessionKey;
+  const sessionKey = readCookieValue(request, ONSHAPE_OAUTH_SESSION_COOKIE);
   if (sessionKey) {
     return sessionKey;
   }
 
-  reply.code(400).send({ message: "Onshape OAuth session state is missing or expired. Start the connection again." });
+  reply.code(400).send({ message: "Onshape OAuth session state is missing or expired. Start the connection again in the same browser session." });
   return null;
 }
 
@@ -234,7 +233,7 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
     }
 
     const callbackState = parseCallbackOAuthState(state);
-    const sessionKey = resolveOAuthCallbackSessionKey(request, callbackState, reply);
+    const sessionKey = resolveOAuthCallbackSessionKey(request, reply);
     if (!sessionKey) {
       return;
     }
