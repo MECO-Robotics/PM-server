@@ -386,7 +386,10 @@ test("imports BOM graphs idempotently for immutable references and generates met
 
   assert.equal(first.status, "completed");
   assert.equal(second.status, "completed");
-  assert.equal(store.listSnapshots().length, 1);
+  const snapshots = store.listSnapshots();
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.notEqual(snapshots[0]?.importRunId, second.importRunId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);

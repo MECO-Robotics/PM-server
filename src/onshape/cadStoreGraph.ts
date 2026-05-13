@@ -54,7 +54,6 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
     }) {
       const existing = findExistingSnapshot(state, input.documentRef);
       if (existing) {
-        existing.importRunId = input.importRunId;
         existing.label = input.label;
         existing.notes = input.notes ?? existing.notes;
         return clone(existing);
