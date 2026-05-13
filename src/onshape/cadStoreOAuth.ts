@@ -13,15 +13,17 @@ function pruneExpiredStates(state: OnshapeRuntimeState) {
 
 export function buildCadOAuthStore(state: OnshapeRuntimeState) {
   return {
-    createOAuthState() {
+    createOAuthState(input: { sessionKey: string }) {
       pruneExpiredStates(state);
-      const item = { state: randomUUID(), createdAt: nowIso() };
+      const item = { state: randomUUID(), createdAt: nowIso(), sessionKey: input.sessionKey };
       state.oauthStates.push(item);
       return clone(item);
     },
-    consumeOAuthState(oauthState: string) {
+    consumeOAuthState(oauthState: string, input: { sessionKey: string }) {
       pruneExpiredStates(state);
-      const index = state.oauthStates.findIndex((item) => item.state === oauthState);
+      const index = state.oauthStates.findIndex(
+        (item) => item.state === oauthState && item.sessionKey === input.sessionKey,
+      );
       if (index < 0) {
         return false;
       }
