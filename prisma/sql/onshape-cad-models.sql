@@ -154,7 +154,7 @@ CREATE TABLE "CadPartInstance" (
   "sourceId" TEXT NOT NULL,
   "snapshotId" TEXT NOT NULL REFERENCES "CadSnapshot"("id"),
   "cadPartDefinitionId" TEXT REFERENCES "CadPartDefinition"("id"),
-  "parentAssemblyNodeId" TEXT,
+  "parentAssemblyNodeId" TEXT REFERENCES "CadAssemblyNode"("id"),
   "documentId" TEXT NOT NULL,
   "elementId" TEXT,
   "assemblyInstanceId" TEXT,
