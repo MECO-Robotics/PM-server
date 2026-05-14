@@ -163,6 +163,9 @@ export function parseStepTextAssemblyGraph(input: StepParserInput): StepParseRes
         }),
       );
     }
+    const rootName = productDefinitions.size > 0
+      ? [...productDefinitions.values()][0]?.name
+      : [...products.values()][0];
     return createFlatStepResult({
       productDefinitions,
       products,
@@ -170,9 +173,7 @@ export function parseStepTextAssemblyGraph(input: StepParserInput): StepParseRes
       rawStats: {
         ...baseRawStats(),
         rootCount: productDefinitions.size > 0 || products.size > 0 ? 1 : 0,
-        rootNames: productDefinitions.size > 0
-          ? [[...productDefinitions.values()][0]?.name ?? "STEP import"]
-          : [[...products.values()][0] ?? "STEP import"],
+        rootNames: [rootName ?? "STEP import"],
         topLevelAssemblyNames: [],
         firstTenAssemblyNames: [],
       },

@@ -121,13 +121,17 @@ function uploadedClassStepFixture() {
   return ["ISO-10303-21;", "DATA;", ...definitions, ...edges, "ENDSEC;", "END-ISO-10303-21;"].join("\n");
 }
 
-function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) {
+function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean; renumberSourceIds?: boolean }) {
+  const rootSourceId = options?.renumberSourceIds ? "asm-root-reexport" : "asm-root";
+  const shooterSourceId = options?.renumberSourceIds ? "asm-shooter-reexport" : "asm-shooter";
+  const intakeSourceId = options?.renumberSourceIds ? "asm-intake-reexport" : "asm-intake";
+
   return JSON.stringify({
     rootName: "Robot master assembly",
     units: "millimeter",
     assemblyNodes: [
       {
-        sourceId: "asm-root",
+        sourceId: rootSourceId,
         parentSourceId: null,
         name: "ASM - Robot",
         instancePath: "/Robot",
@@ -136,8 +140,8 @@ function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) 
         stableSignature: "asm:path:/Robot",
       },
       {
-        sourceId: "asm-shooter",
-        parentSourceId: "asm-root",
+        sourceId: shooterSourceId,
+        parentSourceId: rootSourceId,
         name: "MECH - Shooter - Flywheel",
         instancePath: "/Robot/MECH - Shooter - Flywheel",
         depth: 1,
@@ -147,8 +151,8 @@ function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) 
       ...(options?.includeIntake
         ? [
             {
-              sourceId: "asm-intake",
-              parentSourceId: "asm-root",
+              sourceId: intakeSourceId,
+              parentSourceId: rootSourceId,
               name: "MECH - Intake",
               instancePath: "/Robot/MECH - Intake",
               depth: 1,
@@ -171,7 +175,7 @@ function cadFixture(options?: { movedPart?: boolean; includeIntake?: boolean }) 
       {
         sourceId: "inst-spacer-1",
         partDefinitionSourceId: "part-spacer",
-        parentAssemblySourceId: options?.movedPart ? "asm-intake" : "asm-shooter",
+        parentAssemblySourceId: options?.movedPart ? intakeSourceId : shooterSourceId,
         instancePath: options?.movedPart
           ? "/Robot/MECH - Intake/Spacer-1"
           : "/Robot/MECH - Shooter - Flywheel/Spacer-1",
@@ -459,6 +463,7 @@ test("STEP text parser warns on flattened or duplicate-name STEP text", async ()
   });
   assert.ok(flat.warnings.some((warning) => warning.code === "step_hierarchy_missing"));
   assert.ok(flat.warnings.some((warning) => warning.code === "step_flattened_file"));
+  assert.deepEqual(flat.rawStats.rootNames, ["MAIN ASSEMBLY"]);
 
   const duplicateNames = await createStepParserClient().parseStepFile({
     fileText: stepEntityFixture({ duplicateNames: true }),
@@ -1319,7 +1324,7 @@ test("snapshot diff matches unchanged mappings by stable source identity", async
 
     await uploadStep(app, "iteration-1", cadFixture());
     resetLimits();
-    const second = await uploadStep(app, "iteration-2", cadFixture());
+    const second = await uploadStep(app, "iteration-2", cadFixture({ renumberSourceIds: true }));
     resetLimits();
 
     const diffResponse = await app.inject({
@@ -1329,9 +1334,11 @@ test("snapshot diff matches unchanged mappings by stable source identity", async
     assert.equal(diffResponse.statusCode, 200);
     const diff = diffResponse.json() as {
       mappingChanges: Array<{ type: string; sourceKind: string; sourceId: string }>;
+      movedAssemblies: Array<{ sourceId: string }>;
       movedPartInstances: Array<{ sourceId: string }>;
     };
     assert.deepEqual(diff.mappingChanges, []);
+    assert.deepEqual(diff.movedAssemblies, []);
     assert.deepEqual(diff.movedPartInstances, []);
   });
 });
