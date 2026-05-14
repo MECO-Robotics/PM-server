@@ -48,6 +48,7 @@ function createFakeClient(options: {
   metadata?: OnshapeDocumentMetadataResponse;
   bom?: OnshapeAssemblyBomResponse;
   fail?: Error;
+  failBom?: Error;
 }): CadImportOnshapeClient {
   let callsUsed = 0;
   return {
@@ -67,6 +68,9 @@ function createFakeClient(options: {
     },
     async fetchAssemblyBom() {
       callsUsed += 1;
+      if (options.failBom) {
+        throw options.failBom;
+      }
       if (options.fail) {
         throw options.fail;
       }
@@ -431,6 +435,32 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(store.listPartInstances().length, 1);
   assert.ok(store.listWarnings().some((warning) => warning.code === "assembly_mapping_missing"));
   assert.ok(store.listWarnings().some((warning) => warning.code === "part_material_missing"));
+});
+
+test("does not replace the latest snapshot when BOM import fails", async () => {
+  const store = createOnshapeRuntimeStore();
+  const ref = createLinkedRef(store);
+  const first = await runCadImport({ store, documentRefId: ref.id, syncLevel: "bom", requestedBy: "test-user", client: createFakeClient({}) });
+
+  const failed = await runCadImport({
+    store,
+    documentRefId: ref.id,
+    syncLevel: "bom",
+    requestedBy: "test-user",
+    client: createFakeClient({ failBom: new Error("bom unavailable") }),
+  });
+
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.snapshotId, undefined);
+  assert.equal(failed.assemblyNodeCount, 0);
+  assert.equal(failed.partDefinitionCount, 0);
+  assert.equal(failed.partInstanceCount, 0);
+  const snapshots = store.listSnapshots(ref.id);
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0]?.id, first.snapshotId);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.equal(store.findImportRun(failed.importRunId)?.status, "failed");
+  assert.equal(store.findImportRun(failed.importRunId)?.errorMessage, "bom unavailable");
 });
 
 test("marks imports partial when API budget is reached", async () => {

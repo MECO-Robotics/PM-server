@@ -13,6 +13,7 @@ import type {
   CadGraphImportResult,
   CadImportOnshapeClient,
   CadSnapshot,
+  OnshapeAssemblyBomResponse,
   OnshapeDocumentMetadataResponse,
   OnshapeDocumentRef,
   OnshapeReference,
@@ -86,22 +87,15 @@ function completeRun(args: {
 
 async function importBomGraph(args: {
   store: OnshapeRuntimeStore;
-  client: CadImportOnshapeClient;
-  reference: OnshapeReference;
   runId: string;
   snapshot: CadSnapshot;
-  policy: RequestPolicy;
+  bom: OnshapeAssemblyBomResponse;
 }) {
-  const bom = await args.client.fetchAssemblyBom({
-    reference: args.reference,
-    importRunId: args.runId,
-    policy: args.policy,
-  });
-  const assemblyNodesBySourceId = args.store.upsertAssemblyNodes(args.snapshot.id, bom.assemblyNodes);
-  const partDefinitionsBySourceId = args.store.upsertPartDefinitions(args.snapshot.id, bom.partDefinitions);
+  const assemblyNodesBySourceId = args.store.upsertAssemblyNodes(args.snapshot.id, args.bom.assemblyNodes);
+  const partDefinitionsBySourceId = args.store.upsertPartDefinitions(args.snapshot.id, args.bom.partDefinitions);
   const partInstances = args.store.upsertPartInstances(
     args.snapshot.id,
-    bom.partInstances,
+    args.bom.partInstances,
     partDefinitionsBySourceId,
     assemblyNodesBySourceId,
   );
@@ -113,9 +107,9 @@ async function importBomGraph(args: {
     assemblyNodes: args.store.listAssemblyNodes(args.snapshot.id),
     partDefinitions: args.store.listPartDefinitions(args.snapshot.id),
     partInstances,
-    normalizedPartDefinitions: bom.partDefinitions,
+    normalizedPartDefinitions: args.bom.partDefinitions,
   });
-  return bom.raw;
+  return args.bom.raw;
 }
 
 export async function runCadImport(args: {
@@ -154,6 +148,13 @@ export async function runCadImport(args: {
 
   try {
     const metadata = await args.client.fetchDocumentMetadata({ reference, importRunId: run.id, policy });
+    const bom = args.syncLevel === "shallow"
+      ? null
+      : await args.client.fetchAssemblyBom({
+          reference,
+          importRunId: run.id,
+          policy,
+        });
     snapshot = args.store.upsertSnapshot({
       documentRef,
       importRunId: run.id,
@@ -163,9 +164,9 @@ export async function runCadImport(args: {
       notes: args.syncLevel === "deep_release" ? "Deep release sync requested." : null,
     });
 
-    const raw = args.syncLevel === "shallow"
+    const raw = bom === null
       ? { metadata }
-      : await importBomGraph({ store: args.store, client: args.client, reference, runId: run.id, snapshot, policy });
+      : await importBomGraph({ store: args.store, runId: run.id, snapshot, bom });
 
     return completeRun({
       store: args.store,
