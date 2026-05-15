@@ -1,4 +1,5 @@
 ﻿import { buildCadGraphStore } from "./cadStoreGraph";
+import { buildCadOAuthStore } from "./cadStoreOAuth";
 import { buildCadReferenceStore } from "./cadStoreRefs";
 import { buildCadRequestStore } from "./cadStoreRequests";
 import type { OnshapeRuntimeStore } from "./cadStoreTypes";
@@ -12,6 +13,7 @@ export function createOnshapeRuntimeStore(): OnshapeRuntimeStore {
     ...buildCadReferenceStore(state),
     ...buildCadRequestStore(state),
     ...buildCadGraphStore(state),
+    ...buildCadOAuthStore(state),
     reset() {
       Object.assign(state, buildInitialState());
     },

@@ -1,8 +1,8 @@
 ﻿import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createHmac } from "node:crypto";
 
 import { runCadImport } from "../src/onshape/cadImporter";
+import { ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "../src/onshape/onshapeCadClient";
 import {
   createOnshapeRuntimeStore,
   type OnshapeRuntimeStore,
@@ -11,16 +11,20 @@ import {
   buildOnshapeCacheKey,
   createOnshapeApiClient,
   OnshapeCallBudgetExceededError,
+  OnshapeConfigurationError,
   OnshapeRateLimitError,
 } from "../src/onshape/onshapeApiClient";
-import { createOnshapeCadClient, ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "../src/onshape/onshapeCadClient";
+import {
+  buildOnshapeOAuthAuthorizationUrl,
+  normalizeOnshapeOAuthTokenResponse,
+  shouldRefreshOnshapeOAuthToken,
+} from "../src/onshape/onshapeOAuth";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "../src/onshape/onshapeSyncPolicy";
 import type {
   CadImportOnshapeClient,
   OnshapeAssemblyBomResponse,
   OnshapeDocumentMetadataResponse,
-  OnshapeReference,
 } from "../src/onshape/onshapeTypes";
 
 const workspaceUrl =
@@ -44,6 +48,7 @@ function createFakeClient(options: {
   metadata?: OnshapeDocumentMetadataResponse;
   bom?: OnshapeAssemblyBomResponse;
   fail?: Error;
+  failBom?: Error;
 }): CadImportOnshapeClient {
   let callsUsed = 0;
   return {
@@ -63,6 +68,9 @@ function createFakeClient(options: {
     },
     async fetchAssemblyBom() {
       callsUsed += 1;
+      if (options.failBom) {
+        throw options.failBom;
+      }
       if (options.fail) {
         throw options.fail;
       }
@@ -120,29 +128,6 @@ function createFakeClient(options: {
   };
 }
 
-function expectedOnshapeApiKeyAuthorization(args: {
-  accessKey: string;
-  secretKey: string;
-  method: "GET" | "POST";
-  endpoint: string;
-  nonce: string;
-  date: string;
-  contentType: string;
-}) {
-  const url = new URL(args.endpoint, "https://cad.onshape.com/");
-  const signatureInput = [
-    args.method,
-    args.nonce,
-    args.date,
-    args.contentType,
-    url.pathname,
-    url.search ? url.search.slice(1) : "",
-    "",
-  ].join("\n").toLowerCase();
-  const signature = createHmac("sha256", args.secretKey).update(signatureInput).digest("base64");
-  return `On ${args.accessKey}:HmacSHA256:${signature}`;
-}
-
 test("parses common Onshape URL shapes without network access", () => {
   assert.deepEqual(parseOnshapeUrl(workspaceUrl), {
     ok: true,
@@ -185,50 +170,44 @@ test("builds stable cache keys with immutable version identity", () => {
   );
 });
 
-test("signs API-key Onshape requests with HMAC authorization headers", async () => {
-  const store = createOnshapeRuntimeStore();
-  const reference = parseOnshapeUrl(workspaceUrl);
-  const date = new Date("2026-01-02T03:04:05.000Z");
-  const nonce = "abcdefghijklmnop";
-  const endpoint = "/api/documents/d/0123456789abcdef01234567?b=2&a=1";
-  let capturedHeaders: Record<string, string> | undefined;
-  const client = createOnshapeApiClient({
-    store,
-    credentials: { mode: "api_key", accessKey: "access-key", secretKey: "secret-key" },
-    now: () => date,
-    nonceFactory: () => nonce,
-    transport: async (request) => {
-      capturedHeaders = request.headers;
-      return { statusCode: 200, headers: {}, json: { ok: true } };
+test("builds Onshape OAuth2 authorization URLs without exposing client secrets", () => {
+  const url = buildOnshapeOAuthAuthorizationUrl({
+    authorizationUrl: "https://oauth.onshape.com/oauth/authorize",
+    clientId: "client-id",
+    redirectUri: "https://mission.test/api/onshape/oauth/callback",
+    scopes: ["OAuth2Read", "OAuth2Write"],
+    state: "state-123",
+  });
+
+  assert.equal(url.origin, "https://oauth.onshape.com");
+  assert.equal(url.pathname, "/oauth/authorize");
+  assert.equal(url.searchParams.get("response_type"), "code");
+  assert.equal(url.searchParams.get("client_id"), "client-id");
+  assert.equal(url.searchParams.get("redirect_uri"), "https://mission.test/api/onshape/oauth/callback");
+  assert.equal(url.searchParams.get("scope"), "OAuth2Read OAuth2Write");
+  assert.equal(url.searchParams.get("state"), "state-123");
+  assert.equal(url.toString().includes("secret"), false);
+});
+
+test("normalizes Onshape OAuth2 token responses and refresh timing", () => {
+  const tokenSet = normalizeOnshapeOAuthTokenResponse({
+    json: {
+      access_token: "access-token",
+      refresh_token: "refresh-token",
+      expires_in: 3600,
+      token_type: "Bearer",
+      scope: "OAuth2Read",
     },
+    receivedAtMs: 1_000,
   });
 
-  await client.requestJson({
-    endpoint,
-    method: "GET",
-    reference,
-    requestHash: "signed-request",
-    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
-  });
-
-  const headers = capturedHeaders;
-  assert.ok(headers);
-  assert.equal(headers.Date, date.toUTCString());
-  assert.equal(headers["On-Nonce"], nonce);
-  assert.equal(headers["Content-Type"], "application/json");
-  assert.equal(
-    headers.Authorization,
-    expectedOnshapeApiKeyAuthorization({
-      accessKey: "access-key",
-      secretKey: "secret-key",
-      method: "GET",
-      endpoint,
-      nonce,
-      date: date.toUTCString(),
-      contentType: "application/json",
-    }),
-  );
-  assert.equal(headers["X-Onshape-Auth-Mode"], undefined);
+  assert.equal(tokenSet.accessToken, "access-token");
+  assert.equal(tokenSet.refreshToken, "refresh-token");
+  assert.equal(tokenSet.tokenType, "Bearer");
+  assert.equal(tokenSet.scope, "OAuth2Read");
+  assert.equal(tokenSet.expiresAt, new Date(3_601_000).toISOString());
+  assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_540_000), false);
+  assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_550_000), true);
 });
 
 test("serves immutable cached responses without spending calls", async () => {
@@ -251,7 +230,7 @@ test("serves immutable cached responses without spending calls", async () => {
   let transportCalls = 0;
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => {
       transportCalls += 1;
       return { statusCode: 200, headers: {}, json: { cached: false } };
@@ -270,6 +249,40 @@ test("serves immutable cached responses without spending calls", async () => {
   assert.equal(transportCalls, 0);
   assert.equal(client.getCallsUsed(), 0);
   assert.equal(store.listRequestLogs().at(-1)?.usedCache, true);
+});
+
+test("fails fast for API key credentials until signed Authorization headers are supported", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = parseOnshapeUrl(workspaceUrl);
+  let transportCalls = 0;
+  const client = createOnshapeApiClient({
+    store,
+    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    transport: async () => {
+      transportCalls += 1;
+      return { statusCode: 200, headers: {}, json: { ok: true } };
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.requestJson({
+        endpoint: "/api/documents/d/0123456789abcdef01234567",
+        method: "GET",
+        reference,
+        requestHash: "metadata",
+        policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+      }),
+    (error) =>
+      error instanceof OnshapeConfigurationError &&
+      error.message ===
+        "Onshape API key authentication requires signed Authorization headers; configure OAuth credentials instead.",
+  );
+  assert.equal(transportCalls, 0);
+  assert.equal(
+    store.listRequestLogs().at(-1)?.errorMessage,
+    "Onshape API key authentication requires signed Authorization headers; configure OAuth credentials instead.",
+  );
 });
 
 test("expires workspace cache entries but keeps fresh workspace entries local", async () => {
@@ -293,7 +306,7 @@ test("expires workspace cache entries but keeps fresh workspace entries local", 
   let transportCalls = 0;
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => {
       transportCalls += 1;
       return { statusCode: 200, headers: {}, json: { cached: "network" } };
@@ -343,7 +356,7 @@ test("enforces per-sync call budgets before network transport", async () => {
   let transportCalls = 0;
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => {
       transportCalls += 1;
       return { statusCode: 200, headers: {}, json: { ok: true } };
@@ -372,43 +385,12 @@ test("enforces per-sync call budgets before network transport", async () => {
   assert.equal(transportCalls, 1);
 });
 
-test("rejects BOM fetches without an element id before making an Onshape request", async () => {
-  const parsed = parseOnshapeUrl("https://cad.onshape.com/documents/0123456789abcdef01234567/w/abcdefabcdefabcdefabcdef");
-  assert.equal(parsed.ok, true);
-  assert.ok(parsed.documentId);
-  const reference: OnshapeReference = {
-    documentId: parsed.documentId,
-    workspaceId: parsed.workspaceId,
-    originalUrl: parsed.originalUrl,
-    referenceType: parsed.referenceType,
-  };
-  let requestCount = 0;
-  const client = createOnshapeCadClient({
-    getCallsUsed: () => requestCount,
-    requestJson: async <T = unknown>() => {
-      requestCount += 1;
-      return {} as T;
-    },
-  });
-
-  await assert.rejects(
-    () =>
-      client.fetchAssemblyBom({
-        reference,
-        importRunId: "import-1",
-        policy: { priority: "snapshot", maxCallsAllowed: 2, allowCached: false, requireFresh: true },
-      }),
-    /requires an elementId/,
-  );
-  assert.equal(requestCount, 0);
-});
-
 test("turns 429 responses into rate-limit errors and auditable logs", async () => {
   const store = createOnshapeRuntimeStore();
   const reference = parseOnshapeUrl(workspaceUrl);
   const client = createOnshapeApiClient({
     store,
-    credentials: { mode: "api_key", accessKey: "key", secretKey: "secret" },
+    credentials: { mode: "oauth", bearerToken: "test-token" },
     transport: async () => ({
       statusCode: 429,
       headers: { "x-rate-limit-remaining": "0" },
@@ -444,12 +426,41 @@ test("imports BOM graphs idempotently for immutable references and generates met
 
   assert.equal(first.status, "completed");
   assert.equal(second.status, "completed");
-  assert.equal(store.listSnapshots().length, 1);
+  const snapshots = store.listSnapshots();
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.notEqual(snapshots[0]?.importRunId, second.importRunId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);
   assert.ok(store.listWarnings().some((warning) => warning.code === "assembly_mapping_missing"));
   assert.ok(store.listWarnings().some((warning) => warning.code === "part_material_missing"));
+});
+
+test("does not replace the latest snapshot when BOM import fails", async () => {
+  const store = createOnshapeRuntimeStore();
+  const ref = createLinkedRef(store);
+  const first = await runCadImport({ store, documentRefId: ref.id, syncLevel: "bom", requestedBy: "test-user", client: createFakeClient({}) });
+
+  const failed = await runCadImport({
+    store,
+    documentRefId: ref.id,
+    syncLevel: "bom",
+    requestedBy: "test-user",
+    client: createFakeClient({ failBom: new Error("bom unavailable") }),
+  });
+
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.snapshotId, undefined);
+  assert.equal(failed.assemblyNodeCount, 0);
+  assert.equal(failed.partDefinitionCount, 0);
+  assert.equal(failed.partInstanceCount, 0);
+  const snapshots = store.listSnapshots(ref.id);
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0]?.id, first.snapshotId);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.equal(store.findImportRun(failed.importRunId)?.status, "failed");
+  assert.equal(store.findImportRun(failed.importRunId)?.errorMessage, "bom unavailable");
 });
 
 test("marks imports partial when API budget is reached", async () => {

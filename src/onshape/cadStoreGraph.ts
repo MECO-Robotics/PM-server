@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   CadAssemblyNode,
   CadPartDefinition,
   CadPartInstance,
@@ -54,7 +54,6 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
     }) {
       const existing = findExistingSnapshot(state, input.documentRef);
       if (existing) {
-        existing.importRunId = input.importRunId;
         existing.label = input.label;
         existing.notes = input.notes ?? existing.notes;
         return clone(existing);
@@ -100,16 +99,17 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
     },
     upsertAssemblyNodes(snapshotId: string, nodes: AssemblyNodeInput[]) {
       const bySourceId = new Map<string, CadAssemblyNode>();
+      const recordsBySourceId = new Map<string, CadAssemblyNode>();
+
       for (const node of nodes) {
         const existing = state.assemblyNodes.find(
           (candidate) => candidate.snapshotId === snapshotId && candidate.sourceId === node.sourceId,
         );
-        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
         const nextNode: CadAssemblyNode = {
           id: existing?.id ?? nextId("cad-assembly", state.assemblyNodes.map((item) => item.id)),
           sourceId: node.sourceId,
           snapshotId,
-          parentAssemblyNodeId: parent?.id ?? existing?.parentAssemblyNodeId ?? null,
+          parentAssemblyNodeId: existing?.parentAssemblyNodeId ?? null,
           documentId: node.documentId,
           elementId: node.elementId ?? null,
           assemblyInstanceId: node.instanceId ?? null,
@@ -122,14 +122,28 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
           metadataJson: clone(node.metadata ?? {}),
           createdAt: existing?.createdAt ?? nowIso(),
         };
+        const record = existing ?? nextNode;
         if (existing) {
           Object.assign(existing, nextNode);
-          bySourceId.set(node.sourceId, clone(existing));
         } else {
-          state.assemblyNodes.push(nextNode);
-          bySourceId.set(node.sourceId, clone(nextNode));
+          state.assemblyNodes.push(record);
         }
+        recordsBySourceId.set(node.sourceId, record);
+        bySourceId.set(node.sourceId, clone(record));
       }
+
+      for (const node of nodes) {
+        const record = recordsBySourceId.get(node.sourceId);
+        if (!record) {
+          continue;
+        }
+        const parentId = node.parentSourceId
+          ? recordsBySourceId.get(node.parentSourceId)?.id ?? null
+          : null;
+        record.parentAssemblyNodeId = parentId;
+        bySourceId.set(node.sourceId, clone(record));
+      }
+
       return bySourceId;
     },
     upsertPartDefinitions(snapshotId: string, parts: PartDefinitionInput[]) {

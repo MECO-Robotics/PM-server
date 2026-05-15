@@ -47,6 +47,24 @@ export interface OnshapeCredentials {
   bearerToken?: string;
 }
 
+export interface OnshapeOAuthTokenSet {
+  accessToken: string;
+  refreshToken: string | null;
+  tokenType: string;
+  scope: string | null;
+  expiresAt: string | null;
+  receivedAt: string;
+}
+
+export interface OnshapeOAuthStatus {
+  clientConfigured: boolean;
+  connected: boolean;
+  authorizationUrlAvailable: boolean;
+  scopes: string[];
+  tokenExpiresAt: string | null;
+  credentialSource: "runtime" | "env" | "none";
+}
+
 export interface OnshapeTransportResponse {
   statusCode: number;
   headers: Record<string, string | number | undefined>;
@@ -151,6 +169,7 @@ export interface OnshapeConnection {
   authMode: "api_key" | "oauth";
   credentialReference: string | null;
   baseUrl: string;
+  oauth?: OnshapeOAuthStatus;
   createdAt: string;
   updatedAt: string;
   disabledAt: string | null;

@@ -2,6 +2,7 @@
 import { test } from "node:test";
 
 import { getOnshapeRuntimeStore } from "../src/onshape/cadStore";
+import { setOnshapeOAuthTokenTransportForTests } from "../src/onshape/onshapeOAuth";
 import { setOnshapeCadClientFactoryForTests } from "../src/onshape/onshapeClientFactory";
 import type { CadImportOnshapeClient } from "../src/onshape/onshapeTypes";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
@@ -193,5 +194,75 @@ test("Onshape routes run manual shallow and BOM syncs against the local cache st
     });
   } finally {
     setOnshapeCadClientFactoryForTests(null);
+  }
+});
+
+test("Onshape OAuth routes issue authorization URLs and store callback tokens", async () => {
+  setOnshapeOAuthTokenTransportForTests(async ({ body }) => {
+    assert.equal(body.get("grant_type"), "authorization_code");
+    assert.equal(body.get("code"), "oauth-code");
+    assert.equal(body.get("client_id"), "test-onshape-client");
+    assert.equal(body.get("client_secret"), "test-onshape-secret");
+    return {
+      statusCode: 200,
+      json: {
+        access_token: "oauth-access-token",
+        refresh_token: "oauth-refresh-token",
+        expires_in: 3600,
+        token_type: "Bearer",
+        scope: "OAuth2Read",
+      },
+    };
+  });
+
+  try {
+    await withIntegrationApp(async ({ app, resetLimits }) => {
+      const authorizationResponse = await app.inject({
+        method: "POST",
+        url: "/api/onshape/oauth/authorization-url",
+      });
+      assert.equal(authorizationResponse.statusCode, 200);
+      const authorizationBody = authorizationResponse.json() as {
+        authorizationUrl: string;
+        state: string;
+      };
+      const authorizationUrl = new URL(authorizationBody.authorizationUrl);
+      const setCookieHeader = authorizationResponse.headers["set-cookie"];
+      const sessionCookie = Array.isArray(setCookieHeader) ? setCookieHeader[0] : setCookieHeader;
+      assert.equal(typeof sessionCookie, "string");
+      if (typeof sessionCookie !== "string") {
+        throw new Error("Expected OAuth session cookie to be set.");
+      }
+      const sessionCookiePair = sessionCookie.split(";")[0];
+      const sessionKey = decodeURIComponent(sessionCookiePair.split("=").slice(1).join("="));
+
+      assert.equal(authorizationUrl.origin, "https://oauth.onshape.com");
+      assert.equal(authorizationUrl.searchParams.get("client_id"), "test-onshape-client");
+      assert.equal(authorizationUrl.searchParams.get("client_secret"), null);
+      assert.equal(authorizationUrl.searchParams.get("state"), authorizationBody.state);
+      assert.equal(authorizationBody.state.includes(sessionKey), false);
+
+      resetLimits();
+
+      const callbackResponse = await app.inject({
+        method: "GET",
+        url: `/api/onshape/oauth/callback?code=oauth-code&state=${authorizationBody.state}`,
+        headers: {
+          cookie: sessionCookiePair,
+        },
+      });
+      assert.equal(callbackResponse.statusCode, 200);
+      assert.match(callbackResponse.body, /Onshape OAuth connection complete/i);
+      assert.equal(getOnshapeRuntimeStore().getOAuthTokenSet()?.accessToken, "oauth-access-token");
+
+      resetLimits();
+
+      const overviewResponse = await app.inject({ method: "GET", url: "/api/onshape/overview" });
+      assert.equal(overviewResponse.statusCode, 200);
+      assert.equal(overviewResponse.json().connection.authMode, "oauth");
+      assert.equal(overviewResponse.json().connection.oauth.connected, true);
+    });
+  } finally {
+    setOnshapeOAuthTokenTransportForTests(null);
   }
 });

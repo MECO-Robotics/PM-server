@@ -40,6 +40,8 @@ export function buildInitialState(): OnshapeRuntimeState {
     partDefinitions: [],
     partInstances: [],
     warnings: [],
+    oauthTokenSet: null,
+    oauthStates: [],
     budget: {
       id: "onshape-budget-default",
       organizationId: null,

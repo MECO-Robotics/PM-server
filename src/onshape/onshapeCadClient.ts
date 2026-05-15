@@ -95,7 +95,7 @@ export function createOnshapeCadClient(lowLevelClient: LowLevelClient): CadImpor
     },
     async fetchAssemblyBom({ reference, importRunId, policy }) {
       if (!reference.elementId) {
-        throw new Error("Onshape assembly BOM sync requires an elementId.");
+        throw new Error("Onshape element ID is required for BOM sync.");
       }
       const modePath = referenceModePath(reference);
       const endpoint = `/api/assemblies/d/${reference.documentId}/${modePath}/e/${reference.elementId}/bom`;
