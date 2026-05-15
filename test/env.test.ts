@@ -170,3 +170,117 @@ test("slack config maps channel ids and alert usergroup handles", async () => {
     restoreEnv(saved);
   }
 });
+
+test("CAD persistence defaults to Prisma and allows runtime override", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "CAD_STORE_DRIVER",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    delete process.env.CAD_STORE_DRIVER;
+
+    const defaultConfig = await loadEnvModule(`cad-store-default-${Date.now()}`);
+    assert.equal(defaultConfig.cadPersistenceConfig.storeDriver, "prisma");
+
+    delete require.cache[require.resolve("../src/config/env.ts")];
+    process.env.CAD_STORE_DRIVER = "runtime";
+
+    const runtimeConfig = await loadEnvModule(`cad-store-runtime-${Date.now()}`);
+    assert.equal(runtimeConfig.cadPersistenceConfig.storeDriver, "runtime");
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
+test("STEP upload limit defaults above common CAD export sizes and allows override", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "CAD_STEP_UPLOAD_MAX_BYTES",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
+
+    const defaultConfig = await loadEnvModule(`cad-step-upload-default-${Date.now()}`);
+    assert.equal(defaultConfig.cadStepUploadConfig.maxBytes, 250 * 1024 * 1024);
+
+    delete require.cache[require.resolve("../src/config/env.ts")];
+    process.env.CAD_STEP_UPLOAD_MAX_BYTES = String(64 * 1024 * 1024);
+
+    const overrideConfig = await loadEnvModule(`cad-step-upload-override-${Date.now()}`);
+    assert.equal(overrideConfig.cadStepUploadConfig.maxBytes, 64 * 1024 * 1024);
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
+test("STEP parser mode defaults to real parser auto mode and allows explicit placeholder mode", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "CAD_STEP_PARSER_MODE",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "http://localhost:5173";
+    delete process.env.CAD_STEP_PARSER_MODE;
+
+    const defaultConfig = await loadEnvModule(`cad-step-parser-default-${Date.now()}`);
+    assert.equal(defaultConfig.cadStepParserConfig.mode, "auto");
+
+    delete require.cache[require.resolve("../src/config/env.ts")];
+    process.env.CAD_STEP_PARSER_MODE = "placeholder";
+
+    const overrideConfig = await loadEnvModule(`cad-step-parser-placeholder-${Date.now()}`);
+    assert.equal(overrideConfig.cadStepParserConfig.mode, "placeholder");
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
+test("production config refuses placeholder STEP parser mode", async () => {
+  const saved = saveEnv([
+    "NODE_ENV",
+    "DATABASE_URL",
+    "CORS_ORIGIN",
+    "AUTH_JWT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_ALLOWED_HOSTED_DOMAIN",
+    "CAD_STEP_PARSER_MODE",
+  ]);
+
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
+    process.env.CORS_ORIGIN = "https://app.example.com";
+    process.env.AUTH_JWT_SECRET = "a".repeat(32);
+    process.env.GOOGLE_CLIENT_ID = "client-id.apps.googleusercontent.com";
+    process.env.GOOGLE_ALLOWED_HOSTED_DOMAIN = "mecorobotics.org";
+    process.env.CAD_STEP_PARSER_MODE = "placeholder";
+
+    await assert.rejects(
+      loadEnvModule(`cad-step-parser-production-placeholder-${Date.now()}`),
+      /Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder/,
+    );
+  } finally {
+    restoreEnv(saved);
+  }
+});

@@ -39,8 +39,8 @@ CREATE TABLE "OnshapeDocumentRef" (
 
 CREATE TABLE "CadImportRun" (
   "id" TEXT PRIMARY KEY,
-  "onshapeDocumentRefId" TEXT NOT NULL REFERENCES "OnshapeDocumentRef"("id"),
-  "syncLevel" "CadSyncLevel" NOT NULL,
+  "onshapeDocumentRefId" TEXT REFERENCES "OnshapeDocumentRef"("id"),
+  "syncLevel" "CadSyncLevel",
   "status" "CadImportStatus" NOT NULL DEFAULT 'PENDING',
   "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "completedAt" TIMESTAMP(3),
@@ -154,7 +154,7 @@ CREATE TABLE "CadPartInstance" (
   "sourceId" TEXT NOT NULL,
   "snapshotId" TEXT NOT NULL REFERENCES "CadSnapshot"("id"),
   "cadPartDefinitionId" TEXT REFERENCES "CadPartDefinition"("id"),
-  "parentAssemblyNodeId" TEXT REFERENCES "CadAssemblyNode"("id"),
+  "parentAssemblyNodeId" TEXT,
   "documentId" TEXT NOT NULL,
   "elementId" TEXT,
   "assemblyInstanceId" TEXT,

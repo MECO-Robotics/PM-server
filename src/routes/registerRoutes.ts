@@ -204,6 +204,7 @@ import {
   presignVideoUpload,
 } from "../storage/mediaUploadService";
 import { buildSlackHomeResponse } from "../slack/homeService";
+import { registerCadRoutes } from "../cad/cadRoutes";
 import { registerOnshapeRoutes } from "../onshape/onshapeRoutes";
 
 const allowApiRouteRequest = createRequestLimitGuard({
@@ -3113,5 +3114,6 @@ export async function registerRoutes(app: FastifyInstance) {
     return buildMetrics(getSnapshot());
   });
 
+  await registerCadRoutes(app, requireApiSessionIfEnabled);
   await registerOnshapeRoutes(app, requireApiSessionIfEnabled);
 }

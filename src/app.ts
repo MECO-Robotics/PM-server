@@ -1,7 +1,10 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 
-import { corsConfig, env } from "./config/env";
+import { resetCadRuntimeStore } from "./cad/cadStore";
+import { disconnectCadStore } from "./cad/cadStoreFactory";
+import { cadStepUploadConfig, corsConfig, env } from "./config/env";
 import { resetStore } from "./data/store";
 import { resetOnshapeRuntimeStore } from "./onshape/cadStore";
 import { registerRoutes } from "./routes/registerRoutes";
@@ -9,15 +12,22 @@ import { registerRoutes } from "./routes/registerRoutes";
 export async function buildApp() {
   // Always start from the checked-in seed snapshot so deploys regenerate tutorial state.
   resetStore();
+  resetCadRuntimeStore();
   resetOnshapeRuntimeStore();
 
   const app = Fastify({
     logger: true,
-    bodyLimit: 64 * 1024,
+    bodyLimit: 2 * 1024 * 1024,
   });
 
   await app.register(cors, {
     origin: corsConfig.allowsAnyOrigin ? true : corsConfig.origins,
+  });
+  await app.register(multipart, {
+    limits: {
+      fileSize: cadStepUploadConfig.maxBytes,
+      files: 1,
+    },
   });
 
   app.addHook("onSend", async (request, reply, payload) => {
@@ -36,6 +46,10 @@ export async function buildApp() {
     }
 
     return payload;
+  });
+
+  app.addHook("onClose", async () => {
+    await disconnectCadStore();
   });
 
   await registerRoutes(app);
