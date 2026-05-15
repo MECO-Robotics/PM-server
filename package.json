@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "smtp:dev": "tsx watch scripts/dev-smtp.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test ./test/app.core-auth.test.ts ./test/app.inventory-artifacts-workstreams.test.ts ./test/app.inventory-manufacturing-purchases.test.ts ./test/app.planning-entities.test.ts ./test/app.tasks-events.test.ts ./test/app.work-logs.test.ts ./test/app.reports.test.ts ./test/authRosterAccess.test.ts ./test/devAuthBypass.test.ts ./test/emailAuth.test.ts ./test/env.test.ts ./test/requestLimits.test.ts ./test/slackHomeService.test.ts ./test/store.test.ts ./test/workflows.test.ts",
+    "test": "node --import tsx --test ./test/app.core-auth.test.ts ./test/app.inventory-artifacts-workstreams.test.ts ./test/app.inventory-manufacturing-purchases.test.ts ./test/app.planning-entities.test.ts ./test/app.tasks-events.test.ts ./test/app.work-logs.test.ts ./test/app.reports.test.ts ./test/authRosterAccess.test.ts ./test/devAuthBypass.test.ts ./test/emailAuth.test.ts ./test/env.test.ts ./test/onshape.test.ts ./test/onshape.routes.test.ts ./test/requestLimits.test.ts ./test/slackHomeService.test.ts ./test/store.test.ts ./test/workflows.test.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",

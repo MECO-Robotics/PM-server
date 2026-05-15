@@ -31,6 +31,17 @@ const APP_ENV_KEYS = [
   "SLACK_CHANNEL_PROGRAMMING_ID",
   "SLACK_CHANNEL_SCOUTING_STRATEGY_ID",
   "SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID",
+  "ONSHAPE_BASE_URL",
+  "ONSHAPE_OAUTH_CLIENT_ID",
+  "ONSHAPE_OAUTH_CLIENT_SECRET",
+  "ONSHAPE_OAUTH_REDIRECT_URI",
+  "ONSHAPE_OAUTH_AUTHORIZATION_URL",
+  "ONSHAPE_OAUTH_TOKEN_URL",
+  "ONSHAPE_OAUTH_SCOPES",
+  "ONSHAPE_OAUTH_ACCESS_TOKEN",
+  "ONSHAPE_OAUTH_REFRESH_TOKEN",
+  "ONSHAPE_OAUTH_TOKEN_EXPIRES_AT",
+  "ONSHAPE_CREDENTIAL_REFERENCE",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -81,6 +92,17 @@ function configureEnv() {
   process.env.SLACK_CHANNEL_PROGRAMMING_ID = "C02BLURKRED";
   process.env.SLACK_CHANNEL_SCOUTING_STRATEGY_ID = "C05SW57962E";
   process.env.SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID = "C088N9VC6H4";
+  process.env.ONSHAPE_BASE_URL = "https://cad.onshape.com";
+  process.env.ONSHAPE_OAUTH_CLIENT_ID = "test-onshape-client";
+  process.env.ONSHAPE_OAUTH_CLIENT_SECRET = "test-onshape-secret";
+  process.env.ONSHAPE_OAUTH_REDIRECT_URI = "https://mission.test/api/onshape/oauth/callback";
+  process.env.ONSHAPE_OAUTH_AUTHORIZATION_URL = "https://oauth.onshape.com/oauth/authorize";
+  process.env.ONSHAPE_OAUTH_TOKEN_URL = "https://oauth.onshape.com/oauth/token";
+  process.env.ONSHAPE_OAUTH_SCOPES = "OAuth2Read";
+  delete process.env.ONSHAPE_OAUTH_ACCESS_TOKEN;
+  delete process.env.ONSHAPE_OAUTH_REFRESH_TOKEN;
+  delete process.env.ONSHAPE_OAUTH_TOKEN_EXPIRES_AT;
+  delete process.env.ONSHAPE_CREDENTIAL_REFERENCE;
 }
 
 export async function withIntegrationApp(

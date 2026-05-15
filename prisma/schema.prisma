@@ -119,6 +119,58 @@ enum RsvpStatus {
   NO
 }
 
+enum OnshapeAuthMode {
+  API_KEY
+  OAUTH
+}
+
+enum CadSyncLevel {
+  LINK_ONLY
+  SHALLOW
+  BOM
+  DEEP_RELEASE
+}
+
+enum CadImportStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELED
+}
+
+enum CadSnapshotSource {
+  MANUAL_SNAPSHOT
+  DESIGN_REVIEW
+  MANUFACTURING_RELEASE
+  AS_BUILT
+  SCHEDULED_CANDIDATE
+}
+
+enum CadAssemblyInferredType {
+  MASTER_ASSEMBLY
+  SUBSYSTEM_CANDIDATE
+  MECHANISM_CANDIDATE
+  SUBASSEMBLY
+  UNKNOWN
+}
+
+enum CadWarningSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+enum OnshapePlanType {
+  EDUCATION
+  FREE
+  STANDARD
+  PROFESSIONAL
+  ENTERPRISE
+  UNKNOWN
+}
+
 model Member {
   id                        String              @id @default(cuid())
   name                      String
@@ -503,4 +555,289 @@ model RiskTask {
   task   Task @relation(fields: [taskId], references: [id])
 
   @@id([riskId, taskId])
+}
+
+model OnshapeConnection {
+  id                  String          @id @default(cuid())
+  organizationId      String?
+  authMode            OnshapeAuthMode @default(OAUTH)
+  credentialReference String?
+  baseUrl             String          @default("https://cad.onshape.com")
+  disabledAt          DateTime?
+  lastError           String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
+
+model OnshapeDocumentRef {
+  id                 String         @id @default(cuid())
+  projectId          String?
+  seasonId           String?
+  subsystemId        String?
+  mechanismId        String?
+  label              String
+  documentId         String
+  workspaceId        String?
+  versionId          String?
+  microversionId     String?
+  elementId          String?
+  originalUrl        String
+  parsedUrlJson      Json
+  createdBy          String?
+  importRuns         CadImportRun[]
+  snapshots          CadSnapshot[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([documentId])
+  @@index([workspaceId])
+  @@index([versionId])
+  @@index([microversionId])
+  @@index([elementId])
+  @@index([createdAt])
+}
+
+model CadImportRun {
+  id                   String              @id @default(cuid())
+  onshapeDocumentRefId String
+  syncLevel            CadSyncLevel
+  status               CadImportStatus     @default(PENDING)
+  startedAt            DateTime            @default(now())
+  completedAt          DateTime?
+  requestedBy          String?
+  callsEstimated       Int?
+  callsUsed            Int                 @default(0)
+  stoppedReason        String?
+  errorMessage         String?
+  rawSummaryJson       Json
+  documentRef          OnshapeDocumentRef   @relation(fields: [onshapeDocumentRefId], references: [id])
+  requestLogs          OnshapeApiRequestLog[]
+  snapshots            CadSnapshot[]
+  warnings             CadImportWarning[]
+  createdAt            DateTime            @default(now())
+
+  @@index([onshapeDocumentRefId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OnshapeApiRequestLog {
+  id                   String        @id @default(cuid())
+  importRunId          String?
+  endpoint             String
+  method               String
+  cacheKey             String
+  usedCache            Boolean       @default(false)
+  statusCode           Int?
+  requestStartedAt     DateTime      @default(now())
+  requestCompletedAt   DateTime?
+  responseHeadersJson  Json
+  rateLimitRemaining   Int?
+  errorMessage         String?
+  importRun            CadImportRun? @relation(fields: [importRunId], references: [id])
+
+  @@index([importRunId])
+  @@index([cacheKey])
+  @@index([requestStartedAt])
+}
+
+model OnshapeApiCacheEntry {
+  id                  String   @id @default(cuid())
+  cacheKey            String   @unique
+  endpoint            String
+  method              String
+  requestHash         String
+  responseJson        Json
+  responseHeadersJson Json
+  documentId          String?
+  workspaceId         String?
+  versionId           String?
+  microversionId      String?
+  elementId           String?
+  immutable           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  expiresAt           DateTime?
+
+  @@index([documentId])
+  @@index([workspaceId])
+  @@index([versionId])
+  @@index([microversionId])
+  @@index([elementId])
+  @@index([createdAt])
+}
+
+model CadSnapshot {
+  id                   String              @id @default(cuid())
+  seasonId             String?
+  projectId            String?
+  subsystemId          String?
+  mechanismId          String?
+  onshapeDocumentRefId String
+  importRunId          String
+  label                String
+  source               CadSnapshotSource   @default(MANUAL_SNAPSHOT)
+  documentId           String
+  workspaceId          String?
+  versionId            String?
+  microversionId       String?
+  elementId            String?
+  createdBy            String?
+  previousSnapshotId   String?
+  notes                String?
+  immutable            Boolean             @default(true)
+  documentRef          OnshapeDocumentRef   @relation(fields: [onshapeDocumentRefId], references: [id])
+  importRun            CadImportRun         @relation(fields: [importRunId], references: [id])
+  previousSnapshot     CadSnapshot?         @relation("CadSnapshotHistory", fields: [previousSnapshotId], references: [id])
+  nextSnapshots        CadSnapshot[]        @relation("CadSnapshotHistory")
+  assemblyNodes        CadAssemblyNode[]
+  partDefinitions      CadPartDefinition[]
+  partInstances        CadPartInstance[]
+  warnings             CadImportWarning[]
+  createdAt            DateTime             @default(now())
+
+  @@index([onshapeDocumentRefId])
+  @@index([importRunId])
+  @@index([documentId])
+  @@index([elementId])
+  @@index([createdAt])
+}
+
+model CadAssemblyNode {
+  id                    String                  @id @default(cuid())
+  sourceId              String
+  snapshotId            String
+  parentAssemblyNodeId  String?
+  documentId            String
+  elementId             String?
+  assemblyInstanceId    String?
+  instancePath          String
+  name                  String
+  normalizedName        String
+  inferredType          CadAssemblyInferredType @default(UNKNOWN)
+  subsystemId           String?
+  mechanismId           String?
+  metadataJson          Json
+  snapshot              CadSnapshot             @relation(fields: [snapshotId], references: [id])
+  parentAssemblyNode    CadAssemblyNode?         @relation("CadAssemblyTree", fields: [parentAssemblyNodeId], references: [id])
+  childAssemblyNodes    CadAssemblyNode[]        @relation("CadAssemblyTree")
+  partInstances         CadPartInstance[]        @relation("CadAssemblyPartInstances")
+  warnings              CadImportWarning[]
+  createdAt             DateTime                @default(now())
+
+  @@unique([snapshotId, sourceId])
+  @@index([snapshotId])
+  @@index([documentId])
+  @@index([elementId])
+  @@index([createdAt])
+}
+
+model CadPartDefinition {
+  id                         String              @id @default(cuid())
+  sourceId                   String
+  snapshotId                 String
+  documentId                 String
+  elementId                  String?
+  partId                     String?
+  versionId                  String?
+  microversionId             String?
+  name                       String
+  normalizedName             String
+  partNumber                 String?
+  material                   String?
+  mass                       Float?
+  configuration              String?
+  customPropertiesJson       Json
+  metadataHash               String?
+  missionControlExternalKey  String?
+  snapshot                   CadSnapshot         @relation(fields: [snapshotId], references: [id])
+  instances                  CadPartInstance[]
+  warnings                   CadImportWarning[]
+  createdAt                  DateTime            @default(now())
+
+  @@unique([snapshotId, sourceId])
+  @@index([snapshotId])
+  @@index([documentId])
+  @@index([elementId])
+  @@index([partId])
+  @@index([createdAt])
+}
+
+model CadPartInstance {
+  id                   String             @id @default(cuid())
+  sourceId             String
+  snapshotId           String
+  cadPartDefinitionId  String?
+  parentAssemblyNodeId String?
+  documentId           String
+  elementId            String?
+  assemblyInstanceId   String?
+  partId               String?
+  instancePath         String
+  quantity             Int                @default(1)
+  suppressed           Boolean?
+  configuration        String?
+  transformJson        Json?
+  metadataJson         Json
+  snapshot             CadSnapshot        @relation(fields: [snapshotId], references: [id])
+  cadPartDefinition    CadPartDefinition? @relation(fields: [cadPartDefinitionId], references: [id])
+  parentAssemblyNode   CadAssemblyNode?   @relation("CadAssemblyPartInstances", fields: [parentAssemblyNodeId], references: [id])
+  warnings             CadImportWarning[]
+  createdAt            DateTime           @default(now())
+
+  @@unique([snapshotId, sourceId])
+  @@index([snapshotId])
+  @@index([cadPartDefinitionId])
+  @@index([parentAssemblyNodeId])
+  @@index([documentId])
+  @@index([elementId])
+  @@index([partId])
+  @@index([createdAt])
+}
+
+model CadImportWarning {
+  id                   String             @id @default(cuid())
+  importRunId          String
+  snapshotId           String?
+  severity             CadWarningSeverity
+  code                 String
+  title                String
+  message              String
+  cadAssemblyNodeId    String?
+  cadPartDefinitionId  String?
+  cadPartInstanceId    String?
+  metadataJson         Json
+  importRun            CadImportRun       @relation(fields: [importRunId], references: [id])
+  snapshot             CadSnapshot?       @relation(fields: [snapshotId], references: [id])
+  cadAssemblyNode      CadAssemblyNode?    @relation(fields: [cadAssemblyNodeId], references: [id])
+  cadPartDefinition    CadPartDefinition? @relation(fields: [cadPartDefinitionId], references: [id])
+  cadPartInstance      CadPartInstance?   @relation(fields: [cadPartInstanceId], references: [id])
+  createdAt            DateTime           @default(now())
+
+  @@index([importRunId])
+  @@index([snapshotId])
+  @@index([cadAssemblyNodeId])
+  @@index([cadPartDefinitionId])
+  @@index([cadPartInstanceId])
+  @@index([createdAt])
+}
+
+model OnshapeApiBudget {
+  id                       String          @id @default(cuid())
+  organizationId           String?
+  planType                 OnshapePlanType @default(EDUCATION)
+  annualCallBudget         Int?
+  monthlyCallBudget        Int?
+  dailySoftBudget          Int?
+  perSyncSoftBudget        Int?
+  callsUsedToday           Int             @default(0)
+  callsUsedThisMonth       Int             @default(0)
+  callsUsedThisYear        Int             @default(0)
+  warningThresholdPercent  Int             @default(70)
+  hardStopThresholdPercent Int             @default(90)
+  lastResetAt              DateTime?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  @@index([organizationId])
+  @@index([createdAt])
 }
