@@ -256,6 +256,34 @@ test("normalizes native Onshape assembly payloads into CAD graph records", async
   assert.equal(result.partInstances[0]?.suppressed, false);
 });
 
+test("fetches Onshape document metadata through the supported getDocument path", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  let requestedEndpoint = "";
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async (request) => {
+      requestedEndpoint = request.endpoint;
+      return {
+        statusCode: 200,
+        headers: {},
+        json: { name: "2026 Robot CAD" },
+      };
+    },
+  });
+
+  const result = await createOnshapeCadClient(lowLevelClient).fetchDocumentMetadata({
+    reference,
+    importRunId: "import-1",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  assert.equal(requestedEndpoint, "/api/v10/documents/0123456789abcdef01234567");
+  assert.equal(store.listCacheEntries().at(-1)?.requestHash, ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH);
+  assert.equal(result.documentName, "2026 Robot CAD");
+});
+
 test("rejects unrecognized successful Onshape BOM payloads", () => {
   const reference = createLinkedRef(createOnshapeRuntimeStore());
 

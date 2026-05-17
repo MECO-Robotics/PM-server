@@ -50,7 +50,7 @@ export function createOnshapeCadClient(lowLevelClient: LowLevelClient): CadImpor
   return {
     getCallsUsed: lowLevelClient.getCallsUsed,
     async fetchDocumentMetadata({ reference, importRunId, policy }) {
-      const endpoint = `/api/documents/d/${reference.documentId}`;
+      const endpoint = `/api/v10/documents/${reference.documentId}`;
       const raw = await lowLevelClient.requestJson({
         endpoint,
         method: "GET",
