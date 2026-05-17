@@ -6,6 +6,7 @@ import type {
   PlatformSnapshot,
   QaFinding,
   QaReport,
+  QaRequest,
   TestFinding,
   TestResult,
   Task,
@@ -388,6 +389,17 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     const task = scopedTasksById.get(report.taskId);
     return Boolean(task);
   });
+  const isProjectScoped = selection.projectId !== null;
+  const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
+    const isTaskInScope = request.taskId
+      ? scopedTaskIds.has(request.taskId)
+      : !isProjectScoped;
+    const isPersonInScope =
+      selection.personId === null ||
+      request.mentorId === selection.personId ||
+      request.requestedById === selection.personId;
+    return isTaskInScope && isPersonInScope;
+  });
   const scopedTestResults = snapshot.testResults.filter((result) => {
     const milestone = scopedMilestonesById.get(result.milestoneId);
     return Boolean(milestone);
@@ -515,7 +527,16 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     : snapshot.partDefinitions;
   const scopedActions = (snapshot.actions ?? [])
     .filter((action) => {
-      if (action.projectId && !activeProjectIds.has(action.projectId)) {
+      const actionProjectIds =
+        action.projectIds && action.projectIds.length > 0
+          ? action.projectIds
+          : action.projectId
+            ? [action.projectId]
+            : [];
+      if (
+        actionProjectIds.length > 0 &&
+        !actionProjectIds.some((projectId) => activeProjectIds.has(projectId))
+      ) {
         return false;
       }
 
@@ -562,6 +583,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     reports: scopedReports,
     reportFindings: scopedReportFindings,
     qaReports: scopedQaReports,
+    qaRequests: scopedQaRequests,
     testResults: scopedTestResults,
     risks: scopedRisks,
     tasks: scopedTasks.map((task) => ({

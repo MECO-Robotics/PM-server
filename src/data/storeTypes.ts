@@ -229,6 +229,13 @@ export interface QaReportInput {
   reviewedAt: string;
 }
 
+export interface QaRequestInput {
+  taskId?: string | null;
+  subject: string;
+  mentorId: string;
+  requestedById?: string | null;
+}
+
 export interface TestResultInput {
   milestoneId: string;
   title: string;

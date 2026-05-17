@@ -21,6 +21,7 @@ import type {
   ReportFinding,
   Risk,
   QaReport,
+  QaRequest,
   QaFinding,
   Season,
   Subsystem,
@@ -47,6 +48,7 @@ import type {
   PartInstanceInput,
   ProjectInput,
   QaReportInput,
+  QaRequestInput,
   ReportFindingInput,
   ReportInput,
   RiskInput,
@@ -72,6 +74,7 @@ export type {
   PartInstanceInput,
   ProjectInput,
   QaReportInput,
+  QaRequestInput,
   ReportFindingInput,
   ReportInput,
   RiskInput,
@@ -488,6 +491,7 @@ function cloneSnapshot(snapshot: PlatformSnapshot): PlatformSnapshot {
     ),
     milestones: normalizedMilestones,
     milestoneRequirements: normalizedMilestoneRequirements,
+    qaRequests: clonedSnapshot.qaRequests ?? [],
   });
 
   return normalizeSnapshotTaskSerials({
@@ -1297,6 +1301,7 @@ function recordAuditAction(args: {
   entityLabel?: string | null;
   changedFields?: string[];
   projectId?: string | null;
+  projectIds?: Array<string | null | undefined>;
   taskId?: string | null;
   subsystemId?: string | null;
   actorMemberId?: string | null;
@@ -1306,6 +1311,7 @@ function recordAuditAction(args: {
   const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
     left.localeCompare(right),
   );
+  const projectIds = uniqueIds([...(args.projectIds ?? []), args.projectId]);
   const action: AuditAction = {
     id: nextActionId(),
     timestamp: new Date().toISOString(),
@@ -1320,7 +1326,8 @@ function recordAuditAction(args: {
       changedFields,
     }),
     changedFields,
-    projectId: args.projectId ?? null,
+    projectId: projectIds[0] ?? null,
+    ...(projectIds.length > 0 ? { projectIds } : {}),
     taskId: args.taskId ?? null,
     subsystemId: args.subsystemId ?? null,
     actorMemberId: args.actorMemberId ?? null,
@@ -1688,6 +1695,10 @@ export function getTaskBlockers() {
 
 export function getQaReports() {
   return currentSnapshot.qaReports;
+}
+
+export function getQaRequests() {
+  return currentSnapshot.qaRequests ?? [];
 }
 
 export function getTestResults() {
@@ -2523,6 +2534,9 @@ export function removeSubsystem(subsystemId: string) {
     qaReports: currentSnapshot.qaReports.filter(
       (report) => !taskIdsToRemove.has(report.taskId),
     ),
+    qaRequests: getQaRequests().filter(
+      (request) => !request.taskId || !taskIdsToRemove.has(request.taskId),
+    ),
     risks: currentSnapshot.risks.filter((risk) => {
       if (risk.mitigationTaskId && taskIdsToRemove.has(risk.mitigationTaskId)) {
         return false;
@@ -3208,7 +3222,7 @@ export function createMilestone(input: MilestoneInput) {
     entityType: "milestone",
     entityId: milestone.id,
     entityLabel: milestone.title,
-    projectId: milestone.projectIds[0] ?? null,
+    projectIds: milestone.projectIds,
   });
 
   return milestone;
@@ -3245,6 +3259,42 @@ export function createQaReport(input: QaReportInput) {
   });
 
   return report;
+}
+
+export function createQaRequest(input: QaRequestInput) {
+  const task = input.taskId
+    ? currentSnapshot.tasks.find((candidate) => candidate.id === input.taskId)
+    : null;
+  const requestIds = new Set(getQaRequests().map((request) => request.id));
+  const subject = input.subject.trim();
+  const request: QaRequest = {
+    id: uniqueId(toSlug(`${subject} qa request`) || "qa-request", requestIds),
+    taskId: input.taskId ?? null,
+    subject,
+    mentorId: input.mentorId,
+    requestedById: input.requestedById ?? null,
+    createdAt: new Date().toISOString(),
+    status: "requested",
+  };
+
+  currentSnapshot = {
+    ...currentSnapshot,
+    qaRequests: [request, ...getQaRequests()],
+  };
+
+  recordAuditAction({
+    operation: "create",
+    entityType: "qa_request",
+    entityId: request.id,
+    entityLabel: request.subject,
+    projectId: task?.projectId ?? null,
+    subsystemId: task?.subsystemId ?? null,
+    taskId: request.taskId,
+    actorMemberId: request.requestedById,
+    memberIds: [request.requestedById, request.mentorId],
+  });
+
+  return request;
 }
 
 export function createTestResult(input: TestResultInput) {
@@ -3746,7 +3796,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       entityType: "milestone",
       entityId: updatedMilestone.id,
       entityLabel: updatedMilestone.title,
-      projectId: updatedMilestone.projectIds[0] ?? null,
+      projectIds: updatedMilestone.projectIds,
       changedFields: collectChangedFields(
         currentMilestone,
         updatedMilestone,
@@ -3785,7 +3835,7 @@ export function removeMilestone(milestoneId: string) {
     entityType: "milestone",
     entityId: milestone.id,
     entityLabel: milestone.title,
-    projectId: milestone.projectIds[0] ?? null,
+    projectIds: milestone.projectIds,
   });
 
   return milestone;
@@ -3981,9 +4031,10 @@ export function removeTask(taskId: string) {
         dependencyIds: candidate.dependencyIds.filter(
           (dependencyId) => dependencyId !== taskId,
         ),
-      })),
+    })),
     workLogs: currentSnapshot.workLogs.filter((workLog) => workLog.taskId !== taskId),
     qaReports: currentSnapshot.qaReports.filter((report) => report.taskId !== taskId),
+    qaRequests: getQaRequests().filter((request) => request.taskId !== taskId),
     taskDependencies: currentSnapshot.taskDependencies.filter(
       (dependency) => dependency.taskId !== taskId && dependency.refId !== taskId,
     ),
@@ -4405,6 +4456,12 @@ export function removeMember(memberId: string) {
       ...item,
       requestedById: item.requestedById === memberId ? null : item.requestedById,
     })),
+    qaRequests: getQaRequests()
+      .filter((request) => request.mentorId !== memberId)
+      .map((request) => ({
+        ...request,
+        requestedById: request.requestedById === memberId ? null : request.requestedById,
+      })),
     qaReviews: currentSnapshot.qaReviews.map((review) => ({
       ...review,
       participantIds: review.participantIds.filter(

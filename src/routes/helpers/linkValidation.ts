@@ -65,6 +65,27 @@ export function validateQaReportLinks(input: {
   return null;
 }
 
+export function validateQaRequestLinks(input: {
+  taskId?: string | null;
+  mentorId: string;
+  requestedById?: string | null;
+}) {
+  if (input.taskId && !getTasks().some((task) => task.id === input.taskId)) {
+    return "The selected task does not exist.";
+  }
+
+  const memberIds = new Set(getMembers().map((member) => member.id));
+  if (!memberIds.has(input.mentorId)) {
+    return "The selected mentor does not exist.";
+  }
+
+  if (input.requestedById && !memberIds.has(input.requestedById)) {
+    return "The selected requester does not exist.";
+  }
+
+  return null;
+}
+
 export function validateTestResultLinks(input: { milestoneId: string }) {
   if (!findMilestone(input.milestoneId)) {
     return "The selected milestone does not exist.";
