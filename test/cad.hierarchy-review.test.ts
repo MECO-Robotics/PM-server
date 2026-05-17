@@ -281,6 +281,53 @@ test("hierarchy review returns a top-down assembly tree with component assembly 
   });
 });
 
+test("hierarchy review leaves rejected assembly mappings unresolved", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+    const imported = await uploadStep(app, "rejected-assembly-mapping", hierarchyCadFixture());
+    resetLimits();
+
+    const initialResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review`,
+    });
+    assert.equal(initialResponse.statusCode, 200, initialResponse.body);
+    const initial = initialResponse.json() as { root: HierarchyNode };
+    const component = findNode(initial.root, "asm-bellypan");
+    assert.ok(component);
+    resetLimits();
+
+    const applyResponse = await app.inject({
+      method: "POST",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review/apply`,
+      payload: {
+        reviewedBy: "mentor@example.com",
+        assemblyDecisions: [
+          {
+            sourceId: component.id,
+            targetKind: "COMPONENT_ASSEMBLY",
+            targetId: "asm-bellypan",
+            status: "REJECTED",
+          },
+        ],
+      },
+    });
+    assert.equal(applyResponse.statusCode, 200, applyResponse.body);
+    resetLimits();
+
+    const reviewedResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/hierarchy-review`,
+    });
+    assert.equal(reviewedResponse.statusCode, 200, reviewedResponse.body);
+    const reviewed = reviewedResponse.json() as { root: HierarchyNode };
+    const rejectedComponent = findNode(reviewed.root, "asm-bellypan");
+    assert.equal(rejectedComponent?.status, "REJECTED");
+    assert.equal(rejectedComponent?.proposedClassification, "UNMAPPED");
+    assert.equal(rejectedComponent?.resolvedComponentAssemblyId, null);
+  });
+});
+
 test("part match proposals reuse one database part for repeated rivets", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();

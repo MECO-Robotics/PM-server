@@ -9,6 +9,9 @@ import { buildHierarchyPartSummary } from "./cadHierarchyPartSummaryService";
 type AssemblyMapping = CadSnapshotMapping | undefined;
 
 function classificationFor(node: CadAssemblyNode, mapping: AssemblyMapping): CadMappingTargetKind | "ROOT" {
+  if (mapping?.status === "REJECTED") {
+    return "UNMAPPED";
+  }
   if (mapping && mapping.targetKind !== "UNMAPPED") {
     return mapping.targetKind;
   }
