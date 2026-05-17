@@ -48,7 +48,7 @@ if [ ! -d "skills" ]; then
 fi
 
 set +e
-DIFF_OUTPUT="$(diff --strip-trailing-cr -qr "$TMP_DIR/skills" skills 2>&1)"
+DIFF_OUTPUT="$(diff -qr "$TMP_DIR/skills" skills 2>&1)"
 DIFF_STATUS=$?
 set -e
 

@@ -8,7 +8,6 @@ jobs:
   check-skills:
     runs-on: ubuntu-latest
     env:
-      DEFAULT_SKILLS_REPO: https://github.com/MECO-Robotics/mission-control-skills.git
       SKILLS_REPO: ${{ vars.SKILLS_REPO || secrets.SKILLS_REPO || 'https://github.com/MECO-Robotics/mission-control-skills.git' }}
       SKILLS_REPO_DEPLOY_KEY: ${{ secrets.SKILLS_REPO_DEPLOY_KEY }}
       SKILLS_REPO_TOKEN: ${{ secrets.SKILLS_REPO_TOKEN }}
@@ -27,8 +26,13 @@ jobs:
           chmod 600 ~/.ssh/skills_repo_key
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           git config --global core.sshCommand "ssh -i ~/.ssh/skills_repo_key -o IdentitiesOnly=yes"
-          if [ -z "$SKILLS_REPO_TOKEN" ] && [ "$SKILLS_REPO" = "$DEFAULT_SKILLS_REPO" ]; then
-            echo "SKILLS_REPO=git@github.com:MECO-Robotics/mission-control-skills.git" >> "$GITHUB_ENV"
+          if [ -z "$SKILLS_REPO_TOKEN" ]; then
+            case "$SKILLS_REPO" in
+              https://github.com/*)
+                repo_path="${SKILLS_REPO#https://github.com/}"
+                echo "SKILLS_REPO=git@github.com:${repo_path}" >> "$GITHUB_ENV"
+                ;;
+            esac
           fi
 
       - name: Configure skills repo token
