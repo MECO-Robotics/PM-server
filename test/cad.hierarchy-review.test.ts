@@ -280,6 +280,48 @@ test("part match proposals distinguish exact tube numbers from ambiguous tube na
   });
 });
 
+test("part match proposals score whitespace-separated vendor names", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+    const drivePlate = createDomainPart({
+      name: "Drive Plate",
+      partNumber: "DRV-PLATE",
+      source: "VendorCo",
+    });
+    const imported = await uploadStep(app, "whitespace-token-part-match", JSON.stringify({
+      rootName: "Robot",
+      units: "inch",
+      assemblyNodes: [],
+      partDefinitions: [
+        {
+          sourceId: "part-drive-rail",
+          name: "Drive Rail",
+          partNumber: null,
+          material: "aluminum",
+          stableSignature: "part:name:drive-rail",
+          metadata: { vendor: "VendorCo" },
+        },
+      ],
+      partInstances: [],
+    }));
+    resetLimits();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${imported.snapshot.id}/part-match-proposals`,
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json() as {
+      items: Array<{ cadPartDefinitionSourceId: string; status: string; candidates: Array<{ id: string; strategy: string }> }>;
+    };
+    const proposal = body.items.find((item) => item.cadPartDefinitionSourceId === "part-drive-rail");
+    assert.equal(proposal?.status, "SUGGESTED");
+    assert.equal(proposal?.candidates[0]?.id, drivePlate.id);
+    assert.equal(proposal?.candidates[0]?.strategy, "VENDOR_METADATA");
+  });
+});
+
 test("hierarchy review groups 600 repeated part instances instead of overloading flat rows", async () => {
   await withIntegrationApp(async ({ app, resetLimits }) => {
     resetCadRuntimeStore();
