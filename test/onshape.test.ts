@@ -236,7 +236,7 @@ test("normalizes native Onshape assembly payloads into CAD graph records", async
 
   assert.equal(
     requestedEndpoint,
-    "/api/assemblies/d/0123456789abcdef01234567/v/222222222222222222222222/e/111111111111111111111111/bom",
+    "/api/v10/assemblies/d/0123456789abcdef01234567/v/222222222222222222222222/e/111111111111111111111111/bom",
   );
   assert.equal(store.listCacheEntries().at(-1)?.requestHash, ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH);
   assert.deepEqual(
