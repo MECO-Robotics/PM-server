@@ -20,6 +20,22 @@ function isImmutableReference(documentRef: OnshapeDocumentRef) {
   return documentRef.referenceType === "version" || documentRef.referenceType === "microversion";
 }
 
+function hasPrivilegedOnshapeRole(args: {
+  authEnabled: boolean;
+  userEmail: string | null;
+  members: MemberLike[];
+}) {
+  if (!args.authEnabled) {
+    return true;
+  }
+  if (!args.userEmail) {
+    return false;
+  }
+  const normalizedEmail = args.userEmail.trim().toLowerCase();
+  const member = args.members.find((item) => item.email?.trim().toLowerCase() === normalizedEmail);
+  return member?.role === "lead" || member?.role === "mentor" || member?.role === "admin";
+}
+
 function syncRequestHashes(syncLevel: SyncLevel) {
   if (syncLevel === "link_only") {
     return [];
@@ -103,15 +119,15 @@ export function canRunDeepReleaseSync(args: {
   userEmail: string | null;
   members: MemberLike[];
 }) {
-  if (!args.authEnabled) {
-    return true;
-  }
-  if (!args.userEmail) {
-    return false;
-  }
-  const normalizedEmail = args.userEmail.trim().toLowerCase();
-  const member = args.members.find((item) => item.email?.trim().toLowerCase() === normalizedEmail);
-  return member?.role === "lead" || member?.role === "mentor" || member?.role === "admin";
+  return hasPrivilegedOnshapeRole(args);
+}
+
+export function canManageOnshapeOAuthCredentials(args: {
+  authEnabled: boolean;
+  userEmail: string | null;
+  members: MemberLike[];
+}) {
+  return hasPrivilegedOnshapeRole(args);
 }
 
 export function estimateCadImportCalls(syncLevel: SyncLevel) {

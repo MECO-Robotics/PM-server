@@ -33,6 +33,7 @@ export interface OnshapeRuntimeState {
     createdAt: string;
     sessionKey: string;
     apiSessionAccountId: string | null;
+    apiSessionCanManageOAuthCredentials: boolean;
   }>;
 }
 
@@ -128,13 +129,19 @@ export interface OnshapeRuntimeStore {
   createOAuthState(input: {
     sessionKey: string;
     apiSessionAccountId?: string | null;
+    apiSessionCanManageOAuthCredentials?: boolean;
   }): {
     state: string;
     createdAt: string;
     sessionKey: string;
     apiSessionAccountId: string | null;
+    apiSessionCanManageOAuthCredentials: boolean;
   };
-  consumeOAuthState(state: string, input: { sessionKey: string; requireApiSession?: boolean }): boolean;
+  consumeOAuthState(state: string, input: {
+    sessionKey: string;
+    requireApiSession?: boolean;
+    requireCredentialManagementPermission?: boolean;
+  }): boolean;
   getOAuthTokenSet(): OnshapeOAuthTokenSet | null;
   setOAuthTokenSet(tokenSet: OnshapeOAuthTokenSet | null): OnshapeOAuthTokenSet | null;
   reset(): void;

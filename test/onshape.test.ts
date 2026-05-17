@@ -26,7 +26,11 @@ import {
 } from "../src/onshape/onshapeOAuth";
 import { normalizeOnshapeBom } from "../src/onshape/onshapeBomNormalizer";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
-import { canRunDeepReleaseSync, estimateOnshapeSync } from "../src/onshape/onshapeSyncPolicy";
+import {
+  canManageOnshapeOAuthCredentials,
+  canRunDeepReleaseSync,
+  estimateOnshapeSync,
+} from "../src/onshape/onshapeSyncPolicy";
 import type {
   CadImportOnshapeClient,
   OnshapeAssemblyBomResponse,
@@ -736,4 +740,22 @@ test("limits deep release sync permission to CAD leads mentors and admins when a
   assert.equal(canRunDeepReleaseSync({ authEnabled: true, userEmail: "admin@mecorobotics.org", members }), true);
   assert.equal(canRunDeepReleaseSync({ authEnabled: true, userEmail: "external@example.com", members }), false);
   assert.equal(canRunDeepReleaseSync({ authEnabled: true, userEmail: null, members }), false);
+});
+
+test("limits Onshape OAuth credential management to CAD leads mentors and admins", () => {
+  const members = [
+    { email: "student@mecorobotics.org", role: "student" },
+    { email: "lead@mecorobotics.org", role: "lead" },
+    { email: "mentor@mecorobotics.org", role: "mentor" },
+    { email: "admin@mecorobotics.org", role: "admin" },
+    { email: "external@example.com", role: "external" },
+  ];
+
+  assert.equal(canManageOnshapeOAuthCredentials({ authEnabled: false, userEmail: null, members }), true);
+  assert.equal(canManageOnshapeOAuthCredentials({ authEnabled: true, userEmail: "student@mecorobotics.org", members }), false);
+  assert.equal(canManageOnshapeOAuthCredentials({ authEnabled: true, userEmail: "lead@mecorobotics.org", members }), true);
+  assert.equal(canManageOnshapeOAuthCredentials({ authEnabled: true, userEmail: "mentor@mecorobotics.org", members }), true);
+  assert.equal(canManageOnshapeOAuthCredentials({ authEnabled: true, userEmail: "admin@mecorobotics.org", members }), true);
+  assert.equal(canManageOnshapeOAuthCredentials({ authEnabled: true, userEmail: "external@example.com", members }), false);
+  assert.equal(canManageOnshapeOAuthCredentials({ authEnabled: true, userEmail: null, members }), false);
 });

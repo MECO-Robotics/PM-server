@@ -316,6 +316,33 @@ test("Onshape OAuth states can require authenticated API session provenance", ()
       }),
       true,
     );
+
+    const unprivilegedState = store.createOAuthState({
+      sessionKey: "browser-session",
+      apiSessionAccountId: "student",
+    });
+    assert.equal(
+      store.consumeOAuthState(unprivilegedState.state, {
+        sessionKey: "browser-session",
+        requireApiSession: true,
+        requireCredentialManagementPermission: true,
+      }),
+      false,
+    );
+
+    const credentialManagerState = store.createOAuthState({
+      sessionKey: "browser-session",
+      apiSessionAccountId: "mentor",
+      apiSessionCanManageOAuthCredentials: true,
+    });
+    assert.equal(
+      store.consumeOAuthState(credentialManagerState.state, {
+        sessionKey: "browser-session",
+        requireApiSession: true,
+        requireCredentialManagementPermission: true,
+      }),
+      true,
+    );
   } finally {
     resetOnshapeRuntimeStore();
   }

@@ -3,7 +3,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { getSessionFromRequest, isAuthEnabled } from "../../auth/authService";
 import { onshapeConfig } from "../../config/env";
+import { getMembers } from "../../data/store";
 import { getOnshapeRuntimeStore } from "../cadStore";
+import { canManageOnshapeOAuthCredentials } from "../onshapeSyncPolicy";
 import {
   buildOnshapeOAuthAuthorizationUrl,
   exchangeOnshapeOAuthCode,
@@ -72,6 +74,26 @@ function getApiSessionAccountId(request: FastifyRequest) {
   return getSessionFromRequest(request)?.accountId ?? null;
 }
 
+function canRequestManageOAuthCredentials(request: FastifyRequest) {
+  const session = isAuthEnabled() ? getSessionFromRequest(request) : null;
+  return canManageOnshapeOAuthCredentials({
+    authEnabled: isAuthEnabled(),
+    userEmail: session?.email ?? null,
+    members: getMembers(),
+  });
+}
+
+function requireOAuthCredentialPermission(request: FastifyRequest, reply: FastifyReply) {
+  if (canRequestManageOAuthCredentials(request)) {
+    return true;
+  }
+
+  reply.code(403).send({
+    message: "Onshape OAuth credential management is restricted to leads, mentors, and admins.",
+  });
+  return false;
+}
+
 function resolveOAuthCallbackSessionKey(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -103,10 +125,14 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
     if (isAuthEnabled() && !apiSessionAccountId) {
       return reply.code(401).send({ message: "A signed-in Mission Control session is required." });
     }
+    if (!requireOAuthCredentialPermission(request, reply)) {
+      return;
+    }
 
     const { state } = getOnshapeRuntimeStore().createOAuthState({
       sessionKey,
       apiSessionAccountId,
+      apiSessionCanManageOAuthCredentials: true,
     });
     reply.header("Set-Cookie", buildOAuthSessionCookie(sessionKey));
     return {
@@ -138,7 +164,11 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
     }
 
     const store = getOnshapeRuntimeStore();
-    if (!store.consumeOAuthState(state, { sessionKey, requireApiSession: isAuthEnabled() })) {
+    if (!store.consumeOAuthState(state, {
+      sessionKey,
+      requireApiSession: isAuthEnabled(),
+      requireCredentialManagementPermission: isAuthEnabled(),
+    })) {
       return reply
         .header("Set-Cookie", buildExpiredOAuthSessionCookie())
         .code(400)
@@ -157,6 +187,9 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
 
   app.post("/api/onshape/oauth/refresh", async (request, reply) => {
     if (!requireApiSession(request, reply)) {
+      return;
+    }
+    if (!requireOAuthCredentialPermission(request, reply)) {
       return;
     }
 
