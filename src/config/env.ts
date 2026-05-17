@@ -68,7 +68,24 @@ const envSchema = z.object({
   SLACK_CHANNEL_PROGRAMMING_ID: z.string().min(1).optional(),
   SLACK_CHANNEL_SCOUTING_STRATEGY_ID: z.string().min(1).optional(),
   SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID: z.string().min(1).optional(),
+  ONSHAPE_BASE_URL: z.string().min(1).default("https://cad.onshape.com"),
+  ONSHAPE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  ONSHAPE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  ONSHAPE_OAUTH_REDIRECT_URI: z.string().min(1).optional(),
+  ONSHAPE_OAUTH_AUTHORIZATION_URL: z.string().min(1).default("https://oauth.onshape.com/oauth/authorize"),
+  ONSHAPE_OAUTH_TOKEN_URL: z.string().min(1).default("https://oauth.onshape.com/oauth/token"),
+  ONSHAPE_OAUTH_SCOPES: z.string().min(1).default("OAuth2Read"),
+  ONSHAPE_OAUTH_ACCESS_TOKEN: z.string().min(1).optional(),
+  ONSHAPE_OAUTH_REFRESH_TOKEN: z.string().min(1).optional(),
+  ONSHAPE_OAUTH_TOKEN_EXPIRES_AT: z.string().min(1).optional(),
+  ONSHAPE_OAUTH_TOKEN: z.string().min(1).optional(),
+  ONSHAPE_CREDENTIAL_REFERENCE: z.string().min(1).optional(),
+  CAD_STORE_DRIVER: z.enum(["prisma", "runtime"]).default("prisma"),
+  CAD_STEP_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(250 * 1024 * 1024),
+  CAD_STEP_PARSER_MODE: z.enum(["auto", "step_text", "json_fixture", "placeholder"]).default("auto"),
 });
+
+const cadStepParserModes = ["auto", "step_text", "json_fixture", "placeholder"] as const;
 
 export const env = envSchema.parse(process.env);
 
@@ -171,6 +188,12 @@ function assertProductionSecurityConfig() {
       "Production deployments must set CORS_ORIGIN to one or more explicit origins.",
     );
   }
+
+  if (env.CAD_STEP_PARSER_MODE === "placeholder") {
+    throw new Error(
+      "Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder.",
+    );
+  }
 }
 
 assertProductionSecurityConfig();
@@ -219,3 +242,48 @@ export const slackConfig = {
     transportationAttendance: env.SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID,
   },
 } as const;
+
+export const onshapeConfig = {
+  enabled: Boolean(
+    (env.ONSHAPE_OAUTH_CLIENT_ID &&
+      env.ONSHAPE_OAUTH_CLIENT_SECRET &&
+      env.ONSHAPE_OAUTH_REDIRECT_URI) ||
+      env.ONSHAPE_OAUTH_ACCESS_TOKEN ||
+      env.ONSHAPE_OAUTH_TOKEN ||
+      env.ONSHAPE_OAUTH_REFRESH_TOKEN,
+  ),
+  baseUrl: normalizeUrl(env.ONSHAPE_BASE_URL) ?? "https://cad.onshape.com",
+  oauthClientId: env.ONSHAPE_OAUTH_CLIENT_ID,
+  oauthClientSecret: env.ONSHAPE_OAUTH_CLIENT_SECRET,
+  oauthRedirectUri: env.ONSHAPE_OAUTH_REDIRECT_URI,
+  oauthAuthorizationUrl: normalizeUrl(env.ONSHAPE_OAUTH_AUTHORIZATION_URL) ?? "https://oauth.onshape.com/oauth/authorize",
+  oauthTokenUrl: normalizeUrl(env.ONSHAPE_OAUTH_TOKEN_URL) ?? "https://oauth.onshape.com/oauth/token",
+  oauthScopes: parseCsv(env.ONSHAPE_OAUTH_SCOPES),
+  oauthAccessToken: env.ONSHAPE_OAUTH_ACCESS_TOKEN ?? env.ONSHAPE_OAUTH_TOKEN,
+  oauthRefreshToken: env.ONSHAPE_OAUTH_REFRESH_TOKEN,
+  oauthTokenExpiresAt: env.ONSHAPE_OAUTH_TOKEN_EXPIRES_AT,
+  credentialReference: env.ONSHAPE_CREDENTIAL_REFERENCE ?? null,
+} as const;
+
+export const cadPersistenceConfig = {
+  storeDriver: env.CAD_STORE_DRIVER,
+} as const;
+
+export const cadStepUploadConfig = {
+  maxBytes: env.CAD_STEP_UPLOAD_MAX_BYTES,
+} as const;
+
+export const cadStepParserConfig = {
+  mode: env.CAD_STEP_PARSER_MODE,
+} as const;
+
+export function resolveCadStepParserMode() {
+  const requestedMode = process.env.CAD_STEP_PARSER_MODE;
+  if (cadStepParserModes.some((mode) => mode === requestedMode)) {
+    if (process.env.NODE_ENV === "production" && requestedMode === "placeholder") {
+      throw new Error("Production deployments cannot use CAD_STEP_PARSER_MODE=placeholder.");
+    }
+    return requestedMode as (typeof cadStepParserModes)[number];
+  }
+  return cadStepParserConfig.mode;
+}

@@ -18,6 +18,7 @@ function isTaskOpen(status: RosterInsightsSource["tasks"][number]["status"]) {
 export function buildRosterInsights(source: RosterInsightsSource): RosterInsightsResponse {
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const tomorrow = new Date(today.getTime() + MS_PER_DAY);
   const day7Start = new Date(today.getTime() - 6 * MS_PER_DAY);
   const day14Start = new Date(today.getTime() - 13 * MS_PER_DAY);
   const day30Start = new Date(today.getTime() - 29 * MS_PER_DAY);
@@ -50,6 +51,7 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
     day14Start,
     day30Start,
     today,
+    attendanceUpperBound: tomorrow,
     dueSoonEnd,
   }).sort((left, right) => {
     const statusOrder: Record<RosterAvailabilityStatus, number> = {
@@ -75,7 +77,7 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
   const attendanceTimelineByDate = new Map<string, { totalHours: number; memberIds: Set<string> }>();
   attendanceRecords.forEach((record) => {
     const attendanceDate = parseDateValue(record.date);
-    if (!attendanceDate || attendanceDate < day30Start || attendanceDate > today) {
+    if (!attendanceDate || attendanceDate < day30Start || attendanceDate >= tomorrow) {
       return;
     }
 
@@ -98,7 +100,7 @@ export function buildRosterInsights(source: RosterInsightsSource): RosterInsight
   const recentAttendance = [...attendanceRecords]
     .filter((record) => {
       const attendanceDate = parseDateValue(record.date);
-      return Boolean(attendanceDate && attendanceDate <= today);
+      return Boolean(attendanceDate && attendanceDate < tomorrow);
     })
     .sort((left, right) => right.date.localeCompare(left.date))
     .slice(0, 30)

@@ -247,6 +247,54 @@ test("task and milestone endpoints support mobile and multi-target payloads", as
 
     resetLimits();
 
+    const robotScopedBootstrapAfterMilestoneCreateResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?projectId=project-robot-2026",
+    });
+    assert.equal(robotScopedBootstrapAfterMilestoneCreateResponse.statusCode, 200);
+    const robotScopedBootstrapAfterMilestoneCreateBody =
+      robotScopedBootstrapAfterMilestoneCreateResponse.json() as {
+        actions?: Array<{
+          entityId: string;
+          entityType: string;
+          operation: string;
+        }>;
+      };
+    assert.ok(
+      (robotScopedBootstrapAfterMilestoneCreateBody.actions ?? []).some(
+        (action) =>
+          action.entityType === "milestone" &&
+          action.entityId === createdMilestoneBody.item.id &&
+          action.operation === "create",
+      ),
+    );
+
+    resetLimits();
+
+    const operationsScopedBootstrapAfterMilestoneCreateResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?projectId=project-operations-2026",
+    });
+    assert.equal(operationsScopedBootstrapAfterMilestoneCreateResponse.statusCode, 200);
+    const operationsScopedBootstrapAfterMilestoneCreateBody =
+      operationsScopedBootstrapAfterMilestoneCreateResponse.json() as {
+        actions?: Array<{
+          entityId: string;
+          entityType: string;
+          operation: string;
+        }>;
+      };
+    assert.ok(
+      (operationsScopedBootstrapAfterMilestoneCreateBody.actions ?? []).some(
+        (action) =>
+          action.entityType === "milestone" &&
+          action.entityId === createdMilestoneBody.item.id &&
+          action.operation === "create",
+      ),
+    );
+
+    resetLimits();
+
     const updateMilestoneResponse = await app.inject({
       method: "PATCH",
       url: `/api/milestones/${createdMilestoneBody.item.id}`,

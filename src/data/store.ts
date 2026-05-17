@@ -1297,6 +1297,7 @@ function recordAuditAction(args: {
   entityLabel?: string | null;
   changedFields?: string[];
   projectId?: string | null;
+  projectIds?: Array<string | null | undefined>;
   taskId?: string | null;
   subsystemId?: string | null;
   actorMemberId?: string | null;
@@ -1306,6 +1307,7 @@ function recordAuditAction(args: {
   const changedFields = uniqueIds(args.changedFields ?? []).sort((left, right) =>
     left.localeCompare(right),
   );
+  const projectIds = uniqueIds([...(args.projectIds ?? []), args.projectId]);
   const action: AuditAction = {
     id: nextActionId(),
     timestamp: new Date().toISOString(),
@@ -1320,7 +1322,8 @@ function recordAuditAction(args: {
       changedFields,
     }),
     changedFields,
-    projectId: args.projectId ?? null,
+    projectId: projectIds[0] ?? null,
+    ...(projectIds.length > 0 ? { projectIds } : {}),
     taskId: args.taskId ?? null,
     subsystemId: args.subsystemId ?? null,
     actorMemberId: args.actorMemberId ?? null,
@@ -3208,7 +3211,7 @@ export function createMilestone(input: MilestoneInput) {
     entityType: "milestone",
     entityId: milestone.id,
     entityLabel: milestone.title,
-    projectId: milestone.projectIds[0] ?? null,
+    projectIds: milestone.projectIds,
   });
 
   return milestone;
@@ -3746,7 +3749,7 @@ export function updateMilestone(milestoneId: string, input: Partial<MilestoneInp
       entityType: "milestone",
       entityId: updatedMilestone.id,
       entityLabel: updatedMilestone.title,
-      projectId: updatedMilestone.projectIds[0] ?? null,
+      projectIds: updatedMilestone.projectIds,
       changedFields: collectChangedFields(
         currentMilestone,
         updatedMilestone,
@@ -3785,7 +3788,7 @@ export function removeMilestone(milestoneId: string) {
     entityType: "milestone",
     entityId: milestone.id,
     entityLabel: milestone.title,
-    projectId: milestone.projectIds[0] ?? null,
+    projectIds: milestone.projectIds,
   });
 
   return milestone;

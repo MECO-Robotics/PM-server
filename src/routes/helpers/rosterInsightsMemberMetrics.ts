@@ -84,6 +84,7 @@ export function buildMemberInsights(args: {
   day14Start: Date;
   day30Start: Date;
   today: Date;
+  attendanceUpperBound: Date;
   dueSoonEnd: Date;
 }) {
   const attendanceRecords = args.source.attendanceRecords ?? [];
@@ -137,7 +138,7 @@ export function buildMemberInsights(args: {
       const attendanceDate = parseDateValue(record.date);
       return !attendanceDate ||
         attendanceDate < args.day7Start ||
-        attendanceDate > args.today
+        attendanceDate >= args.attendanceUpperBound
         ? sum
         : sum + record.totalHours;
     }, 0);
@@ -145,7 +146,7 @@ export function buildMemberInsights(args: {
       const attendanceDate = parseDateValue(record.date);
       return !attendanceDate ||
         attendanceDate < args.day14Start ||
-        attendanceDate > args.today
+        attendanceDate >= args.attendanceUpperBound
         ? sum
         : sum + record.totalHours;
     }, 0);
@@ -153,13 +154,17 @@ export function buildMemberInsights(args: {
       const attendanceDate = parseDateValue(record.date);
       return !attendanceDate ||
         attendanceDate < args.day30Start ||
-        attendanceDate > args.today
+        attendanceDate >= args.attendanceUpperBound
         ? sum
         : sum + record.totalHours;
     }, 0);
     const attendanceSessionsLast30Days = memberAttendanceRecords.filter((record) => {
       const attendanceDate = parseDateValue(record.date);
-      return Boolean(attendanceDate && attendanceDate >= args.day30Start && attendanceDate <= args.today);
+      return Boolean(
+        attendanceDate &&
+          attendanceDate >= args.day30Start &&
+          attendanceDate < args.attendanceUpperBound,
+      );
     }).length;
 
     return {

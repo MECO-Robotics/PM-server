@@ -31,6 +31,21 @@ const APP_ENV_KEYS = [
   "SLACK_CHANNEL_PROGRAMMING_ID",
   "SLACK_CHANNEL_SCOUTING_STRATEGY_ID",
   "SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID",
+  "ONSHAPE_BASE_URL",
+  "ONSHAPE_OAUTH_CLIENT_ID",
+  "ONSHAPE_OAUTH_CLIENT_SECRET",
+  "ONSHAPE_OAUTH_REDIRECT_URI",
+  "ONSHAPE_OAUTH_AUTHORIZATION_URL",
+  "ONSHAPE_OAUTH_TOKEN_URL",
+  "ONSHAPE_OAUTH_SCOPES",
+  "ONSHAPE_OAUTH_ACCESS_TOKEN",
+  "ONSHAPE_OAUTH_REFRESH_TOKEN",
+  "ONSHAPE_OAUTH_TOKEN_EXPIRES_AT",
+  "ONSHAPE_OAUTH_TOKEN",
+  "ONSHAPE_CREDENTIAL_REFERENCE",
+  "CAD_STORE_DRIVER",
+  "CAD_STEP_UPLOAD_MAX_BYTES",
+  "CAD_STEP_PARSER_MODE",
 ] as const;
 
 type AppEnvKey = (typeof APP_ENV_KEYS)[number];
@@ -52,7 +67,7 @@ function restoreEnv(snapshot: AppEnvSnapshot) {
   }
 }
 
-function configureEnv() {
+function configureEnv(overrides?: Partial<Record<AppEnvKey, string | undefined>>) {
   process.env.NODE_ENV = "development";
   process.env.DATABASE_URL =
     "postgresql://postgres:postgres@localhost:5432/meco_platform?schema=public";
@@ -81,6 +96,29 @@ function configureEnv() {
   process.env.SLACK_CHANNEL_PROGRAMMING_ID = "C02BLURKRED";
   process.env.SLACK_CHANNEL_SCOUTING_STRATEGY_ID = "C05SW57962E";
   process.env.SLACK_CHANNEL_TRANSPORTATION_ATTENDANCE_ID = "C088N9VC6H4";
+  process.env.ONSHAPE_BASE_URL = "https://cad.onshape.com";
+  process.env.ONSHAPE_OAUTH_CLIENT_ID = "test-onshape-client";
+  process.env.ONSHAPE_OAUTH_CLIENT_SECRET = "test-onshape-secret";
+  process.env.ONSHAPE_OAUTH_REDIRECT_URI = "https://mission.test/api/onshape/oauth/callback";
+  process.env.ONSHAPE_OAUTH_AUTHORIZATION_URL = "https://oauth.onshape.com/oauth/authorize";
+  process.env.ONSHAPE_OAUTH_TOKEN_URL = "https://oauth.onshape.com/oauth/token";
+  process.env.ONSHAPE_OAUTH_SCOPES = "OAuth2Read";
+  delete process.env.ONSHAPE_OAUTH_ACCESS_TOKEN;
+  delete process.env.ONSHAPE_OAUTH_REFRESH_TOKEN;
+  delete process.env.ONSHAPE_OAUTH_TOKEN_EXPIRES_AT;
+  delete process.env.ONSHAPE_OAUTH_TOKEN;
+  delete process.env.ONSHAPE_CREDENTIAL_REFERENCE;
+  process.env.CAD_STORE_DRIVER = "runtime";
+  delete process.env.CAD_STEP_UPLOAD_MAX_BYTES;
+  delete process.env.CAD_STEP_PARSER_MODE;
+
+  for (const [key, value] of Object.entries(overrides ?? {}) as Array<[AppEnvKey, string | undefined]>) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 }
 
 export async function withIntegrationApp(
@@ -88,11 +126,14 @@ export async function withIntegrationApp(
     app: FastifyInstance;
     resetLimits: typeof resetRequestLimits;
   }) => Promise<void>,
+  options?: {
+    env?: Partial<Record<AppEnvKey, string | undefined>>;
+  },
 ) {
   const envSnapshot = saveEnv();
 
   try {
-    configureEnv();
+    configureEnv(options?.env);
     resetStore();
 
     const { buildApp } = await import("../../src/app");
