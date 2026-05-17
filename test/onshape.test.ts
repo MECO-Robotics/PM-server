@@ -20,6 +20,7 @@ import {
 } from "../src/onshape/onshapeApiClient";
 import {
   buildOnshapeOAuthAuthorizationUrl,
+  isOnshapeOAuthRefreshConfigured,
   normalizeOnshapeOAuthTokenResponse,
   refreshOnshapeOAuthToken,
   shouldRefreshOnshapeOAuthToken,
@@ -361,6 +362,12 @@ test("refreshes Onshape OAuth tokens without requiring a redirect URI", async ()
 
   assert.equal(tokenSet.accessToken, "new-access-token");
   assert.equal(tokenSet.refreshToken, "stored-refresh-token");
+});
+
+test("checks refresh token client configuration without requiring redirect URI", () => {
+  assert.equal(isOnshapeOAuthRefreshConfigured({ clientId: "client-id", clientSecret: "client-secret" }), true);
+  assert.equal(isOnshapeOAuthRefreshConfigured({ clientId: "client-id" }), false);
+  assert.equal(isOnshapeOAuthRefreshConfigured({ clientSecret: "client-secret" }), false);
 });
 
 test("serves immutable cached responses without spending calls", async () => {

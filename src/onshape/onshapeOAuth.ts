@@ -30,7 +30,7 @@ export function isOnshapeOAuthClientConfigured(config: Pick<OnshapeOAuthConfig, 
   return Boolean(config.clientId && config.clientSecret && config.redirectUri);
 }
 
-function isOnshapeOAuthRefreshConfigured(config: Pick<OnshapeOAuthConfig, "clientId" | "clientSecret">) {
+export function isOnshapeOAuthRefreshConfigured(config: Pick<OnshapeOAuthConfig, "clientId" | "clientSecret">) {
   return Boolean(config.clientId && config.clientSecret);
 }
 
