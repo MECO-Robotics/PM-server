@@ -509,12 +509,88 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(second.snapshotId, first.snapshotId);
   const snapshots = store.listSnapshots();
   assert.equal(snapshots.length, 1);
-  assert.equal(snapshots[0]?.importRunId, second.importRunId);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);
   assert.ok(store.listWarnings().some((warning) => warning.code === "assembly_mapping_missing"));
   assert.ok(store.listWarnings().some((warning) => warning.code === "part_material_missing"));
+});
+
+test("imports distinct Onshape parts that omit part ids", async () => {
+  const store = createOnshapeRuntimeStore();
+  const ref = createLinkedRef(store);
+  const documentId = "0123456789abcdef01234567";
+  const elementId = "shared-element";
+  const client = createFakeClient({
+    bom: {
+      assemblyNodes: [
+        {
+          sourceId: "asm-root",
+          documentId,
+          elementId,
+          instanceId: "root",
+          instancePath: "/root",
+          name: "2026 Robot",
+          inferredType: "master_assembly",
+        },
+      ],
+      partDefinitions: [
+        {
+          sourceId: "part-left-plate",
+          documentId,
+          elementId,
+          name: "Left plate",
+          configuration: "default",
+        },
+        {
+          sourceId: "part-right-plate",
+          documentId,
+          elementId,
+          name: "Right plate",
+          configuration: "default",
+        },
+      ],
+      partInstances: [
+        {
+          sourceId: "inst-left-plate",
+          partDefinitionSourceId: "part-left-plate",
+          parentAssemblySourceId: "asm-root",
+          documentId,
+          elementId,
+          instanceId: "left-1",
+          instancePath: "/root/left-plate",
+          configuration: "default",
+        },
+        {
+          sourceId: "inst-right-plate",
+          partDefinitionSourceId: "part-right-plate",
+          parentAssemblySourceId: "asm-root",
+          documentId,
+          elementId,
+          instanceId: "right-1",
+          instancePath: "/root/right-plate",
+          configuration: "default",
+        },
+      ],
+      raw: { bom: "missing-part-ids" },
+    },
+  });
+
+  await runCadImport({ store, documentRefId: ref.id, syncLevel: "bom", requestedBy: "test-user", client });
+
+  const partDefinitions = store.listPartDefinitions();
+  const partInstances = store.listPartInstances();
+  assert.equal(partDefinitions.length, 2);
+  assert.equal(new Set(partInstances.map((instance) => instance.cadPartDefinitionId)).size, 2);
+  assert.equal(
+    partInstances.find((instance) => instance.sourceId === "inst-left-plate")?.cadPartDefinitionId,
+    partDefinitions.find((part) => part.sourceId === "part-left-plate")?.id,
+  );
+  assert.equal(
+    partInstances.find((instance) => instance.sourceId === "inst-right-plate")?.cadPartDefinitionId,
+    partDefinitions.find((part) => part.sourceId === "part-right-plate")?.id,
+  );
 });
 
 test("does not replace the latest snapshot when BOM import fails", async () => {
