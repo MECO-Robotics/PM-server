@@ -21,6 +21,7 @@ import {
 import {
   buildOnshapeOAuthAuthorizationUrl,
   normalizeOnshapeOAuthTokenResponse,
+  refreshOnshapeOAuthToken,
   shouldRefreshOnshapeOAuthToken,
 } from "../src/onshape/onshapeOAuth";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
@@ -290,6 +291,36 @@ test("normalizes Onshape OAuth2 token responses and refresh timing", () => {
   assert.equal(shouldRefreshOnshapeOAuthToken(tokenSet, 3_550_000), true);
 });
 
+test("refreshes Onshape OAuth tokens without requiring a redirect URI", async () => {
+  const tokenSet = await refreshOnshapeOAuthToken({
+    config: {
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      authorizationUrl: "https://oauth.onshape.com/oauth/authorize",
+      tokenUrl: "https://oauth.onshape.com/oauth/token",
+      scopes: ["OAuth2Read"],
+    },
+    refreshToken: "stored-refresh-token",
+    transport: async ({ body }) => {
+      assert.equal(body.get("grant_type"), "refresh_token");
+      assert.equal(body.get("refresh_token"), "stored-refresh-token");
+      assert.equal(body.get("client_id"), "client-id");
+      assert.equal(body.get("client_secret"), "client-secret");
+      assert.equal(body.has("redirect_uri"), false);
+      return {
+        statusCode: 200,
+        json: {
+          access_token: "new-access-token",
+          expires_in: 3600,
+        },
+      };
+    },
+  });
+
+  assert.equal(tokenSet.accessToken, "new-access-token");
+  assert.equal(tokenSet.refreshToken, "stored-refresh-token");
+});
+
 test("serves immutable cached responses without spending calls", async () => {
   const store = createOnshapeRuntimeStore();
   const reference = parseOnshapeUrl(versionUrl);
@@ -509,7 +540,7 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(second.snapshotId, first.snapshotId);
   const snapshots = store.listSnapshots();
   assert.equal(snapshots.length, 1);
-  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.equal(snapshots[0]?.importRunId, second.importRunId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);

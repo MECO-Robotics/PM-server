@@ -30,6 +30,10 @@ export function isOnshapeOAuthClientConfigured(config: Pick<OnshapeOAuthConfig, 
   return Boolean(config.clientId && config.clientSecret && config.redirectUri);
 }
 
+function isOnshapeOAuthRefreshConfigured(config: Pick<OnshapeOAuthConfig, "clientId" | "clientSecret">) {
+  return Boolean(config.clientId && config.clientSecret);
+}
+
 export function buildOnshapeOAuthAuthorizationUrl(args: {
   authorizationUrl: string;
   clientId: string;
@@ -107,7 +111,7 @@ export async function refreshOnshapeOAuthToken(args: {
   refreshToken: string;
   transport?: OnshapeOAuthTokenTransport;
 }) {
-  requireOAuthClientConfig(args.config);
+  requireOAuthRefreshConfig(args.config);
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: args.refreshToken,
@@ -125,6 +129,12 @@ export async function refreshOnshapeOAuthToken(args: {
 function requireOAuthClientConfig(config: OnshapeOAuthConfig) {
   if (!isOnshapeOAuthClientConfigured(config)) {
     throw new Error("Onshape OAuth client ID, client secret, and redirect URI are required.");
+  }
+}
+
+function requireOAuthRefreshConfig(config: OnshapeOAuthConfig) {
+  if (!isOnshapeOAuthRefreshConfigured(config)) {
+    throw new Error("Onshape OAuth client ID and client secret are required.");
   }
 }
 
