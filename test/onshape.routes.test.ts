@@ -1,7 +1,8 @@
 ﻿import assert from "node:assert/strict";
 import { test } from "node:test";
+import Fastify from "fastify";
 
-import { getOnshapeRuntimeStore } from "../src/onshape/cadStore";
+import { getOnshapeRuntimeStore, resetOnshapeRuntimeStore } from "../src/onshape/cadStore";
 import { setOnshapeOAuthTokenTransportForTests } from "../src/onshape/onshapeOAuth";
 import { setOnshapeCadClientFactoryForTests } from "../src/onshape/onshapeClientFactory";
 import type { CadImportOnshapeClient } from "../src/onshape/onshapeTypes";
@@ -282,5 +283,50 @@ test("Onshape OAuth routes issue authorization URLs and store callback tokens", 
     });
   } finally {
     setOnshapeOAuthTokenTransportForTests(null);
+  }
+});
+
+test("Onshape OAuth callback requires an API session before storing tokens", async () => {
+  let tokenTransportCalls = 0;
+  setOnshapeOAuthTokenTransportForTests(async () => {
+    tokenTransportCalls += 1;
+    return {
+      statusCode: 200,
+      json: {
+        access_token: "unauthorized-token",
+        refresh_token: "unauthorized-refresh-token",
+        expires_in: 3600,
+        token_type: "Bearer",
+        scope: "OAuth2Read",
+      },
+    };
+  });
+
+  const app = Fastify();
+
+  try {
+    resetOnshapeRuntimeStore();
+    const { registerOnshapeOAuthRoutes } = await import("../src/onshape/routes/onshapeOAuthRoutes");
+    await registerOnshapeOAuthRoutes(app, (_request, reply) => {
+      reply.code(401).send({ message: "Authentication required." });
+      return false;
+    });
+
+    const sessionKey = "authorized-session-key";
+    const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
+    const callbackResponse = await app.inject({
+      method: "GET",
+      url: `/api/onshape/oauth/callback?code=oauth-code&state=${state}`,
+      headers: {
+        cookie: `meco_onshape_oauth_session=${encodeURIComponent(sessionKey)}`,
+      },
+    });
+    assert.equal(callbackResponse.statusCode, 401);
+    assert.equal(tokenTransportCalls, 0);
+    assert.equal(getOnshapeRuntimeStore().getOAuthTokenSet(), null);
+  } finally {
+    await app.close();
+    setOnshapeOAuthTokenTransportForTests(null);
+    resetOnshapeRuntimeStore();
   }
 });
