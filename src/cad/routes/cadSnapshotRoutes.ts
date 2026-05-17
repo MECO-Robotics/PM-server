@@ -54,6 +54,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
     }
     const importRun = await store.findImportRun(item.importRunId);
     const rawSummaryJson = importRun?.rawSummaryJson ?? {};
+    const rawStats = readRawStats(rawSummaryJson);
     return {
       item,
       summary: {
@@ -68,7 +69,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
         actualParserVersion: rawSummaryJson.actualParserVersion ?? rawSummaryJson.parserVersion ?? importRun?.parserVersion ?? null,
         parserUsedPlaceholder: rawSummaryJson.parserUsedPlaceholder === true,
         ...rawSummaryJson,
-        rawStats: rawSummaryJson,
+        rawStats,
       },
     };
   });
@@ -118,4 +119,12 @@ function handleCadQueryError(error: unknown, reply: FastifyReply) {
     }
   }
   throw error;
+}
+
+function readRawStats(rawSummaryJson: Record<string, unknown>) {
+  const rawStats = rawSummaryJson.rawStats;
+  if (typeof rawStats === "object" && rawStats !== null && !Array.isArray(rawStats)) {
+    return rawStats as Record<string, unknown>;
+  }
+  return rawSummaryJson;
 }

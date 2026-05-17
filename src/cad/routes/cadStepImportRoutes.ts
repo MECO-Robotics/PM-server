@@ -35,7 +35,7 @@ export function registerCadStepImportRoutes(app: FastifyInstance, requireApiSess
       });
       return {
         ...diagnostics,
-        rawStats: diagnostics,
+        rawStats: parsed.rawStats,
         assemblyCount: parsed.assemblyNodes.length,
         partDefinitionCount: parsed.partDefinitions.length,
         partInstanceCount: parsed.partInstances.length,
