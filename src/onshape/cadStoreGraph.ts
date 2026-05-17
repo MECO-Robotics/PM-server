@@ -187,7 +187,8 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
           (candidate) =>
             candidate.snapshotId === snapshotId &&
             (candidate.sourceId === part.sourceId ||
-              candidate.missionControlExternalKey === part.missionControlExternalKey ||
+              (part.missionControlExternalKey != null &&
+                candidate.missionControlExternalKey === part.missionControlExternalKey) ||
               existingPartIdentity(candidate) === identityKey),
         );
         const nextPart: CadPartDefinition = {

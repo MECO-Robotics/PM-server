@@ -110,7 +110,7 @@ export interface NormalizedCadPartDefinition {
   mass?: number;
   configuration?: string;
   customProperties?: Record<string, unknown>;
-  missionControlExternalKey?: string;
+  missionControlExternalKey?: string | null;
   metadataHash?: string;
 }
 

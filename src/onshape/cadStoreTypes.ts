@@ -102,7 +102,7 @@ export interface OnshapeRuntimeStore {
     configuration?: string;
     customProperties?: Record<string, unknown>;
     metadataHash?: string;
-    missionControlExternalKey?: string;
+    missionControlExternalKey?: string | null;
   }>): Map<string, CadPartDefinition>;
   upsertPartInstances(snapshotId: string, parts: Array<{
     sourceId: string;

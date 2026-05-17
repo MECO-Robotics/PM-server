@@ -624,6 +624,7 @@ test("imports distinct Onshape parts that omit part ids", async () => {
           elementId,
           name: "Left plate",
           configuration: "default",
+          missionControlExternalKey: null,
         },
         {
           sourceId: "part-right-plate",
@@ -631,6 +632,7 @@ test("imports distinct Onshape parts that omit part ids", async () => {
           elementId,
           name: "Right plate",
           configuration: "default",
+          missionControlExternalKey: null,
         },
       ],
       partInstances: [
