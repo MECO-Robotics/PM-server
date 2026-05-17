@@ -146,14 +146,20 @@ export function collectHierarchyIssues(args: {
       });
     }
   }
+  const outsideHierarchyIssueKeys = new Set<string>();
   for (const instance of args.instances) {
     const parent = instance.parentAssemblyNodeId ? assembliesById.get(instance.parentAssemblyNodeId) : null;
     if (parent && !hasConfirmedSelfOrAncestor({ node: parent, kind: "SUBSYSTEM", assembliesById, mappingsBySourceId: args.mappingsBySourceId })) {
+      const issueKey = `${parent.id}:${instance.partDefinitionId ?? instance.sourceId}`;
+      if (outsideHierarchyIssueKeys.has(issueKey)) {
+        continue;
+      }
+      outsideHierarchyIssueKeys.add(issueKey);
       addIssue(issues, {
         code: "cad_part_outside_mapped_hierarchy",
         severity: "BLOCKING",
         sourceKind: "PART_INSTANCE",
-        sourceId: instance.partDefinitionId ?? instance.id,
+        sourceId: instance.id,
         message: `${args.definitionsById.get(instance.partDefinitionId ?? "")?.name ?? instance.instancePath} is outside a mapped subsystem hierarchy.`,
       });
     }

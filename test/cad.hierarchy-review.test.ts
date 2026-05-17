@@ -2,10 +2,70 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { resetCadRuntimeStore } from "../src/cad/cadStore";
+import { collectHierarchyIssues } from "../src/cad/cadHierarchyValidationService";
 import { createPartDefinition } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 type TestApp = Awaited<ReturnType<typeof import("../src/app").buildApp>>;
+
+test("hierarchy issues identify the offending part instance", () => {
+  const issues = collectHierarchyIssues({
+    assemblies: [
+      {
+        id: "cad-assembly-1",
+        snapshotId: "cad-snapshot-1",
+        sourceId: "asm-drive",
+        parentSourceId: null,
+        parentAssemblyNodeId: null,
+        name: "Drivetrain",
+        normalizedName: "drivetrain",
+        instancePath: "/Robot/Drivetrain",
+        depth: 0,
+        inferredType: "ROOT",
+        stableSignature: "asm:path:/Robot/Drivetrain",
+        metadataJson: {},
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    instances: [
+      {
+        id: "cad-part-inst-1",
+        snapshotId: "cad-snapshot-1",
+        sourceId: "part-inst-drive-rail",
+        partDefinitionId: "cad-part-def-1",
+        parentAssemblyNodeId: "cad-assembly-1",
+        instancePath: "/Robot/Drive rail",
+        quantity: 1,
+        stableSignature: "part-inst:path:/Robot/Drive rail",
+        metadataJson: {},
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    mappingsBySourceId: new Map(),
+    proposals: [],
+    definitionsById: new Map([
+      [
+        "cad-part-def-1",
+        {
+          id: "cad-part-def-1",
+          snapshotId: "cad-snapshot-1",
+          sourceId: "part-drive-rail",
+          name: "Drive rail",
+          normalizedName: "drive rail",
+          partNumber: null,
+          material: null,
+          stableSignature: "part:name:drive-rail",
+          metadataJson: {},
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    ]),
+  });
+
+  const issue = issues.find((item) => item.code === "cad_part_outside_mapped_hierarchy");
+  assert.equal(issue?.sourceKind, "PART_INSTANCE");
+  assert.equal(issue?.sourceId, "cad-part-inst-1");
+});
 
 function createDomainPart(input: { name: string; partNumber: string; type?: string; source?: string }) {
   return createPartDefinition({
