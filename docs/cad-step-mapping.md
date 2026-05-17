@@ -12,6 +12,25 @@ Mission Control treats STEP uploads as repeatable CAD iterations. STEP parsing d
 6. Students review the tree and mappings, then confirm snapshot-only or future-import mappings.
 7. Future STEP uploads compare against the previous snapshot and reuse active rules.
 
+## API Surface
+
+- `POST /api/cad/step-imports/debug-parse` parses an uploaded STEP payload and returns parser diagnostics without creating durable import records.
+- `POST /api/cad/step-imports` creates an import run, snapshot, assembly nodes, part definitions, part instances, warnings, and initial mapping proposals.
+- `GET /api/cad/import-runs` lists import runs, with query handling in `src/cad/routes/cadRouteQueries.ts`.
+- `GET /api/cad/import-runs/:importRunId` returns one import run with its snapshot and warnings.
+- `GET /api/cad/snapshots` lists CAD snapshots.
+- `GET /api/cad/snapshots/:snapshotId` returns snapshot metadata plus counts and parser summary fields.
+- `GET /api/cad/snapshots/:snapshotId/tree` returns the imported hierarchy; `groupInstances=true` groups repeated instances.
+- `GET /api/cad/snapshots/:snapshotId/mappings` returns snapshot mapping proposals, optionally grouped by instance.
+- `GET /api/cad/snapshots/:snapshotId/hierarchy-review` returns hierarchy review issues and inferred structure decisions.
+- `GET /api/cad/snapshots/:snapshotId/part-match-proposals` proposes matches between imported CAD parts and existing platform parts.
+- `POST /api/cad/snapshots/:snapshotId/hierarchy-review/apply` applies hierarchy review decisions.
+- `POST /api/cad/snapshots/:snapshotId/mappings/apply` confirms, rejects, or revises snapshot mappings.
+- `POST /api/cad/snapshots/:snapshotId/finalize` marks a snapshot finalized after hierarchy validation, unless unresolved issues are explicitly allowed.
+- `GET /api/cad/snapshots/:snapshotId/diff` compares the snapshot to the previous comparable CAD snapshot.
+- `POST /api/cad/mapping-rules` creates a reusable mapping rule for future imports.
+- `PATCH /api/cad/mapping-rules/:id` updates an existing mapping rule.
+
 ## STEP Export Guidance
 
 - Export from the master assembly.
@@ -41,9 +60,11 @@ Do not parse large native CAD geometry inside the main request path.
 
 ## Persistence
 
-Generic CAD import records are Prisma-backed by default through `CAD_STORE_DRIVER=prisma`. Tests and local compatibility flows can opt into `CAD_STORE_DRIVER=runtime`.
+Generic CAD import records are Prisma-backed by default through `CAD_STORE_DRIVER=prisma`. Tests and local compatibility flows can opt into `CAD_STORE_DRIVER=runtime`. The store selection is centralized in `src/cad/cadStoreFactory.ts`, while legacy runtime state remains available for isolated tests and local smoke paths.
 
 Snapshots are historical evidence. Do not rewrite old snapshots when mappings change. Use snapshot mappings for one-off decisions and create/supersede mapping rules for future-import behavior.
+
+Finalized snapshots keep their historical parser diagnostics, warning records, tree, and mapping review decisions. New uploads should create new import runs and snapshots rather than mutating previous evidence.
 
 ## Upload Size
 
