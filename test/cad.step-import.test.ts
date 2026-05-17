@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resetCadRuntimeStore } from "../src/cad/cadStore";
+import { getCadRuntimeStore, resetCadRuntimeStore } from "../src/cad/cadStore";
 import { createPlaceholderStepParserClient, createStepParserClient } from "../src/cad/stepParserClient";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
@@ -300,6 +300,7 @@ async function uploadStep(app: Awaited<ReturnType<typeof import("../src/app").bu
       partDefinitionCount: number;
       partInstanceCount: number;
       warningCount: number;
+      mappingCount: number;
       configuredParserMode?: string;
       actualParserVersion?: string;
       parserUsedPlaceholder?: boolean;
@@ -348,20 +349,25 @@ function multipartStepPayload(input: {
   label: string;
   fileBuffer: Buffer;
   fileFirst?: boolean;
+  projectId?: string;
+  seasonId?: string;
+  requestedBy?: string;
 }) {
   const chunks: Buffer[] = [];
   const append = (value: string) => chunks.push(Buffer.from(value, "utf8"));
 
+  const appendField = (name: string, value: string) => {
+    append(`--${input.boundary}\r\n`);
+    append(`Content-Disposition: form-data; name="${name}"\r\n\r\n`);
+    append(`${value}\r\n`);
+  };
   const appendFields = () => {
-    append(`--${input.boundary}\r\n`);
-    append(`Content-Disposition: form-data; name="label"\r\n\r\n`);
-    append(`${input.label}\r\n`);
-    append(`--${input.boundary}\r\n`);
-    append(`Content-Disposition: form-data; name="projectId"\r\n\r\n`);
-    append("robot-2026\r\n");
-    append(`--${input.boundary}\r\n`);
-    append(`Content-Disposition: form-data; name="seasonId"\r\n\r\n`);
-    append("season-2026\r\n");
+    appendField("label", input.label);
+    appendField("projectId", input.projectId ?? "robot-2026");
+    appendField("seasonId", input.seasonId ?? "season-2026");
+    if (input.requestedBy !== undefined) {
+      appendField("requestedBy", input.requestedBy);
+    }
   };
   const appendFile = () => {
     append(`--${input.boundary}\r\n`);
@@ -1049,6 +1055,29 @@ test("STEP import route honors explicit step_text mode and returns parser diagno
     assert.deepEqual(snapshotSummary.summary.rootNames, ["MAIN ASSEMBLY"]);
     assert.equal((snapshotSummary.summary.rawStats as Record<string, unknown>).parserMode, undefined);
     assert.equal((snapshotSummary.summary.rawStats as Record<string, unknown>).productCount, 14);
+    await getCadRuntimeStore().updateImportRun(result.importRun.id, {
+      rawSummaryJson: {
+        ...importRun.item.rawSummaryJson,
+        assemblyCount: 999,
+        partDefinitionCount: 999,
+        partInstanceCount: 999,
+        mappingCount: 999,
+        warningCount: 999,
+      },
+    });
+    resetLimits();
+
+    const liveSummaryResponse = await app.inject({
+      method: "GET",
+      url: `/api/cad/snapshots/${result.snapshot.id}`,
+    });
+    assert.equal(liveSummaryResponse.statusCode, 200);
+    const liveSummary = liveSummaryResponse.json() as { summary: Record<string, unknown> };
+    assert.equal(liveSummary.summary.assemblyCount, result.summary.assemblyCount);
+    assert.equal(liveSummary.summary.partDefinitionCount, result.summary.partDefinitionCount);
+    assert.equal(liveSummary.summary.partInstanceCount, result.summary.partInstanceCount);
+    assert.equal(liveSummary.summary.mappingCount, result.summary.mappingCount);
+    assert.equal(liveSummary.summary.warningCount, result.summary.warningCount);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 
@@ -1240,6 +1269,45 @@ test("multipart STEP uploads preserve project context when metadata follows the 
     assert.equal(parsed.snapshot.seasonId, "season-2026");
     assert.equal(parsed.summary.parserUsedPlaceholder, false);
     assert.deepEqual(parsed.summary.rootNames, ["MAIN ASSEMBLY"]);
+  }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
+});
+
+test("multipart STEP uploads normalize empty project context fields", async () => {
+  await withIntegrationApp(async ({ app, resetLimits }) => {
+    resetCadRuntimeStore();
+
+    const boundary = "meco-step-upload-empty-context-boundary";
+    const body = multipartStepPayload({
+      boundary,
+      fileName: "empty-context.step",
+      label: "empty-context",
+      fileBuffer: Buffer.from(uploadedClassStepFixture(), "utf8"),
+      projectId: "",
+      seasonId: "   ",
+      requestedBy: "",
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/cad/step-imports",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      payload: body,
+    });
+
+    assert.equal(response.statusCode, 201, response.body);
+    resetLimits();
+    const parsed = response.json() as {
+      importRun: { projectId: string | null; seasonId: string | null; requestedBy: string | null };
+      snapshot: { projectId: string | null; seasonId: string | null };
+    };
+    assert.equal(parsed.importRun.projectId, null);
+    assert.equal(parsed.importRun.seasonId, null);
+    assert.equal(parsed.importRun.requestedBy, null);
+    assert.equal(parsed.snapshot.projectId, null);
+    assert.equal(parsed.snapshot.seasonId, null);
   }, { env: { CAD_STEP_PARSER_MODE: "step_text" } });
 });
 

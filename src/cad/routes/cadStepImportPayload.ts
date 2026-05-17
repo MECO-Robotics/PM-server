@@ -26,6 +26,25 @@ async function consumeMultipartFile(part: { toBuffer?: () => Promise<Buffer> }) 
   }
 }
 
+function optionalMultipartField(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function optionalMultipartBoolean(value: string | undefined) {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed === "true") {
+    return true;
+  }
+  if (trimmed === "false") {
+    return false;
+  }
+  return value;
+}
+
 export async function readStepImportPayload(request: FastifyRequest) {
   const contentType = String(request.headers["content-type"] ?? "");
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
@@ -70,15 +89,19 @@ export async function readStepImportPayload(request: FastifyRequest) {
     if (!fileName || fileText === null) {
       throw new CadImportError("STEP import requires a file.");
     }
-    return {
+    const parsed = cadStepImportJsonSchema.safeParse({
       fileName,
       fileText,
-      label: fields.label,
-      projectId: fields.projectId,
-      seasonId: fields.seasonId,
-      requestedBy: fields.requestedBy,
-      allowPlaceholder: fields.allowPlaceholder === "true",
-    };
+      label: optionalMultipartField(fields.label),
+      projectId: optionalMultipartField(fields.projectId),
+      seasonId: optionalMultipartField(fields.seasonId),
+      requestedBy: optionalMultipartField(fields.requestedBy),
+      allowPlaceholder: optionalMultipartBoolean(fields.allowPlaceholder),
+    });
+    if (!parsed.success) {
+      throw new CadImportError("STEP import payload is invalid.");
+    }
+    return parsed.data;
   } catch (error) {
     if (isMultipartFileTooLargeError(error)) {
       throw new CadImportError(

@@ -58,6 +58,7 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
     return {
       item,
       summary: {
+        ...rawSummaryJson,
         assemblyCount: (await store.listAssemblyNodes(item.id)).length,
         partDefinitionCount: (await store.listPartDefinitions(item.id)).length,
         partInstanceCount: (await store.listPartInstances(item.id)).length,
@@ -68,7 +69,6 @@ export function registerCadSnapshotRoutes(app: FastifyInstance, requireApiSessio
         configuredParserMode: rawSummaryJson.configuredParserMode ?? rawSummaryJson.parserMode ?? null,
         actualParserVersion: rawSummaryJson.actualParserVersion ?? rawSummaryJson.parserVersion ?? importRun?.parserVersion ?? null,
         parserUsedPlaceholder: rawSummaryJson.parserUsedPlaceholder === true,
-        ...rawSummaryJson,
         rawStats,
       },
     };
