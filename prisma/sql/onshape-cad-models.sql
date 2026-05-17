@@ -180,7 +180,7 @@ CREATE TABLE "CadPartInstance" (
   "sourceId" TEXT NOT NULL,
   "snapshotId" TEXT NOT NULL REFERENCES "CadSnapshot"("id"),
   "partDefinitionId" TEXT REFERENCES "CadPartDefinition"("id"),
-  "parentAssemblyNodeId" TEXT,
+  "parentAssemblyNodeId" TEXT REFERENCES "CadAssemblyNode"("id"),
   "instancePath" TEXT NOT NULL,
   "quantity" INTEGER NOT NULL DEFAULT 1,
   "stableSignature" TEXT NOT NULL,
