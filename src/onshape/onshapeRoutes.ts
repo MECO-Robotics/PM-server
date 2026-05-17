@@ -205,6 +205,10 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
   });
 
   app.get("/api/onshape/oauth/callback", async (request, reply) => {
+    if (!requireApiSession(request, reply)) {
+      return;
+    }
+
     const query = request.query as Record<string, unknown>;
     const code = typeof query.code === "string" ? query.code : null;
     const state = typeof query.state === "string" ? query.state : null;
