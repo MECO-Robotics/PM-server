@@ -21,6 +21,7 @@ export interface OnshapeRuntimeState {
   requestLogs: OnshapeApiRequestLog[];
   cacheEntries: OnshapeApiCacheEntry[];
   snapshots: CadSnapshot[];
+  snapshotRunLinks: Array<{ importRunId: string; snapshotId: string; createdAt: string }>;
   assemblyNodes: CadAssemblyNode[];
   partDefinitions: CadPartDefinition[];
   partInstances: CadPartInstance[];
@@ -69,6 +70,7 @@ export interface OnshapeRuntimeStore {
   }): CadSnapshot;
   findSnapshot(id: string): CadSnapshot | null;
   listSnapshots(documentRefId?: string): CadSnapshot[];
+  listSnapshotsForImportRun(importRunId: string): CadSnapshot[];
   upsertAssemblyNodes(snapshotId: string, nodes: Array<{
     sourceId: string;
     parentSourceId?: string;

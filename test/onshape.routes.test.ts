@@ -152,6 +152,24 @@ test("Onshape routes run manual shallow and BOM syncs against the local cache st
         payload: { documentRefId: refId, syncLevel: "bom" },
       });
       assert.equal(rerunResponse.statusCode, 201);
+      assert.equal(rerunResponse.json().result.snapshotId, bomResponse.json().result.snapshotId);
+
+      resetLimits();
+
+      const firstRunDetailResponse = await app.inject({
+        method: "GET",
+        url: `/api/onshape/import-runs/${bomResponse.json().result.importRunId}`,
+      });
+      resetLimits();
+
+      const rerunDetailResponse = await app.inject({
+        method: "GET",
+        url: `/api/onshape/import-runs/${rerunResponse.json().result.importRunId}`,
+      });
+      assert.equal(firstRunDetailResponse.statusCode, 200);
+      assert.equal(rerunDetailResponse.statusCode, 200);
+      assert.equal(firstRunDetailResponse.json().snapshots[0]?.id, bomResponse.json().result.snapshotId);
+      assert.equal(rerunDetailResponse.json().snapshots[0]?.id, bomResponse.json().result.snapshotId);
 
       resetLimits();
 

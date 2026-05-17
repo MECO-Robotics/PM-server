@@ -24,6 +24,7 @@ import {
   refreshOnshapeOAuthToken,
   shouldRefreshOnshapeOAuthToken,
 } from "../src/onshape/onshapeOAuth";
+import { normalizeOnshapeBom } from "../src/onshape/onshapeBomNormalizer";
 import { parseOnshapeUrl } from "../src/onshape/onshapeUrlParser";
 import { canRunDeepReleaseSync, estimateOnshapeSync } from "../src/onshape/onshapeSyncPolicy";
 import type {
@@ -249,6 +250,15 @@ test("normalizes native Onshape assembly payloads into CAD graph records", async
   assert.equal(result.partInstances[0]?.partDefinitionSourceId, result.partDefinitions[0]?.sourceId);
   assert.equal(result.partInstances[0]?.parentAssemblySourceId, result.assemblyNodes[1]?.sourceId);
   assert.equal(result.partInstances[0]?.suppressed, false);
+});
+
+test("rejects unrecognized successful Onshape BOM payloads", () => {
+  const reference = createLinkedRef(createOnshapeRuntimeStore());
+
+  assert.throws(
+    () => normalizeOnshapeBom({ message: "unexpected success payload" }, reference),
+    /BOM payload was not recognized/,
+  );
 });
 
 test("builds Onshape OAuth2 authorization URLs without exposing client secrets", () => {
@@ -540,7 +550,9 @@ test("imports BOM graphs idempotently for immutable references and generates met
   assert.equal(second.snapshotId, first.snapshotId);
   const snapshots = store.listSnapshots();
   assert.equal(snapshots.length, 1);
-  assert.equal(snapshots[0]?.importRunId, second.importRunId);
+  assert.equal(snapshots[0]?.importRunId, first.importRunId);
+  assert.equal(store.listSnapshotsForImportRun(first.importRunId)[0]?.id, first.snapshotId);
+  assert.equal(store.listSnapshotsForImportRun(second.importRunId)[0]?.id, first.snapshotId);
   assert.equal(store.listAssemblyNodes().length, 2);
   assert.equal(store.listPartDefinitions().length, 1);
   assert.equal(store.listPartInstances().length, 1);

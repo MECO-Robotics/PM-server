@@ -52,6 +52,15 @@ function existingPartIdentity(part: CadPartDefinition) {
   return `source:${part.sourceId}`;
 }
 
+function linkSnapshotToImportRun(state: OnshapeRuntimeState, importRunId: string, snapshotId: string) {
+  const existing = state.snapshotRunLinks.some(
+    (link) => link.importRunId === importRunId && link.snapshotId === snapshotId,
+  );
+  if (!existing) {
+    state.snapshotRunLinks.push({ importRunId, snapshotId, createdAt: nowIso() });
+  }
+}
+
 export function buildCadGraphStore(state: OnshapeRuntimeState) {
   return {
     upsertSnapshot(input: {
@@ -64,9 +73,9 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
     }) {
       const existing = findExistingSnapshot(state, input.documentRef);
       if (existing) {
-        existing.importRunId = input.importRunId;
         existing.label = input.label;
         existing.notes = input.notes ?? existing.notes;
+        linkSnapshotToImportRun(state, input.importRunId, existing.id);
         return clone(existing);
       }
 
@@ -95,6 +104,7 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
         immutable: isImmutableReference(input.documentRef),
       };
       state.snapshots.push(snapshot);
+      linkSnapshotToImportRun(state, input.importRunId, snapshot.id);
       return clone(snapshot);
     },
     findSnapshot(id: string) {
@@ -105,6 +115,18 @@ export function buildCadGraphStore(state: OnshapeRuntimeState) {
       return clone(
         state.snapshots
           .filter((snapshot) => !documentRefId || snapshot.onshapeDocumentRefId === documentRefId)
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+      );
+    },
+    listSnapshotsForImportRun(importRunId: string) {
+      const linkedSnapshotIds = new Set(
+        state.snapshotRunLinks
+          .filter((link) => link.importRunId === importRunId)
+          .map((link) => link.snapshotId),
+      );
+      return clone(
+        state.snapshots
+          .filter((snapshot) => snapshot.importRunId === importRunId || linkedSnapshotIds.has(snapshot.id))
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       );
     },

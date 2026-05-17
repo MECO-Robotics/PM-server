@@ -25,31 +25,19 @@ function normalizedOutput(raw: NativeRecord): OnshapeAssemblyBomResponse | null 
   return null;
 }
 
-function placeholderBom(raw: unknown, reference: OnshapeReference): OnshapeAssemblyBomResponse {
-  return {
-    assemblyNodes: [
-      {
-        sourceId: `assembly:${reference.elementId ?? reference.documentId}`,
-        documentId: reference.documentId,
-        elementId: reference.elementId,
-        instanceId: reference.elementId,
-        instancePath: `/${reference.elementId ?? reference.documentId}`,
-        name: "Linked Onshape assembly",
-        inferredType: "master_assembly",
-        metadata: { normalization: "placeholder" },
-      },
-    ],
-    partDefinitions: [],
-    partInstances: [],
-    raw: { payload: raw },
-  };
+function unrecognizedBomError() {
+  return new Error("Onshape BOM payload was not recognized.");
 }
 
 export function normalizeOnshapeBom(raw: unknown, reference: OnshapeReference): OnshapeAssemblyBomResponse {
   const record = asRecord(raw);
   if (!record) {
-    return placeholderBom(raw, reference);
+    throw unrecognizedBomError();
   }
 
-  return normalizedOutput(record) ?? normalizeNativeBom(record, reference) ?? placeholderBom(raw, reference);
+  const normalized = normalizedOutput(record) ?? normalizeNativeBom(record, reference);
+  if (!normalized) {
+    throw unrecognizedBomError();
+  }
+  return normalized;
 }

@@ -36,6 +36,7 @@ export function buildInitialState(): OnshapeRuntimeState {
     requestLogs: [],
     cacheEntries: [],
     snapshots: [],
+    snapshotRunLinks: [],
     assemblyNodes: [],
     partDefinitions: [],
     partInstances: [],
