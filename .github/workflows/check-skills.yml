@@ -1,0 +1,47 @@
+name: Check shared skills
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  check-skills:
+    runs-on: ubuntu-latest
+    env:
+      SKILLS_REPO: ${{ vars.SKILLS_REPO || secrets.SKILLS_REPO || 'https://github.com/MECO-Robotics/mission-control-skills.git' }}
+      SKILLS_REPO_DEPLOY_KEY: ${{ secrets.SKILLS_REPO_DEPLOY_KEY }}
+      SKILLS_REPO_TOKEN: ${{ secrets.SKILLS_REPO_TOKEN }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      # Private shared skills repos need either SKILLS_REPO_DEPLOY_KEY for SSH
+      # or SKILLS_REPO_TOKEN for HTTPS access. Do not hardcode credentials.
+      - name: Configure skills repo deploy key
+        if: ${{ env.SKILLS_REPO_DEPLOY_KEY != '' }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SKILLS_REPO_DEPLOY_KEY" > ~/.ssh/skills_repo_key
+          chmod 600 ~/.ssh/skills_repo_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global core.sshCommand "ssh -i ~/.ssh/skills_repo_key -o IdentitiesOnly=yes"
+          if [ -z "$SKILLS_REPO_TOKEN" ]; then
+            case "$SKILLS_REPO" in
+              https://github.com/*)
+                repo_path="${SKILLS_REPO#https://github.com/}"
+                echo "SKILLS_REPO=git@github.com:${repo_path}" >> "$GITHUB_ENV"
+                ;;
+            esac
+          fi
+
+      - name: Configure skills repo token
+        if: ${{ env.SKILLS_REPO_TOKEN != '' }}
+        shell: bash
+        run: |
+          git config --global --add url."https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/".insteadOf "git@github.com:"
+          git config --global --add url."https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Check skills are current
+        shell: bash
+        run: bash scripts/check-skills-current.sh
