@@ -2,7 +2,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { onshapeConfig } from "../../config/env";
 import { getOnshapeRuntimeStore } from "../cadStore";
-import { isOnshapeOAuthClientConfigured } from "../onshapeOAuth";
+import {
+  hasUsableOnshapeOAuthCredentials,
+  isOnshapeOAuthClientConfigured,
+  isOnshapeOAuthRefreshConfigured,
+} from "../onshapeOAuth";
 import {
   onshapeDocumentRefSchema,
   onshapeImportEstimateQuerySchema,
@@ -29,11 +33,23 @@ function getOAuthConfig() {
 
 function getOAuthStatus(store: ReturnType<typeof getOnshapeRuntimeStore>) {
   const tokenSet = store.getOAuthTokenSet();
-  const envConnected = Boolean(onshapeConfig.oauthAccessToken || onshapeConfig.oauthRefreshToken);
+  const config = getOAuthConfig();
+  const clientConfigured = isOnshapeOAuthClientConfigured(config);
+  const refreshConfigured = isOnshapeOAuthRefreshConfigured(config);
+  const runtimeConnected = hasUsableOnshapeOAuthCredentials({
+    accessToken: tokenSet?.accessToken,
+    refreshToken: tokenSet?.refreshToken,
+    refreshConfigured,
+  });
+  const envConnected = hasUsableOnshapeOAuthCredentials({
+    accessToken: onshapeConfig.oauthAccessToken,
+    refreshToken: onshapeConfig.oauthRefreshToken,
+    refreshConfigured,
+  });
   return {
-    clientConfigured: isOnshapeOAuthClientConfigured(getOAuthConfig()),
-    connected: Boolean(tokenSet || envConnected),
-    authorizationUrlAvailable: isOnshapeOAuthClientConfigured(getOAuthConfig()),
+    clientConfigured,
+    connected: runtimeConnected || envConnected,
+    authorizationUrlAvailable: clientConfigured,
     scopes: onshapeConfig.oauthScopes,
     tokenExpiresAt: tokenSet?.expiresAt ?? onshapeConfig.oauthTokenExpiresAt ?? null,
     credentialSource: tokenSet ? "runtime" : (envConnected ? "env" : "none"),

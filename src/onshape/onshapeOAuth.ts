@@ -34,6 +34,14 @@ export function isOnshapeOAuthRefreshConfigured(config: Pick<OnshapeOAuthConfig,
   return Boolean(config.clientId && config.clientSecret);
 }
 
+export function hasUsableOnshapeOAuthCredentials(args: {
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  refreshConfigured: boolean;
+}) {
+  return Boolean(args.accessToken || (args.refreshToken && args.refreshConfigured));
+}
+
 export function buildOnshapeOAuthAuthorizationUrl(args: {
   authorizationUrl: string;
   clientId: string;
