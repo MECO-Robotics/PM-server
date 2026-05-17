@@ -8,11 +8,11 @@ import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 type TestApp = Awaited<ReturnType<typeof import("../src/app").buildApp>>;
 
-test("CAD runtime store resolves assembly parents after unordered insertion", () => {
+test("CAD runtime store resolves assembly parents after unordered insertion", async () => {
   try {
     resetCadRuntimeStore();
     const store = getCadRuntimeStore();
-    const bySourceId = store.createAssemblyNodes("cad-snapshot-1", [
+    const bySourceId = await store.createAssemblyNodes("cad-snapshot-1", [
       {
         sourceId: "asm-child",
         parentSourceId: "asm-root",
@@ -40,7 +40,7 @@ test("CAD runtime store resolves assembly parents after unordered insertion", ()
       bySourceId.get("asm-root")?.id,
     );
     assert.equal(
-      store.listAssemblyNodes("cad-snapshot-1").find((node) => node.sourceId === "asm-child")?.parentAssemblyNodeId,
+      (await store.listAssemblyNodes("cad-snapshot-1")).find((node) => node.sourceId === "asm-child")?.parentAssemblyNodeId,
       bySourceId.get("asm-root")?.id,
     );
   } finally {
