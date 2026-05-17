@@ -6,6 +6,7 @@ import type {
   PlatformSnapshot,
   QaFinding,
   QaReport,
+  QaRequest,
   TestFinding,
   TestResult,
   Task,
@@ -388,6 +389,14 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     const task = scopedTasksById.get(report.taskId);
     return Boolean(task);
   });
+  const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
+    const isTaskInScope = !request.taskId || scopedTaskIds.has(request.taskId);
+    const isPersonInScope =
+      selection.personId === null ||
+      request.mentorId === selection.personId ||
+      request.requestedById === selection.personId;
+    return isTaskInScope && isPersonInScope;
+  });
   const scopedTestResults = snapshot.testResults.filter((result) => {
     const milestone = scopedMilestonesById.get(result.milestoneId);
     return Boolean(milestone);
@@ -571,6 +580,7 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     reports: scopedReports,
     reportFindings: scopedReportFindings,
     qaReports: scopedQaReports,
+    qaRequests: scopedQaRequests,
     testResults: scopedTestResults,
     risks: scopedRisks,
     tasks: scopedTasks.map((task) => ({

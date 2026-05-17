@@ -190,6 +190,53 @@ test("qa report and milestone report endpoints support create flows with link va
 
     resetLimits();
 
+    const qaRequestCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/qa-requests",
+      payload: {
+        taskId: "swerve-sensor-bundle",
+        subject: "Swerve sensor QA",
+        mentorId: "riley",
+        requestedById: "ava",
+      },
+    });
+
+    assert.equal(qaRequestCreateResponse.statusCode, 201);
+    const qaRequestCreatedBody = qaRequestCreateResponse.json() as {
+      item: {
+        id: string;
+        mentorId: string;
+        requestedById: string | null;
+        status: string;
+        subject: string;
+        taskId: string | null;
+      };
+    };
+    assert.equal(qaRequestCreatedBody.item.taskId, "swerve-sensor-bundle");
+    assert.equal(qaRequestCreatedBody.item.subject, "Swerve sensor QA");
+    assert.equal(qaRequestCreatedBody.item.mentorId, "riley");
+    assert.equal(qaRequestCreatedBody.item.requestedById, "ava");
+    assert.equal(qaRequestCreatedBody.item.status, "requested");
+
+    resetLimits();
+
+    const bootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap?projectId=project-robot-2026",
+    });
+
+    assert.equal(bootstrapResponse.statusCode, 200);
+    const bootstrapBody = bootstrapResponse.json() as {
+      qaRequests: Array<{ id: string; subject: string }>;
+    };
+    assert.ok(
+      bootstrapBody.qaRequests.some(
+        (request) => request.id === qaRequestCreatedBody.item.id,
+      ),
+    );
+
+    resetLimits();
+
     const milestoneReportCreateResponse = await app.inject({
       method: "POST",
       url: "/api/test-results",

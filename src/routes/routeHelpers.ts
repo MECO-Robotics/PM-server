@@ -24,6 +24,7 @@ export {
   validatePartInstanceLinks,
   validatePurchaseItemLinks,
   validateQaReportLinks,
+  validateQaRequestLinks,
   validateRiskLinks,
   validateSubsystemPeople,
   validateTaskBlockerLinks,
