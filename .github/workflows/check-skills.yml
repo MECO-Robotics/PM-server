@@ -31,8 +31,8 @@ jobs:
         if: ${{ env.SKILLS_REPO_TOKEN != '' }}
         shell: bash
         run: |
-          git config --global url."https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/".insteadOf "git@github.com:"
-          git config --global url."https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global --add url."https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/".insteadOf "git@github.com:"
+          git config --global --add url."https://x-access-token:${SKILLS_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Check skills are current
         shell: bash
