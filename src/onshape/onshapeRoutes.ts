@@ -205,10 +205,6 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
   });
 
   app.get("/api/onshape/oauth/callback", async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
-
     const query = request.query as Record<string, unknown>;
     const code = typeof query.code === "string" ? query.code : null;
     const state = typeof query.state === "string" ? query.state : null;
@@ -224,6 +220,8 @@ export async function registerOnshapeRoutes(app: FastifyInstance, requireApiSess
       return;
     }
 
+    // Browser redirects cannot attach the SPA bearer token; the callback is tied
+    // to the authenticated initiation route by the short-lived state cookie.
     const store = getOnshapeRuntimeStore();
     if (!store.consumeOAuthState(state, { sessionKey })) {
       return reply
