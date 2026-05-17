@@ -1,6 +1,5 @@
 ﻿import assert from "node:assert/strict";
 import { test } from "node:test";
-import Fastify from "fastify";
 
 import { getOnshapeRuntimeStore, resetOnshapeRuntimeStore } from "../src/onshape/cadStore";
 import { setOnshapeOAuthTokenTransportForTests } from "../src/onshape/onshapeOAuth";
@@ -286,47 +285,38 @@ test("Onshape OAuth routes issue authorization URLs and store callback tokens", 
   }
 });
 
-test("Onshape OAuth callback requires an API session before storing tokens", async () => {
-  let tokenTransportCalls = 0;
-  setOnshapeOAuthTokenTransportForTests(async () => {
-    tokenTransportCalls += 1;
-    return {
-      statusCode: 200,
-      json: {
-        access_token: "unauthorized-token",
-        refresh_token: "unauthorized-refresh-token",
-        expires_in: 3600,
-        token_type: "Bearer",
-        scope: "OAuth2Read",
-      },
-    };
-  });
-
-  const app = Fastify();
-
+test("Onshape OAuth states can require authenticated API session provenance", () => {
   try {
     resetOnshapeRuntimeStore();
-    const { registerOnshapeOAuthRoutes } = await import("../src/onshape/routes/onshapeOAuthRoutes");
-    await registerOnshapeOAuthRoutes(app, (_request, reply) => {
-      reply.code(401).send({ message: "Authentication required." });
-      return false;
-    });
+    const store = getOnshapeRuntimeStore();
+    const anonymousState = store.createOAuthState({ sessionKey: "browser-session" });
 
-    const sessionKey = "authorized-session-key";
-    const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
-    const callbackResponse = await app.inject({
-      method: "GET",
-      url: `/api/onshape/oauth/callback?code=oauth-code&state=${state}`,
-      headers: {
-        cookie: `meco_onshape_oauth_session=${encodeURIComponent(sessionKey)}`,
-      },
+    assert.equal(
+      store.consumeOAuthState(anonymousState.state, {
+        sessionKey: "browser-session",
+        requireApiSession: true,
+      }),
+      false,
+    );
+    assert.equal(
+      store.consumeOAuthState(anonymousState.state, {
+        sessionKey: "browser-session",
+      }),
+      true,
+    );
+
+    const authenticatedState = store.createOAuthState({
+      sessionKey: "browser-session",
+      apiSessionAccountId: "mentor",
     });
-    assert.equal(callbackResponse.statusCode, 401);
-    assert.equal(tokenTransportCalls, 0);
-    assert.equal(getOnshapeRuntimeStore().getOAuthTokenSet(), null);
+    assert.equal(
+      store.consumeOAuthState(authenticatedState.state, {
+        sessionKey: "browser-session",
+        requireApiSession: true,
+      }),
+      true,
+    );
   } finally {
-    await app.close();
-    setOnshapeOAuthTokenTransportForTests(null);
     resetOnshapeRuntimeStore();
   }
 });

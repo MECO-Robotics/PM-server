@@ -5,6 +5,10 @@ CREATE TYPE "CadImportStatus" AS ENUM ('PENDING', 'PARSING', 'PARSED', 'MAPPING_
 CREATE TYPE "CadSnapshotStatus" AS ENUM ('parsed', 'mapping_review', 'mapped', 'finalized', 'superseded');
 CREATE TYPE "CadSnapshotSource" AS ENUM ('MANUAL_SNAPSHOT', 'DESIGN_REVIEW', 'MANUFACTURING_RELEASE', 'AS_BUILT', 'SCHEDULED_CANDIDATE');
 CREATE TYPE "CadMappingSourceKind" AS ENUM ('ASSEMBLY_NODE', 'PART_DEFINITION', 'PART_INSTANCE');
+CREATE TYPE "CadMappingTargetKind" AS ENUM ('SUBSYSTEM', 'MECHANISM', 'COMPONENT_ASSEMBLY', 'PART_DEFINITION', 'PART_INSTANCE', 'IGNORE', 'REFERENCE_GEOMETRY', 'UNMAPPED');
+CREATE TYPE "CadMappingConfidence" AS ENUM ('HIGH', 'MEDIUM', 'LOW', 'MANUAL');
+CREATE TYPE "CadSnapshotMappingStatus" AS ENUM ('PROPOSED', 'CONFIRMED', 'REJECTED', 'NEEDS_REVIEW');
+CREATE TYPE "CadMappingMatchStrategy" AS ENUM ('STABLE_SIGNATURE', 'INSTANCE_PATH', 'NORMALIZED_NAME', 'NORMALIZED_NAME_WITH_PARENT', 'MANUAL_ONLY');
 CREATE TYPE "CadAssemblyInferredType" AS ENUM ('ROOT', 'SUBSYSTEM_CANDIDATE', 'MECHANISM_CANDIDATE', 'COMPONENT_ASSEMBLY_CANDIDATE', 'SUBASSEMBLY', 'UNKNOWN');
 CREATE TYPE "CadWarningSeverity" AS ENUM ('INFO', 'WARNING', 'ERROR');
 CREATE TYPE "OnshapePlanType" AS ENUM ('EDUCATION', 'FREE', 'STANDARD', 'PROFESSIONAL', 'ENTERPRISE', 'UNKNOWN');
@@ -192,6 +196,41 @@ CREATE TABLE "CadPartInstance" (
   UNIQUE ("snapshotId", "sourceId")
 );
 
+CREATE TABLE "CadMappingRule" (
+  "id" TEXT PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "seasonId" TEXT,
+  "sourceKind" "CadMappingSourceKind" NOT NULL,
+  "matchStrategy" "CadMappingMatchStrategy" NOT NULL,
+  "matchValue" TEXT NOT NULL,
+  "targetKind" "CadMappingTargetKind" NOT NULL,
+  "targetId" TEXT,
+  "confidence" "CadMappingConfidence" NOT NULL,
+  "createdFromSnapshotId" TEXT NOT NULL REFERENCES "CadSnapshot"("id"),
+  "createdBy" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "supersededByRuleId" TEXT REFERENCES "CadMappingRule"("id"),
+  "active" BOOLEAN NOT NULL DEFAULT true,
+  "notes" TEXT
+);
+
+CREATE TABLE "CadSnapshotMapping" (
+  "id" TEXT PRIMARY KEY,
+  "snapshotId" TEXT NOT NULL REFERENCES "CadSnapshot"("id"),
+  "mappingRuleId" TEXT REFERENCES "CadMappingRule"("id"),
+  "sourceKind" "CadMappingSourceKind" NOT NULL,
+  "sourceId" TEXT NOT NULL,
+  "targetKind" "CadMappingTargetKind" NOT NULL,
+  "targetId" TEXT,
+  "confidence" "CadMappingConfidence" NOT NULL,
+  "status" "CadSnapshotMappingStatus" NOT NULL,
+  "reviewedBy" TEXT,
+  "reviewedAt" TIMESTAMP(3),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE ("snapshotId", "sourceKind", "sourceId")
+);
+
 CREATE TABLE "CadImportWarning" (
   "id" TEXT PRIMARY KEY,
   "importRunId" TEXT NOT NULL REFERENCES "CadImportRun"("id"),
@@ -273,6 +312,16 @@ CREATE INDEX "CadPartInstance_partDefinitionId_idx" ON "CadPartInstance"("partDe
 CREATE INDEX "CadPartInstance_documentId_idx" ON "CadPartInstance"("documentId");
 CREATE INDEX "CadPartInstance_elementId_idx" ON "CadPartInstance"("elementId");
 CREATE INDEX "CadPartInstance_partId_idx" ON "CadPartInstance"("partId");
+CREATE INDEX "CadMappingRule_projectId_idx" ON "CadMappingRule"("projectId");
+CREATE INDEX "CadMappingRule_seasonId_idx" ON "CadMappingRule"("seasonId");
+CREATE INDEX "CadMappingRule_sourceKind_idx" ON "CadMappingRule"("sourceKind");
+CREATE INDEX "CadMappingRule_matchStrategy_matchValue_idx" ON "CadMappingRule"("matchStrategy", "matchValue");
+CREATE INDEX "CadMappingRule_targetKind_targetId_idx" ON "CadMappingRule"("targetKind", "targetId");
+CREATE INDEX "CadMappingRule_active_idx" ON "CadMappingRule"("active");
+CREATE INDEX "CadSnapshotMapping_snapshotId_idx" ON "CadSnapshotMapping"("snapshotId");
+CREATE INDEX "CadSnapshotMapping_mappingRuleId_idx" ON "CadSnapshotMapping"("mappingRuleId");
+CREATE INDEX "CadSnapshotMapping_targetKind_targetId_idx" ON "CadSnapshotMapping"("targetKind", "targetId");
+CREATE INDEX "CadSnapshotMapping_status_idx" ON "CadSnapshotMapping"("status");
 CREATE INDEX "CadImportWarning_importRunId_idx" ON "CadImportWarning"("importRunId");
 CREATE INDEX "CadImportWarning_snapshotId_idx" ON "CadImportWarning"("snapshotId");
 CREATE INDEX "CadImportWarning_sourceKind_sourceId_idx" ON "CadImportWarning"("sourceKind", "sourceId");

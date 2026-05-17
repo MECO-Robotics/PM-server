@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { getSessionFromRequest, isAuthEnabled } from "../../auth/authService";
 import { onshapeConfig } from "../../config/env";
 import { getOnshapeRuntimeStore } from "../cadStore";
 import {
@@ -63,6 +64,14 @@ function buildExpiredOAuthSessionCookie() {
   return `${ONSHAPE_OAUTH_SESSION_COOKIE}=; Path=/api/onshape/oauth/callback; Max-Age=0; HttpOnly; SameSite=Lax`;
 }
 
+function getApiSessionAccountId(request: FastifyRequest) {
+  if (!isAuthEnabled()) {
+    return null;
+  }
+
+  return getSessionFromRequest(request)?.accountId ?? null;
+}
+
 function resolveOAuthCallbackSessionKey(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -90,7 +99,15 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
     }
 
     const sessionKey = randomUUID();
-    const { state } = getOnshapeRuntimeStore().createOAuthState({ sessionKey });
+    const apiSessionAccountId = getApiSessionAccountId(request);
+    if (isAuthEnabled() && !apiSessionAccountId) {
+      return reply.code(401).send({ message: "A signed-in Mission Control session is required." });
+    }
+
+    const { state } = getOnshapeRuntimeStore().createOAuthState({
+      sessionKey,
+      apiSessionAccountId,
+    });
     reply.header("Set-Cookie", buildOAuthSessionCookie(sessionKey));
     return {
       authorizationUrl: buildOnshapeOAuthAuthorizationUrl({
@@ -105,10 +122,6 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
   });
 
   app.get("/api/onshape/oauth/callback", async (request, reply) => {
-    if (!requireApiSession(request, reply)) {
-      return;
-    }
-
     const query = request.query as Record<string, unknown>;
     const code = typeof query.code === "string" ? query.code : null;
     const state = typeof query.state === "string" ? query.state : null;
@@ -125,7 +138,7 @@ export async function registerOnshapeOAuthRoutes(app: FastifyInstance, requireAp
     }
 
     const store = getOnshapeRuntimeStore();
-    if (!store.consumeOAuthState(state, { sessionKey })) {
+    if (!store.consumeOAuthState(state, { sessionKey, requireApiSession: isAuthEnabled() })) {
       return reply
         .header("Set-Cookie", buildExpiredOAuthSessionCookie())
         .code(400)

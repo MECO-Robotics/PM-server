@@ -13,18 +13,26 @@ function pruneExpiredStates(state: OnshapeRuntimeState) {
 
 export function buildCadOAuthStore(state: OnshapeRuntimeState) {
   return {
-    createOAuthState(input: { sessionKey: string }) {
+    createOAuthState(input: { sessionKey: string; apiSessionAccountId?: string | null }) {
       pruneExpiredStates(state);
-      const item = { state: randomUUID(), createdAt: nowIso(), sessionKey: input.sessionKey };
+      const item = {
+        state: randomUUID(),
+        createdAt: nowIso(),
+        sessionKey: input.sessionKey,
+        apiSessionAccountId: input.apiSessionAccountId ?? null,
+      };
       state.oauthStates.push(item);
       return clone(item);
     },
-    consumeOAuthState(oauthState: string, input: { sessionKey: string }) {
+    consumeOAuthState(oauthState: string, input: { sessionKey: string; requireApiSession?: boolean }) {
       pruneExpiredStates(state);
       const index = state.oauthStates.findIndex(
         (item) => item.state === oauthState && item.sessionKey === input.sessionKey,
       );
       if (index < 0) {
+        return false;
+      }
+      if (input.requireApiSession && !state.oauthStates[index].apiSessionAccountId) {
         return false;
       }
       state.oauthStates.splice(index, 1);
