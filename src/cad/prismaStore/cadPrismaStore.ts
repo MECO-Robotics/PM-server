@@ -73,18 +73,28 @@ export function createPrismaCadStore(prisma: PrismaClient): CadStore {
     async createAssemblyNodes(snapshotId, input) {
       const bySourceId = new Map<string, CadAssemblyNode>();
       for (const node of input) {
-        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
         const item = assemblyFromDb(
           await prisma.cadAssemblyNode.create({
             data: {
               ...node,
               snapshotId,
               normalizedName: normalizeCadName(node.name),
-              parentAssemblyNodeId: parent?.id ?? null,
+              parentAssemblyNodeId: null,
             } as Prisma.CadAssemblyNodeUncheckedCreateInput,
           }),
         );
         bySourceId.set(item.sourceId, item);
+      }
+      for (const node of input) {
+        const item = bySourceId.get(node.sourceId);
+        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
+        if (item && parent) {
+          const updated = await prisma.cadAssemblyNode.update({
+            where: { id: item.id },
+            data: { parentAssemblyNodeId: parent.id },
+          });
+          bySourceId.set(item.sourceId, assemblyFromDb(updated));
+        }
       }
       return bySourceId;
     },

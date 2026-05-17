@@ -142,17 +142,25 @@ export function getCadRuntimeStore(): CadStore & { reset(): void } {
     createAssemblyNodes(snapshotId: string, input: CadAssemblyCreateInput[]) {
       const bySourceId = new Map<string, CadAssemblyNode>();
       for (const node of input) {
-        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
         const item: CadAssemblyNode = {
           ...node,
           id: nextId("cad-assembly", state.assemblyNodes.map((assembly) => assembly.id)),
           snapshotId,
-          parentAssemblyNodeId: parent?.id ?? null,
+          parentAssemblyNodeId: null,
           normalizedName: normalizeCadName(node.name),
           createdAt: nowIso(),
         };
         state.assemblyNodes.push(item);
         bySourceId.set(item.sourceId, clone(item));
+      }
+      for (const node of input) {
+        const item = bySourceId.get(node.sourceId);
+        const parent = node.parentSourceId ? bySourceId.get(node.parentSourceId) : null;
+        const stored = item ? state.assemblyNodes.find((assembly) => assembly.id === item.id) : null;
+        if (item && parent && stored) {
+          item.parentAssemblyNodeId = parent.id;
+          stored.parentAssemblyNodeId = parent.id;
+        }
       }
       return bySourceId;
     },

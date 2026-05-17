@@ -1,12 +1,52 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resetCadRuntimeStore } from "../src/cad/cadStore";
+import { getCadRuntimeStore, resetCadRuntimeStore } from "../src/cad/cadStore";
 import { collectHierarchyIssues } from "../src/cad/cadHierarchyValidationService";
 import { createPartDefinition } from "../src/data/store";
 import { withIntegrationApp } from "./helpers/appIntegrationHarness";
 
 type TestApp = Awaited<ReturnType<typeof import("../src/app").buildApp>>;
+
+test("CAD runtime store resolves assembly parents after unordered insertion", () => {
+  try {
+    resetCadRuntimeStore();
+    const store = getCadRuntimeStore();
+    const bySourceId = store.createAssemblyNodes("cad-snapshot-1", [
+      {
+        sourceId: "asm-child",
+        parentSourceId: "asm-root",
+        name: "Child assembly",
+        instancePath: "/Robot/Child assembly",
+        depth: 1,
+        inferredType: "MECHANISM_CANDIDATE",
+        stableSignature: "asm:path:/Robot/Child assembly",
+        metadataJson: {},
+      },
+      {
+        sourceId: "asm-root",
+        parentSourceId: null,
+        name: "Robot",
+        instancePath: "/Robot",
+        depth: 0,
+        inferredType: "ROOT",
+        stableSignature: "asm:path:/Robot",
+        metadataJson: {},
+      },
+    ]);
+
+    assert.equal(
+      bySourceId.get("asm-child")?.parentAssemblyNodeId,
+      bySourceId.get("asm-root")?.id,
+    );
+    assert.equal(
+      store.listAssemblyNodes("cad-snapshot-1").find((node) => node.sourceId === "asm-child")?.parentAssemblyNodeId,
+      bySourceId.get("asm-root")?.id,
+    );
+  } finally {
+    resetCadRuntimeStore();
+  }
+});
 
 test("hierarchy issues identify the offending part instance", () => {
   const issues = collectHierarchyIssues({
