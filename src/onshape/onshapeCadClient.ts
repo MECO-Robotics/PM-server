@@ -1,10 +1,10 @@
 import type {
   CadImportOnshapeClient,
-  OnshapeAssemblyBomResponse,
   OnshapeDocumentMetadataResponse,
   OnshapeReference,
 } from "./onshapeTypes";
 import type { createOnshapeApiClient } from "./onshapeApiClient";
+import { normalizeOnshapeBom } from "./onshapeBomNormalizer";
 
 export const ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH = "document-metadata:v1";
 export const ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH = "assembly-bom:v1";
@@ -46,38 +46,6 @@ function normalizeMetadata(raw: unknown, reference: OnshapeReference): OnshapeDo
   };
 }
 
-function normalizeBom(raw: unknown, reference: OnshapeReference): OnshapeAssemblyBomResponse {
-  if (typeof raw === "object" && raw !== null) {
-    const record = raw as Partial<OnshapeAssemblyBomResponse>;
-    if (Array.isArray(record.assemblyNodes) && Array.isArray(record.partDefinitions) && Array.isArray(record.partInstances)) {
-      return {
-        assemblyNodes: record.assemblyNodes,
-        partDefinitions: record.partDefinitions,
-        partInstances: record.partInstances,
-        raw: record.raw ?? { payload: raw },
-      };
-    }
-  }
-
-  return {
-    assemblyNodes: [
-      {
-        sourceId: `assembly:${reference.elementId ?? reference.documentId}`,
-        documentId: reference.documentId,
-        elementId: reference.elementId,
-        instanceId: reference.elementId,
-        instancePath: `/${reference.elementId ?? reference.documentId}`,
-        name: "Linked Onshape assembly",
-        inferredType: "master_assembly",
-        metadata: { normalization: "placeholder" },
-      },
-    ],
-    partDefinitions: [],
-    partInstances: [],
-    raw: { payload: raw },
-  };
-}
-
 export function createOnshapeCadClient(lowLevelClient: LowLevelClient): CadImportOnshapeClient {
   return {
     getCallsUsed: lowLevelClient.getCallsUsed,
@@ -107,7 +75,7 @@ export function createOnshapeCadClient(lowLevelClient: LowLevelClient): CadImpor
         importRunId,
         policy,
       });
-      return normalizeBom(raw, reference);
+      return normalizeOnshapeBom(raw, reference);
     },
   };
 }

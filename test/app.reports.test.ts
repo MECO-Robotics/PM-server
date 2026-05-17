@@ -220,6 +220,28 @@ test("qa report and milestone report endpoints support create flows with link va
 
     resetLimits();
 
+    const tasklessQaRequestCreateResponse = await app.inject({
+      method: "POST",
+      url: "/api/qa-requests",
+      payload: {
+        taskId: null,
+        subject: "General pit QA",
+        mentorId: "riley",
+        requestedById: "ava",
+      },
+    });
+
+    assert.equal(tasklessQaRequestCreateResponse.statusCode, 201);
+    const tasklessQaRequestCreatedBody = tasklessQaRequestCreateResponse.json() as {
+      item: {
+        id: string;
+        taskId: string | null;
+      };
+    };
+    assert.equal(tasklessQaRequestCreatedBody.item.taskId, null);
+
+    resetLimits();
+
     const bootstrapResponse = await app.inject({
       method: "GET",
       url: "/api/bootstrap?projectId=project-robot-2026",
@@ -232,6 +254,29 @@ test("qa report and milestone report endpoints support create flows with link va
     assert.ok(
       bootstrapBody.qaRequests.some(
         (request) => request.id === qaRequestCreatedBody.item.id,
+      ),
+    );
+    assert.equal(
+      bootstrapBody.qaRequests.some(
+        (request) => request.id === tasklessQaRequestCreatedBody.item.id,
+      ),
+      false,
+    );
+
+    resetLimits();
+
+    const globalBootstrapResponse = await app.inject({
+      method: "GET",
+      url: "/api/bootstrap",
+    });
+
+    assert.equal(globalBootstrapResponse.statusCode, 200);
+    const globalBootstrapBody = globalBootstrapResponse.json() as {
+      qaRequests: Array<{ id: string }>;
+    };
+    assert.ok(
+      globalBootstrapBody.qaRequests.some(
+        (request) => request.id === tasklessQaRequestCreatedBody.item.id,
       ),
     );
 

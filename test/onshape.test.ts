@@ -2,7 +2,11 @@
 import { test } from "node:test";
 
 import { runCadImport } from "../src/onshape/cadImporter";
-import { ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH } from "../src/onshape/onshapeCadClient";
+import {
+  createOnshapeCadClient,
+  ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH,
+  ONSHAPE_DOCUMENT_METADATA_REQUEST_HASH,
+} from "../src/onshape/onshapeCadClient";
 import {
   createOnshapeRuntimeStore,
   type OnshapeRuntimeStore,
@@ -168,6 +172,82 @@ test("builds stable cache keys with immutable version identity", () => {
     }),
     "GET:/api/documents/d/0123456789abcdef01234567:d/0123456789abcdef01234567:v/222222222222222222222222:e/111111111111111111111111:metadata",
   );
+});
+
+test("normalizes native Onshape assembly payloads into CAD graph records", async () => {
+  const store = createOnshapeRuntimeStore();
+  const reference = createLinkedRef(store);
+  let requestedEndpoint = "";
+  const lowLevelClient = createOnshapeApiClient({
+    store,
+    credentials: { mode: "oauth", bearerToken: "test-token" },
+    transport: async (request) => {
+      requestedEndpoint = request.endpoint;
+      return {
+        statusCode: 200,
+        headers: {},
+        json: {
+          rootAssembly: {
+            id: "root-assembly",
+            name: "Robot master",
+            documentId: "0123456789abcdef01234567",
+            elementId: "111111111111111111111111",
+            instances: [
+              {
+                id: "drive-asm",
+                type: "Assembly",
+                name: "Drive Subsystem <1>",
+                documentId: "0123456789abcdef01234567",
+                elementId: "drive-element",
+              },
+              {
+                id: "rail-left",
+                parentId: "drive-asm",
+                type: "Part",
+                name: "Drive rail <1>",
+                partId: "drive-rail",
+                partNumber: "DRV-001",
+                documentId: "0123456789abcdef01234567",
+                elementId: "drive-element",
+                documentMicroversion: "micro-rail",
+                configuration: "default",
+                material: "6061 aluminum",
+                suppressed: false,
+              },
+            ],
+          },
+        },
+      };
+    },
+  });
+
+  const result = await createOnshapeCadClient(lowLevelClient).fetchAssemblyBom({
+    reference,
+    importRunId: "import-1",
+    policy: { priority: "snapshot", maxCallsAllowed: 1, allowCached: false, requireFresh: true },
+  });
+
+  assert.equal(
+    requestedEndpoint,
+    "/api/assemblies/d/0123456789abcdef01234567/v/222222222222222222222222/e/111111111111111111111111/bom",
+  );
+  assert.equal(store.listCacheEntries().at(-1)?.requestHash, ONSHAPE_ASSEMBLY_BOM_REQUEST_HASH);
+  assert.deepEqual(
+    result.assemblyNodes.map((node) => [node.name, node.inferredType, node.metadata?.normalization]),
+    [
+      ["Robot master", "master_assembly", "native_onshape"],
+      ["Drive Subsystem <1>", "subassembly", "native_onshape"],
+    ],
+  );
+  assert.equal(result.assemblyNodes[1]?.parentSourceId, result.assemblyNodes[0]?.sourceId);
+  assert.equal(result.partDefinitions.length, 1);
+  assert.equal(result.partDefinitions[0]?.partId, "drive-rail");
+  assert.equal(result.partDefinitions[0]?.partNumber, "DRV-001");
+  assert.equal(result.partDefinitions[0]?.microversionId, "micro-rail");
+  assert.equal(result.partInstances.length, 1);
+  assert.equal(result.partInstances[0]?.partDefinitionSourceId, result.partDefinitions[0]?.sourceId);
+  assert.equal(result.partInstances[0]?.parentAssemblySourceId, result.assemblyNodes[1]?.sourceId);
+  assert.equal(result.partInstances[0]?.suppressed, false);
 });
 
 test("builds Onshape OAuth2 authorization URLs without exposing client secrets", () => {

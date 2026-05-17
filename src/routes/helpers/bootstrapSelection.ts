@@ -389,8 +389,11 @@ export function buildBootstrapResponse(snapshot: PlatformSnapshot, selection: Bo
     const task = scopedTasksById.get(report.taskId);
     return Boolean(task);
   });
+  const isProjectScoped = selection.projectId !== null;
   const scopedQaRequests = (snapshot.qaRequests ?? []).filter((request: QaRequest) => {
-    const isTaskInScope = !request.taskId || scopedTaskIds.has(request.taskId);
+    const isTaskInScope = request.taskId
+      ? scopedTaskIds.has(request.taskId)
+      : !isProjectScoped;
     const isPersonInScope =
       selection.personId === null ||
       request.mentorId === selection.personId ||
